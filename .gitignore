@@ -1,0 +1,23 @@
+# 密钥与本地数据库
+.env
+checkpoints.sqlite
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# 编辑器/系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# JARVIS 运行产物
+*.log

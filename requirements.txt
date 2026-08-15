@@ -1,0 +1,16 @@
+# JARVIS 依赖（依据 02-deepagents最新语法核验 版本矩阵，2026-08-15）
+# Python >= 3.11（当前 conda env thomas = 3.12.9）
+
+deepagents==0.7.6
+langchain>=1.3.14,<2.0.0
+langchain-core>=1.5.0,<2.0.0
+langchain-openai>=1.5.0
+langgraph-checkpoint-sqlite==3.1.1
+langchain-quickjs>=0.3.3
+
+tavily-python
+httpx
+markdownify
+
+python-dotenv
+apscheduler

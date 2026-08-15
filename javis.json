@@ -1,0 +1,12 @@
+{
+  "model": {
+    "base_url_env": "BASE_URL",
+    "api_key_env": "API_KEY",
+    "model_id_env": "MODEL_ID"
+  },
+  "obsidian_vault": "E:\\Thomas\\Obsidian_warehouse",
+  "memory_dir": "memory",
+  "skills": ["skills/"],
+  "mcps": [],
+  "schedules": []
+}
