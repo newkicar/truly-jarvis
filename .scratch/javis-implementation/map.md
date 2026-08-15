@@ -4,7 +4,7 @@
 
 ## Destination
 
-把 JARVIS 从设计文档（`docs/specs/2026-08-15-javis-design.md`）走到可运行的实现，并分阶段推进：一期（主代理 + researcher 指定检索 + WIKI 导航知识库 + SqliteSaver 短期记忆 + 会话回退 + javis.json + Tavily）→ 二期（动态子代理 fan-out + 定时检索 + 长期记忆 + git 文件回退）→ 三期（executor + skill/mcp 接口 + 增量 RAG）。
+把 JARVIS 从设计文档（`docs/specs/2026-08-15-javis-design.md`）走到可运行的实现，并分阶段推进：一期（主代理 + researcher 指定检索 + WIKI 导航知识库 + SqliteSaver 短期记忆 + 会话回退 + javis.json + Tavily）→ 二期（动态子代理 fan-out + 定时检索 + 长期记忆 + git 文件回退 + 事件流式输出）→ 三期（executor + skill/mcp 接口 + 增量 RAG）。
 
 ## Notes
 
@@ -23,6 +23,7 @@
 - [02-deepagents最新语法核验](issues/02-deepagents-syntax.md) — 最新 0.7.6；本机依赖需升级；设计文档 4 处需修正（CompositeBackend default=StateBackend 等）
 - [03-项目骨架搭建](issues/03-project-scaffold.md) — 已 git init + requirements + src/ 布局 + javis.json；依赖装好、冒烟通过；要点：SqliteSaver.from_conn_string 是 context manager
 - [04-researcher检索心智设计](issues/04-researcher-prompt.md) — researcher 定稿：固定导航式检索 + 搜索抓全文 + vault 优先融合 + 结构化带来源输出 + 双触发路由；⚠️ 发现 vault 已是 git 仓库（与「不纳入 git」决策冲突，待定）
+- [11-事件流式输出](issues/11-event-streaming.md) — 二期；已核实 deepagents 0.7.6 支持 `stream_events(version="v3")` typed-projection；子代理/工具调用/最终回答实时可见；顺带修 tavily search 缺 timeout
 
 ## Not yet specified
 

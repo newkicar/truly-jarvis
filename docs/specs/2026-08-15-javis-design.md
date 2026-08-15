@@ -297,7 +297,7 @@ truly_Javis/
 | 阶段 | 范围 | 验收 |
 |---|---|---|
 | **一期（MVP）** | 主代理 + researcher（指定检索，直接 task() 委派）+ WIKI 导航知识库 + SqliteSaver 短期记忆（`langgraph-checkpoint-sqlite`，`SqliteSaver.from_conn_string("checkpoints.sqlite")`）+ 会话回退（/history /replay /fork /sessions）+ javis.json + Tavily | 问「调研 XXX」→ 搜索+检索+带引用总结；问「笔记里 YYY」→ vault 命中；重启续上下文；可回退历史会话 |
-| **二期** | 动态子代理 fan-out（CodeInterpreterMiddleware，先实测 deepseek-v4-flash 写 JS）+ knowledge_keeper 回写 + APScheduler 定时检索 + 长期记忆 StoreBackend + git 文件回退（/rollback） | 定时自动检索并回写 Obsidian；偏好跨会话记忆；多角度并行研究；文件可回退 |
+| **二期** | 动态子代理 fan-out（CodeInterpreterMiddleware，先实测 deepseek-v4-flash 写 JS）+ knowledge_keeper 回写 + APScheduler 定时检索 + 长期记忆 StoreBackend + git 文件回退（/rollback）+ **事件流式输出（event streaming）** | 定时自动检索并回写 Obsidian；偏好跨会话记忆；多角度并行研究；文件可回退；CLI 实时可见子代理/工具/回答流式输出（见票 11） |
 | **三期** | executor + LocalShellBackend + skill/mcp 扩展接口 + 增量 RAG 增强 + vault 回退增强（可选） | 可执行任务；可安装外部 skill/mcp；语义检索增强 |
 
 ---
@@ -328,6 +328,7 @@ truly_Javis/
 - [ ] 多角度并行研究（fan-out）
 - [ ] 用户偏好跨会话记忆（StoreBackend）
 - [ ] git 文件回退（`/rollback`）可用
+- [ ] 事件流式输出（`stream_events` v3）：子代理/工具调用/最终回答实时可见，工具失败能看到 error
 
 ### 三期
 - [ ] executor 执行本地任务

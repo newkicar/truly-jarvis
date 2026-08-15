@@ -26,7 +26,7 @@
 
 ## 分期
 - ✅ 一期（已完成）：主代理 + researcher（指定检索）+ WIKI 导航知识库 + SqliteSaver 短期记忆 + 会话回退 + javis.json + Tavily。
-- 二期：动态子代理 fan-out + 定时检索（APScheduler）+ 长期记忆 StoreBackend + git 文件回退。
+- 二期：动态子代理 fan-out + 定时检索（APScheduler）+ 长期记忆 StoreBackend + git 文件回退 + 事件流式输出（event streaming，票 11）。
 - 三期：executor + skill/mcp 接口 + 增量 RAG 增强。
 
 ## Agent skills
