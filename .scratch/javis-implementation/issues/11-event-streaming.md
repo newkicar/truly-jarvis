@@ -4,7 +4,7 @@
 
 **Blocked by:** —（二期独立；依赖一期 researcher 管道定型）
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## 背景与动因（2026-08-15 实测）
 

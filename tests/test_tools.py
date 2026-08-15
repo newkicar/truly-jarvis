@@ -18,7 +18,7 @@ def test_tavily_search_returns_structured_markdown(tmp_path, monkeypatch):
     }
 
     class FakeTavily:
-        def search(self, query, max_results):
+        def search(self, query, max_results, timeout=None):
             assert query == "大模型 最新动态"
             assert max_results == 5
             return search_results
@@ -39,7 +39,7 @@ def test_tavily_search_returns_structured_markdown(tmp_path, monkeypatch):
 def test_tavily_search_handles_empty_results(monkeypatch):
     from src import tools
 
-    monkeypatch.setattr(tools, "TavilyClient", lambda api_key: type("F", (), {"search": lambda self, query, max_results: {"results": []}})())
+    monkeypatch.setattr(tools, "TavilyClient", lambda api_key: type("F", (), {"search": lambda self, query, max_results, timeout=None: {"results": []}})())
 
     out = tools.tavily_search(query="不存在的东西", max_results=3, tavily_key="tvly-test")
     assert "未找到" in out or "没有" in out or "无" in out
@@ -49,7 +49,7 @@ def test_tavily_search_handles_fetch_failure(tmp_path, monkeypatch):
     from src import tools
 
     search_results = {"results": [{"title": "A", "url": "https://example.com/a", "content": "摘要"}]}
-    monkeypatch.setattr(tools, "TavilyClient", lambda api_key: type("F", (), {"search": lambda self, query, max_results: search_results})())
+    monkeypatch.setattr(tools, "TavilyClient", lambda api_key: type("F", (), {"search": lambda self, query, max_results, timeout=None: search_results})())
     monkeypatch.setattr(tools, "_fetch_url", lambda url: (_ for _ in ()).throw(httpx.HTTPError("boom")))
 
     out = tools.tavily_search(query="x", max_results=1, tavily_key="tvly-test")
@@ -60,7 +60,7 @@ def test_tavily_search_handles_search_failure(monkeypatch):
     from src import tools
 
     class BrokenTavily:
-        def search(self, query, max_results):
+        def search(self, query, max_results, timeout=None):
             raise RuntimeError("network down")
 
     monkeypatch.setattr(tools, "TavilyClient", lambda api_key: BrokenTavily())

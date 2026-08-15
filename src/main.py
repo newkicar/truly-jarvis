@@ -53,11 +53,43 @@ def _run_session(agent, thread_id: str):
             print(_dispatch_command(agent, thread_id, user_input))
             continue
 
-        result = agent.invoke(
-            {"messages": [{"role": "user", "content": user_input}]},
-            config={"configurable": {"thread_id": thread_id}, "recursion_limit": 30},
-        )
-        print(_render(result["messages"]))
+        _stream_turn(agent, thread_id, user_input)
+
+
+def _stream_turn(agent, thread_id: str, user_input: str):
+    """用 event streaming(v3) 跑一轮对话，实时打印子代理/工具/最终回答。
+
+    相比 invoke() 全程静默，流式让用户看到「在干嘛」，长时间无响应可定位。
+    """
+    print()
+    stream = agent.stream_events(
+        {"messages": [{"role": "user", "content": user_input}]},
+        version="v3",
+        config={"configurable": {"thread_id": thread_id}, "recursion_limit": 30},
+    )
+
+    consumed = 0
+    for kind, item in stream.interleave("messages", "tool_calls", "subagents"):
+        if kind == "subagents":
+            status = getattr(item, "status", "")
+            print(f"  [{item.name}] {status}")
+        elif kind == "tool_calls":
+            err = getattr(item, "error", None)
+            name = getattr(item, "tool_name", "?")
+            args = getattr(item, "input", "")
+            tag = "✗" if err else "✓"
+            print(f"  {tag} {name}({str(args)[:80]})")
+        else:  # messages
+            for delta in item.text:
+                print(delta, end="", flush=True)
+                consumed += 1
+
+    final_state = stream.output
+    if not consumed:
+        final_text = _render(final_state["messages"]) if final_state else ""
+        if final_text:
+            print(final_text)
+    print("\n")
 
 
 def _dispatch_command(agent, thread_id: str, command: str) -> str:

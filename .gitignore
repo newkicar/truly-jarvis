@@ -3,6 +3,8 @@
 checkpoints.sqlite
 *.sqlite
 *.sqlite3
+*.sqlite-shm
+*.sqlite-wal
 
 # Python
 __pycache__/

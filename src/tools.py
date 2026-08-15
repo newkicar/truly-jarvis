@@ -22,7 +22,9 @@ def tavily_search(query: str, max_results: int = 5, tavily_key: str = "") -> str
     """
     try:
         client = TavilyClient(api_key=tavily_key)
-        results = client.search(query=query, max_results=max_results).get("results", [])
+        results = client.search(
+            query=query, max_results=max_results, timeout=30
+        ).get("results", [])
     except Exception:
         return f"搜索失败: 无法连接搜索服务（query={query}），请稍后重试。"
 
