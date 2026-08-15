@@ -8,7 +8,7 @@
 
 ## Notes
 
-- 领域：Python + deepagents 0.7.x + langchain-openai（opencode.ai/zen/v1, 模型暂用 `deepseek-v4-flash-free`，付费版待充值）
+- 领域：Python + deepagents 0.7.x + langchain-openai（base_url `https://opencode.ai/zen/go/v1`，模型 `deepseek-v4-flash`，go 按月套餐已验证可用）
 - 环境：Windows；conda env `thomas`（Python 3.12.9，`D:/AIPrograms/Annaconda/envs/thomas/python.exe`）；pip + requirements.txt；一期 git init
 - 每个会话前必读：`AGENTS.md`、`docs/specs/2026-08-15-javis-design.md`、`docs/agents/*.md`
 - 强制要求：实现前到 GitHub 找参考；用 docs-langchain MCP 核对 deepagents 最新语法

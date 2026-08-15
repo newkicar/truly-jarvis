@@ -23,3 +23,7 @@
 - ⚠️ **关键阻塞**：该 workspace API **余额为 0**（`401 CreditsError: Insufficient balance`）。充值前付费 `deepseek-v4-flash` 跑不起来。
 - **兜底**：同一 key 可用 `deepseek-v4-flash-free`（tool calling + 结构化输出都支持），但速率限制极严（几次即 429，冷却 5 分钟+），仅适合冒烟测试。
 - **坑**：`.env` 的 `:` 分隔格式 `python-dotenv` 读不了，需自定义解析；响应带非标准 `reasoning_content` 字段但 openai 客户端正常容错。
+
+### 2026-08-15 补充（阻塞已解除）
+用户已切换为 **go 按月套餐**：`.env` base_url → `https://opencode.ai/zen/go/v1`，模型 `deepseek-v4-flash`。
+已实测：基础对话 ✅、tool calling ✅（city=上海 正确解析）。**付费模型可用，R1 阻塞解除。**
