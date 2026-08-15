@@ -33,13 +33,13 @@ AI 时代，agent 最重要的任务不是自动完成工作，而是扩展人�
 | 主 agent 库 | `deepagents==0.7.x`（2026-08 最新） | README 指定；`create_deep_agent()` 原生覆盖子代理/技能/记忆/文件后端/checkpointer |
 | LLM 接入 | `langchain-openai` 的 `ChatOpenAI` | `.env` 是 OpenAI 兼容端点（`https://opencode.ai/zen/go/v1`（go 按月套餐） + deepseek-v4-flash）|
 | 短期记忆 | `langgraph-checkpoint-sqlite` 的 `SqliteSaver` | 本地单机最佳，重启可续；deepagents 官方推荐 |
-| 长期记忆 | deepagents `CompositeBackend` + `StoreBackend` | 框架原生跨线程持久化，避免引入 Mem0/Zep/Letta 等重依赖 |
+| 长期记忆 | deepagents `FilesystemBackend` 指向项目 `memory/` | 文件持久、用户可看可编辑；`memory=` 注入所有 `*.md`（**不用 StoreBackend**，避免引入 Mem0/Zep/Letta 等重依赖）|
 | 知识库访问 | `FilesystemBackend` 指向 Obsidian vault（WIKI 导航式） | 零索引维护、原生工具直接浏览 markdown + wikilink |
 | 互联网搜索 | `tavily-python` + `httpx` + `markdownify` | 对齐官方 deep-research 范式（搜索→抓全文→转 markdown）|
 | 动态子代理 | `langchain-quickjs`（`>=0.3.3`）的 `CodeInterpreterMiddleware` | v0.7 新增；agent 用 JS 编排子代理（fan-out）；quickjs extra 钉 `>=0.3.3` |
 | 定时调度 | `APScheduler` | 内置进程内调度，随主进程跑 |
 | 配置 | `python-dotenv` + `javis.json` | 读取 `.env` 与全局配置 |
-| 文件回退 | git 快照（每 turn 一 commit） | Claude Code / Cursor / opencode 同款做法 |
+| 文件回退 | git 快照（**手动 `/snapshot`**，不用自动每轮 commit） | Claude Code / Cursor / opencode 同款做法 |
 
 ### 2.1 deepagents 关键调研结论（v0.7.6）
 - `create_deep_agent(model, tools, system_prompt, subagents, skills, memory, permissions, backend, middleware, checkpointer, store, ...)`（另有 `response_format` / `state_schema` / `context_schema` 等新增参数；`model` 可直接传 `BaseChatModel` 实例）
@@ -49,7 +49,7 @@ AI 时代，agent 最重要的任务不是自动完成工作，而是扩展人�
 - 记忆注入：`memory=[...]` 指向文件（始终注入）
 - 后端：`StateBackend`（默认）/ `FilesystemBackend` / `LocalShellBackend` / `StoreBackend` / `CompositeBackend` / `ContextHubBackend`
 - 中间件：retry / tool_error / model_fallback / call_limit / summarization / human-in-the-loop 为 **langchain 预置中间件**，需显式 `middleware=[...]` 传入（deepagents 内置栈另有 SkillsMiddleware / FilesystemMiddleware / SubAgentMiddleware 等）
-- 长短期记忆：短期=`checkpointer`；长期=`CompositeBackend` 把 `/memories/` 路由到 `StoreBackend`（`store=` 传给 `create_deep_agent`）
+- 长短期记忆：短期=`checkpointer`；长期=项目 `memory/*.md`，`memory=` 注入 + `/memories/` 路由到 `FilesystemBackend`（**不用 StoreBackend**，文件持久且用户可编辑）
 - ⚠️ 兼容版本：0.7.6 要求 `langchain>=1.3.14`、`langchain-core>=1.5.0`、`langchain-quickjs>=0.3.3`（本机旧版需升级）
 
 ---
@@ -119,22 +119,20 @@ TAVILY_KEY=tvly-dev-...
 
 ### 5.2 实现方法
 ```python
-from deepagents.backends import CompositeBackend, StateBackend, FilesystemBackend, StoreBackend
-from langgraph.store.memory import InMemoryStore
+from deepagents.backends import CompositeBackend, StateBackend, FilesystemBackend
 
 backend = CompositeBackend(
     default=StateBackend(),   # 内部数据（/large_tool_results/ 等）走临时 state，不落盘
     routes={
         "/workspace/": FilesystemBackend(root_dir=r"<项目绝对路径>", virtual_mode=True),
         "/vault/":     FilesystemBackend(root_dir=config.obsidian_vault, virtual_mode=True),
-        "/memories/":  StoreBackend(namespace=lambda _rt: ("memories",)),
+        "/memories/":  FilesystemBackend(root_dir=config.memory_dir, virtual_mode=True),
     },
 )
-store = InMemoryStore()   # store 传给 create_deep_agent，不传给 backend
 ```
 - `root_dir` 必须是**绝对路径**（Windows 反斜杠或 `pathlib`）；`virtual_mode=True` 启用路径沙箱。
 - 检索流程（写进 researcher system_prompt）：`grep` 命中关键词 → `read_file` 读笔记 → 顺 **backlink** 追关联笔记 → 再读 → 综合。
-- 回写：`knowledge_keeper` 用 `write_file` 写新笔记，用 `edit_file` 补 wikilink。
+- 回写：`knowledge_keeper` 用 `write_file` 在 `/vault/Inbox/` **新增**带 wikilink 的笔记（**只新增，绝不修改/删除既有笔记**；wikilink 仅关联确实存在的笔记，不编造）。用户在 Obsidian 审核后手动归档。
 - 升级路径：同路径加向量索引工具做语义召回，`grep` 与语义结果合并去重，即「导航 + 增量 RAG 增强」。
 
 ---
@@ -146,12 +144,12 @@ store = InMemoryStore()   # store 传给 create_deep_agent，不传给 backend
 | 类型 | 载体 | deepagents 实现 |
 |---|---|---|
 | 短期（会话内） | SQLite | `checkpointer=SqliteSaver`（`checkpoints.sqlite`）|
-| 长期·信息记忆 | 项目 `memory/*.md` | `memory=[...]` 注入 + `/memories/` 路由到 `StoreBackend`（`store=` 传给 `create_deep_agent`，跨线程持久）|
+| 长期·信息记忆 | 项目 `memory/*.md` | `memory=[...]` 注入所有 `*.md`（除 README）+ `/memories/` 路由到 `FilesystemBackend`（文件持久、用户可看可编辑；**不用 StoreBackend**）|
 | 长期·知识 | Obsidian vault | `FilesystemBackend` 读写（WIKI 导航）|
 
-**记忆 vs 知识分流规则**（写入主代理 system_prompt）：
-- `事实/概念/学习成果 → /vault/`
-- `偏好/身份/决策 → /memories/`
+**记忆 vs 知识分流规则**：
+- `事实/概念/学习成果 → /vault/`（知识，写经 knowledge_keeper 到 `/vault/Inbox/`）
+- `偏好/身份/决策 → memory/*.md`（信息记忆，`memory=` 注入，用户可编辑）
 
 ---
 
@@ -246,7 +244,7 @@ const r = await task({
 | 层 | 机制 | 覆盖范围 |
 |---|---|---|
 | **会话/任务回退** | LangGraph checkpointer（原生，无需 git） | 全部对话与 agent 状态 |
-| **文件状态回退** | git 快照（每 turn 一 commit） | **仅项目目录**（代码 + `memory/`）|
+| **文件状态回退** | git 快照（**手动 `/snapshot`**） | **仅项目目录**（代码 + `memory/`）|
 
 ### 10.2 会话回退（原生，thread_id + checkpoint_id）
 - `session_id = thread_id`，`task_id = checkpoint_id`（每个 super-step 一个）
@@ -297,7 +295,7 @@ truly_Javis/
 | 阶段 | 范围 | 验收 |
 |---|---|---|
 | **一期（MVP）** | 主代理 + researcher（指定检索，直接 task() 委派）+ WIKI 导航知识库 + SqliteSaver 短期记忆（`langgraph-checkpoint-sqlite`，`SqliteSaver.from_conn_string("checkpoints.sqlite")`）+ 会话回退（/history /replay /fork /sessions）+ javis.json + Tavily | 问「调研 XXX」→ 搜索+检索+带引用总结；问「笔记里 YYY」→ vault 命中；重启续上下文；可回退历史会话 |
-| **二期** | 动态子代理 fan-out（CodeInterpreterMiddleware，先实测 deepseek-v4-flash 写 JS）+ knowledge_keeper 回写 + APScheduler 定时检索 + 长期记忆 StoreBackend + git 文件回退（/rollback）+ **事件流式输出（event streaming）** | 定时自动检索并回写 Obsidian；偏好跨会话记忆；多角度并行研究；文件可回退；CLI 实时可见子代理/工具/回答流式输出（见票 11） |
+| **二期** | 动态子代理 fan-out（CodeInterpreterMiddleware，先实测 deepseek-v4-flash 写 JS）+ knowledge_keeper 回写 + APScheduler 定时检索 + 长期记忆（memory/ FilesystemBackend）+ git 文件回退（/rollback）+ **事件流式输出（event streaming）** | 定时自动检索并回写 Obsidian；偏好跨会话记忆（memory/*.md 注入）；多角度并行研究；文件可回退；CLI 实时可见子代理/工具/回答流式输出（见票 11） |
 | **三期** | executor + LocalShellBackend + skill/mcp 扩展接口 + 增量 RAG 增强 + vault 回退增强（可选） | 可执行任务；可安装外部 skill/mcp；语义检索增强 |
 
 ---
@@ -327,7 +325,7 @@ truly_Javis/
 - [x] 定时检索自动触发并回写 Obsidian
 - [x] knowledge_keeper 知识沉淀（对话中精选知识 → 带 wikilink 笔记写入 /vault/Inbox/，只新增不改动）
 - [x] 多角度并行研究（fan-out）
-- [ ] 用户偏好跨会话记忆（StoreBackend）
+- [x] 用户偏好跨会话记忆（`memory/*.md` 注入，FilesystemBackend）
 - [x] git 文件回退（`/rollback`）可用
 - [x] 事件流式输出（`stream_events` v3）：子代理/工具调用/最终回答实时可见，工具失败能看到 error
 

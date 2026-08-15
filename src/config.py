@@ -39,7 +39,6 @@ class Config:
     schedules_dir: Path
     skills: tuple[Path, ...]
     mcps: tuple[str, ...]
-    schedules: tuple[dict, ...]
 
 
 def parse_env_text(text: str) -> dict[str, str]:
@@ -103,7 +102,6 @@ def load_config(env_file: Path | None = None, json_file: Path | None = None) -> 
     schedules_dir = (root / data.get("schedules_dir", "schedules")).resolve()
     skills = tuple(Path(s).resolve() for s in data.get("skills", []))
     mcps = tuple(data.get("mcps", []))
-    schedules = tuple(data.get("schedules", []))
 
     return Config(
         base_url=base_url,
@@ -116,5 +114,4 @@ def load_config(env_file: Path | None = None, json_file: Path | None = None) -> 
         schedules_dir=schedules_dir,
         skills=skills,
         mcps=mcps,
-        schedules=schedules,
     )

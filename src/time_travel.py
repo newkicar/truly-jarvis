@@ -9,8 +9,9 @@
 """
 import sqlite3
 import subprocess
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 
 DB_NAME = "git_mapping.sqlite"
 
@@ -56,6 +57,16 @@ def _init_db(root: Path):
     return conn
 
 
+@contextmanager
+def _db(root: Path) -> Iterator[sqlite3.Connection]:
+    """打开映射表连接，用完自动关闭。"""
+    conn = _init_db(root)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
 def snapshot(root: Path, thread_id: str, checkpoint_id: str) -> Optional[str]:
     """若项目目录有变更则 git 提交并记录映射，返回 commit_hash；无变更返回 None。"""
     root = Path(root).resolve()
@@ -71,41 +82,32 @@ def snapshot(root: Path, thread_id: str, checkpoint_id: str) -> Optional[str]:
     _git(root, "commit", "-m", f"javis {checkpoint_id}")
     commit_hash = _git(root, "rev-parse", "HEAD")
 
-    conn = _init_db(root)
-    try:
+    with _db(root) as conn:
         conn.execute(
             "INSERT OR REPLACE INTO snapshots VALUES (?, ?, ?, datetime('now'))",
             (checkpoint_id, thread_id, commit_hash),
         )
         conn.commit()
-    finally:
-        conn.close()
     return commit_hash
 
 
 def get_commit(root: Path, checkpoint_id: str) -> Optional[str]:
     """查映射表，返回 checkpoint 对应的 commit_hash。"""
-    conn = _init_db(root)
-    try:
+    with _db(root) as conn:
         row = conn.execute(
             "SELECT commit_hash FROM snapshots WHERE checkpoint_id = ?",
             (checkpoint_id,),
         ).fetchone()
         return row[0] if row else None
-    finally:
-        conn.close()
 
 
 def list_snapshots(root: Path) -> list[tuple[str, str, str]]:
     """列出全部快照 (checkpoint_id, thread_id, commit_hash)。"""
-    conn = _init_db(root)
-    try:
+    with _db(root) as conn:
         return conn.execute(
             "SELECT checkpoint_id, thread_id, commit_hash FROM snapshots "
             "ORDER BY ts DESC"
         ).fetchall()
-    finally:
-        conn.close()
 
 
 def rollback(root: Path, checkpoint_id: str) -> Optional[str]:

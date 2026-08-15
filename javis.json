@@ -9,6 +9,5 @@
   "checkpoint_db": "checkpoints.sqlite",
   "skills": ["skills/"],
   "schedules_dir": "schedules",
-  "mcps": [],
-  "schedules": []
+  "mcps": []
 }

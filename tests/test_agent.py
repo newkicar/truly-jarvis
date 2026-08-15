@@ -8,9 +8,9 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from src.config import Config
 from src.agent import build_agent
 from src.subagents import build_knowledge_keeper
+from conftest import make_fake_config
 
 
 class ToolCapableFake(BaseChatModel):
@@ -33,31 +33,15 @@ class ToolCapableFake(BaseChatModel):
         return "tool-capable-fake"
 
 
-def _fake_config(tmp_path):
-    return Config(
-        base_url="https://fake.example.com/v1",
-        api_key="sk-fake",
-        model_id="fake-model",
-        tavily_key="tvly-fake",
-        vault_path=tmp_path / "vault",
-        memory_dir=tmp_path / "memory",
-        checkpoint_db=tmp_path / "checkpoints.sqlite",
-        schedules_dir=tmp_path / "schedules",
-        skills=(),
-        mcps=(),
-        schedules=(),
-    )
-
-
 def test_build_agent_assembles(tmp_path):
-    cfg = _fake_config(tmp_path)
+    cfg = make_fake_config(tmp_path)
     agent = build_agent(cfg)
     assert agent is not None
     assert callable(getattr(agent, "invoke", None))
 
 
 def test_build_agent_invoke_returns_message(tmp_path):
-    cfg = _fake_config(tmp_path)
+    cfg = make_fake_config(tmp_path)
     model = ToolCapableFake(reply="我是 JARVIS，你好！")
     agent = build_agent(cfg, model=model)
     result = agent.invoke(
@@ -70,7 +54,7 @@ def test_build_agent_invoke_returns_message(tmp_path):
 
 
 def test_build_agent_with_sqlite_checkpointer_assembles(tmp_path):
-    cfg = _fake_config(tmp_path)
+    cfg = make_fake_config(tmp_path)
     from langgraph.checkpoint.sqlite import SqliteSaver
 
     with SqliteSaver.from_conn_string(str(tmp_path / "cp.db")) as checkpointer:
@@ -83,7 +67,7 @@ def test_build_agent_loads_memory_md_files(tmp_path, monkeypatch):
     import src.agent as agent_mod
     from src.agent import create_deep_agent
 
-    cfg = _fake_config(tmp_path)
+    cfg = make_fake_config(tmp_path)
     (cfg.memory_dir).mkdir(parents=True, exist_ok=True)
     (cfg.memory_dir / "README.md").write_text("# 说明\n", encoding="utf-8")
     (cfg.memory_dir / "user-profile.md").write_text("# 用户资料\n- 偏好：表格\n", encoding="utf-8")
@@ -108,7 +92,7 @@ def test_build_agent_registers_researcher_and_knowledge_keeper(tmp_path, monkeyp
     import src.agent as agent_mod
     from src.agent import create_deep_agent
 
-    cfg = _fake_config(tmp_path)
+    cfg = make_fake_config(tmp_path)
     captured = {}
 
     def spy(**kwargs):
@@ -131,3 +115,23 @@ def test_build_knowledge_keeper_shape():
     assert kk["description"]
     assert "/vault/Inbox/" in kk["system_prompt"]
     assert "只新增" in kk["system_prompt"]
+
+
+def test_stream_events_v3_does_not_throw_and_produces_text(tmp_path):
+    """票 11：stream_events(version='v3') 用 fake 模型不抛错，且能产出最终文本。"""
+    cfg = make_fake_config(tmp_path)
+    model = ToolCapableFake(reply="流式回答")
+    agent = build_agent(cfg, model=model)
+
+    stream = agent.stream_events(
+        {"messages": [{"role": "user", "content": "你好"}]},
+        version="v3",
+        config={"configurable": {"thread_id": "stream-test"}, "recursion_limit": 40},
+    )
+
+    text_chunks = []
+    for kind, item in stream.interleave("messages", "tool_calls", "subagents"):
+        if kind == "messages":
+            text_chunks.extend(item.text)
+
+    assert "流式回答" in "".join(text_chunks)

@@ -13,7 +13,6 @@ save_path 前缀约定：
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -79,13 +78,13 @@ def _run_task(agent, config: Config, task: dict):
     file_path.write_text(header + body, encoding="utf-8")
 
 
-def make_scheduler(agent, config: Config, runner: Callable = _run_task) -> BackgroundScheduler:
+def make_scheduler(agent, config: Config) -> BackgroundScheduler:
     """装配调度器：为每个 enabled 任务注册 CronTrigger。"""
     scheduler = BackgroundScheduler()
     for task in load_schedules(config.schedules_dir):
         cron = task.get("cron", "0 8 * * *")
         scheduler.add_job(
-            runner,
+            _run_task,
             CronTrigger.from_crontab(cron),
             args=[agent, config, task],
             id=f"javis-{task['id']}",
