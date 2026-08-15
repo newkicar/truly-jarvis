@@ -4,7 +4,7 @@
 
 **Blocked by:** 07
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] 标准库 `input()` 交互循环，启动即进入对话
 - [ ] 每次提问经主代理 invoke，输出回答（渲染 markdown 为可读文本）

@@ -4,7 +4,7 @@
 
 **Blocked by:** 05（需要 TAVILY_KEY）
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] `tavily_search(query, max_results)`：Tavily 搜索返回 URL 列表
 - [ ] 对值得分析的 URL 用 httpx 抓全文，markdownify 转 markdown

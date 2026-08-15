@@ -4,7 +4,7 @@
 
 **Blocked by:** None — 可以立即开始
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] `.env` 兼容解析：同时支持 `KEY:VALUE` 与 `KEY=VALUE` 两种分隔，键名大小写不敏感，能读出 `BASE_URL` / `API_KEY` / `MODEL_ID` / `TAVILY_KEY`
 - [ ] `javis.json` 读取：模型 env 名映射、`obsidian_vault`、`memory_dir`、`skills`、`mcps`、`schedules`

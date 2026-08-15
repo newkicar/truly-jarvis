@@ -4,7 +4,7 @@
 
 **Blocked by:** 09
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] `smoke_test.py`：真实模型调用（不进 CI，手动触发）
 - [ ] 跑一个「调研」类问题，验证 researcher 被正确委派

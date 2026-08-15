@@ -4,7 +4,7 @@
 
 **Blocked by:** 08
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] `/sessions`：列出历史会话
 - [ ] `/history`：查看当前会话的时间线（checkpoint 列表）

@@ -4,7 +4,7 @@
 
 **Blocked by:** 05, 06
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] `build_agent(config)` 用 `create_deep_agent` 组装，模型为 go 套餐 ChatOpenAI
 - [ ] `CompositeBackend(default=StateBackend(), routes={/workspace/, /vault/, /memories/})`，root_dir 绝对路径 + virtual_mode
