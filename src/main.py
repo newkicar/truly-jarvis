@@ -112,12 +112,20 @@ def _fork(agent, thread_id: str, checkpoint_id: str) -> str:
     base = {"configurable": {"thread_id": thread_id}}
     try:
         target = None
+        found_terminal = False
         for s in agent.get_state_history(config=base):
             if s.config["configurable"].get("checkpoint_id") == checkpoint_id:
-                target = s
+                if s.next:
+                    target = s
+                else:
+                    found_terminal = True
                 break
-            if s.next and target is None:
-                target = s  # 保底：取最近有 pending 节点的 checkpoint
+        if target is None and found_terminal:
+            # 目标 checkpoint 是终态（无待续节点），回退到最近有 pending 的节点
+            for s in agent.get_state_history(config=base):
+                if s.next:
+                    target = s
+                    break
         if target is None:
             return f"分叉失败: 找不到 checkpoint {checkpoint_id}"
         new_config = agent.update_state(
@@ -133,11 +141,19 @@ def _fork(agent, thread_id: str, checkpoint_id: str) -> str:
 
 def main(argv=None) -> int:
     config = load_config()
-    with SqliteSaver.from_conn_string("checkpoints.sqlite") as checkpointer:
+    args = argv[1:] if argv else []
+    thread_id = "default"
+    if "-n" in args or "--new" in args:
+        import uuid
+
+        thread_id = f"session-{uuid.uuid4().hex[:8]}"
+    elif args:
+        thread_id = args[0]
+
+    with SqliteSaver.from_conn_string(str(config.checkpoint_db)) as checkpointer:
         agent = build_agent(config, checkpointer=checkpointer)
-        thread_id = "default"
-        if argv and len(argv) > 1:
-            thread_id = argv[1]
+        if thread_id.startswith("session-"):
+            print(f"新会话: {thread_id}（指定 thread_id 可继续该会话）")
         _run_session(agent, thread_id)
     return 0
 

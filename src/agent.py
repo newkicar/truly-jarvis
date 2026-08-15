@@ -69,11 +69,24 @@ def build_agent(
     tavily_tool = make_tavily_tool(config.tavily_key)
     researcher = build_researcher(tavily_tool)
 
+    memory = [
+        str(f).replace("\\", "/")
+        for f in config.memory_dir.glob("AGENTS.md")
+    ]
+
+    skills = [
+        str(p).replace("\\", "/")
+        for p in config.skills
+        if p.exists() and (p / "SKILL.md").exists()
+    ]
+
     return create_deep_agent(
         model=model,
         backend=_make_backend(config),
         subagents=[researcher],
         system_prompt=MAIN_SYSTEM_PROMPT,
+        memory=memory,
+        skills=skills,
         checkpointer=checkpointer,
         store=store,
         name="javis",

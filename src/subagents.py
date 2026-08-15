@@ -45,13 +45,3 @@ def build_researcher(tavily_search_tool):
         "system_prompt": RESEARCHER_PROMPT,
         "tools": [tavily_search_tool],
     }  # type: ignore[return-value]
-
-
-def build_knowledge_keeper():
-    """knowledge_keeper 骨架（二期启用，一期仅占位）。"""
-    return None
-
-
-def build_executor():
-    """executor 骨架（三期启用，一期仅占位）。"""
-    return None

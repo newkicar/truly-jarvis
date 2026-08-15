@@ -6,6 +6,7 @@
   },
   "obsidian_vault": "E:\\Thomas\\Obsidian_warehouse",
   "memory_dir": "memory",
+  "checkpoint_db": "checkpoints.sqlite",
   "skills": ["skills/"],
   "mcps": [],
   "schedules": []

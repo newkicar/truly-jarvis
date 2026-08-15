@@ -56,6 +56,19 @@ def test_tavily_search_handles_fetch_failure(tmp_path, monkeypatch):
     assert "抓取失败" in out or "https://example.com/a" in out
 
 
+def test_tavily_search_handles_search_failure(monkeypatch):
+    from src import tools
+
+    class BrokenTavily:
+        def search(self, query, max_results):
+            raise RuntimeError("network down")
+
+    monkeypatch.setattr(tools, "TavilyClient", lambda api_key: BrokenTavily())
+
+    out = tools.tavily_search(query="x", max_results=1, tavily_key="tvly-test")
+    assert "搜索失败" in out
+
+
 def test_tavily_search_is_a_tool():
     from src import tools
 

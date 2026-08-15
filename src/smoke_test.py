@@ -22,7 +22,7 @@ def main() -> int:
         question = sys.argv[1]
 
     config = load_config()
-    with SqliteSaver.from_conn_string("checkpoints.sqlite") as checkpointer:
+    with SqliteSaver.from_conn_string(str(config.checkpoint_db)) as checkpointer:
         agent = build_agent(config, checkpointer=checkpointer)
         print(f"\n=== 提问: {question} ===\n")
         result = agent.invoke(
