@@ -327,7 +327,7 @@ truly_Javis/
 - [ ] 定时检索自动触发并回写 Obsidian
 - [ ] 多角度并行研究（fan-out）
 - [ ] 用户偏好跨会话记忆（StoreBackend）
-- [ ] git 文件回退（`/rollback`）可用
+- [x] git 文件回退（`/rollback`）可用
 - [ ] 事件流式输出（`stream_events` v3）：子代理/工具调用/最终回答实时可见，工具失败能看到 error
 
 ### 三期
