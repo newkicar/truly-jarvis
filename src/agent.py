@@ -71,7 +71,8 @@ def build_agent(
 
     memory = [
         str(f).replace("\\", "/")
-        for f in config.memory_dir.glob("AGENTS.md")
+        for f in sorted(config.memory_dir.glob("*.md"))
+        if f.name.lower() != "readme.md"
     ]
 
     skills = [
@@ -83,7 +84,7 @@ def build_agent(
     return create_deep_agent(
         model=model,
         backend=_make_backend(config),
-        subagents=[researcher],
+        subagents=[researcher],  # type: ignore[list-item]
         system_prompt=MAIN_SYSTEM_PROMPT,
         memory=memory,
         skills=skills,

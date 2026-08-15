@@ -74,3 +74,28 @@ def test_build_agent_with_sqlite_checkpointer_assembles(tmp_path):
     with SqliteSaver.from_conn_string(str(tmp_path / "cp.db")) as checkpointer:
         agent = build_agent(cfg, checkpointer=checkpointer)
         assert agent is not None
+
+
+def test_build_agent_loads_memory_md_files(tmp_path, monkeypatch):
+    """memory/ 下的记忆 md（除 README）应作为 memory= 注入 create_deep_agent。"""
+    import src.agent as agent_mod
+    from src.agent import create_deep_agent
+
+    cfg = _fake_config(tmp_path)
+    (cfg.memory_dir).mkdir(parents=True, exist_ok=True)
+    (cfg.memory_dir / "README.md").write_text("# 说明\n", encoding="utf-8")
+    (cfg.memory_dir / "user-profile.md").write_text("# 用户资料\n- 偏好：表格\n", encoding="utf-8")
+
+    captured = {}
+
+    def spy(**kwargs):
+        captured.update(kwargs)
+        return create_deep_agent(**kwargs)
+
+    monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+    model = ToolCapableFake(reply="ok")
+    build_agent(cfg, model=model)
+
+    memory = captured.get("memory", [])
+    assert any(p.endswith("user-profile.md") for p in memory)
+    assert not any(p.endswith("README.md") for p in memory)
