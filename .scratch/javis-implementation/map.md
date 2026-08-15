@@ -21,6 +21,7 @@
 
 - [01-模型接入验证](issues/01-model-compat.md) — tool calling ✅ 结构化输出 ✅；⚠️ workspace API 余额为 0，付费 deepseek-v4-flash 需充值；free 变体仅够冒烟
 - [02-deepagents最新语法核验](issues/02-deepagents-syntax.md) — 最新 0.7.6；本机依赖需升级；设计文档 4 处需修正（CompositeBackend default=StateBackend 等）
+- [03-项目骨架搭建](issues/03-project-scaffold.md) — 已 git init + requirements + src/ 布局 + javis.json；依赖装好、冒烟通过；要点：SqliteSaver.from_conn_string 是 context manager
 - [04-researcher检索心智设计](issues/04-researcher-prompt.md) — researcher 定稿：固定导航式检索 + 搜索抓全文 + vault 优先融合 + 结构化带来源输出 + 双触发路由；⚠️ 发现 vault 已是 git 仓库（与「不纳入 git」决策冲突，待定）
 
 ## Not yet specified
