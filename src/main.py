@@ -7,6 +7,7 @@ import sys
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 
+from src import time_travel
 from src.agent import build_agent
 from src.config import ensure_utf8_stdout, load_config
 
@@ -19,6 +20,8 @@ HELP = """命令：
   /history        查看当前会话时间线
   /replay <id>    从指定 checkpoint 重跑
   /fork <id>      从指定 checkpoint 分叉出新分支
+  /snapshots      列出文件快照（git）
+  /rollback <id>  按 checkpoint 回退项目文件到对应 git 提交
 直接输入文字开始对话。
 """
 
@@ -91,6 +94,21 @@ def _stream_turn(agent, thread_id: str, user_input: str):
             print(final_text)
     print("\n")
 
+    # 文件状态快照：本项目目录有变更则 git 提交并记录映射（对齐本次 checkpoint）
+    try:
+        state = agent.get_state({"configurable": {"thread_id": thread_id}})
+        cid = state.config.get("configurable", {}).get("checkpoint_id")
+        if cid:
+            time_travel.snapshot(_project_root(), thread_id, cid)
+    except Exception:
+        pass
+
+
+def _project_root():
+    from pathlib import Path
+
+    return Path(__file__).resolve().parent.parent
+
 
 def _dispatch_command(agent, thread_id: str, command: str) -> str:
     """处理会话命令，返回要打印的结果文本。"""
@@ -105,6 +123,10 @@ def _dispatch_command(agent, thread_id: str, command: str) -> str:
         return _replay(agent, thread_id, parts[1])
     if cmd == "/fork" and len(parts) == 2:
         return _fork(agent, thread_id, parts[1])
+    if cmd == "/snapshots":
+        return _list_snapshots()
+    if cmd == "/rollback" and len(parts) == 2:
+        return _rollback(parts[1])
     return f"未知命令: {cmd}（/help 查看帮助）"
 
 
@@ -169,6 +191,23 @@ def _fork(agent, thread_id: str, checkpoint_id: str) -> str:
         return f"分叉失败: checkpoint {checkpoint_id}"
     new_thread = new_config["configurable"]["thread_id"]
     return f"已从 {checkpoint_id} 分叉（保留原历史），当前会话 {new_thread}"
+
+
+def _list_snapshots() -> str:
+    rows = time_travel.list_snapshots(_project_root())
+    if not rows:
+        return "（暂无文件快照）"
+    lines = ["文件快照 (checkpoint -> commit):"]
+    for cid, tid, commit in rows:
+        lines.append(f"  - {cid}  [{tid}]  {commit}")
+    return "\n".join(lines)
+
+
+def _rollback(checkpoint_id: str) -> str:
+    commit = time_travel.rollback(_project_root(), checkpoint_id)
+    if commit is None:
+        return f"回退失败: 未找到 checkpoint {checkpoint_id} 的文件快照"
+    return f"已回退项目文件到 {commit}（checkpoint {checkpoint_id}）。注意：需 /replay 对齐会话状态。"
 
 
 def main(argv=None) -> int:
