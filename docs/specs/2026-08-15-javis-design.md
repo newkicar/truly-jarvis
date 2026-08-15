@@ -31,7 +31,7 @@ AI 时代，agent 最重要的任务不是自动完成工作，而是扩展人�
 | 组件 | 选型 | 依据 |
 |---|---|---|
 | 主 agent 库 | `deepagents==0.7.x`（2026-08 最新） | README 指定；`create_deep_agent()` 原生覆盖子代理/技能/记忆/文件后端/checkpointer |
-| LLM 接入 | `langchain-openai` 的 `ChatOpenAI` | `.env` 是 OpenAI 兼容端点（`opencode.ai/zen/v1` + deepseek-v4-flash）|
+| LLM 接入 | `langchain-openai` 的 `ChatOpenAI` | `.env` 是 OpenAI 兼容端点（`https://opencode.ai/zen/go/v1`（go 按月套餐） + deepseek-v4-flash）|
 | 短期记忆 | `langgraph-checkpoint-sqlite` 的 `SqliteSaver` | 本地单机最佳，重启可续；deepagents 官方推荐 |
 | 长期记忆 | deepagents `CompositeBackend` + `StoreBackend` | 框架原生跨线程持久化，避免引入 Mem0/Zep/Letta 等重依赖 |
 | 知识库访问 | `FilesystemBackend` 指向 Obsidian vault（WIKI 导航式） | 零索引维护、原生工具直接浏览 markdown + wikilink |
@@ -101,7 +101,7 @@ AI 时代，agent 最重要的任务不是自动完成工作，而是扩展人�
 
 **`.env` 规范化**（当前为 `:` 分隔小写，实现时统一为标准格式）：
 ```dotenv
-BASE_URL=https://opencode.ai/zen/v1
+BASE_URL=https://opencode.ai/zen/go/v1
 API_KEY=sk-...
 MODEL_ID=deepseek-v4-flash
 TAVILY_KEY=tvly-dev-...
@@ -307,7 +307,7 @@ truly_Javis/
 | 风险 | 对策 |
 |---|---|
 | 动态子代理为 beta，API 可能变 | 一期不用；二期接入前再次核对最新版语法；deepseek-v4-flash 写 JS 能力先实测，不行回退串行 |
-| 模型需支持 tool calling | opencode.ai/zen/v1 为 OpenAI 兼容端点，deepseek 系列支持 tool calling，需冒烟验证 |
+| 模型需支持 tool calling | opencode.ai/zen/go/v1 为 OpenAI 兼容端点（go 套餐），deepseek 系列支持 tool calling，已冒烟验证 |
 | `.env` 当前格式不规范 | 实现时统一为标准 dotenv（`KEY=VALUE`），加 `.gitignore` |
 | vault 大/含附件不便 git | vault 不纳入 git，走 Obsidian 恢复兜底 |
 | 中文检索靠 grep 关键词，无语义 | 以 wikilink/backlink 补关联；二期可选增量 RAG 增强 |
