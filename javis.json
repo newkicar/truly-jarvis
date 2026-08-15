@@ -8,6 +8,7 @@
   "memory_dir": "memory",
   "checkpoint_db": "checkpoints.sqlite",
   "skills": ["skills/"],
+  "schedules_dir": "schedules",
   "mcps": [],
   "schedules": []
 }

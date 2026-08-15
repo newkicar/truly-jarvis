@@ -89,14 +89,12 @@ AI 时代，agent 最重要的任务不是自动完成工作，而是扩展人�
     "api_key_env": "API_KEY",
     "model_id_env": "MODEL_ID"
   },
-  "obsidian_vault": "E:\\Thomas\\Obsidian_warehouse",  // 可改、可增（多个目录）
+"obsidian_vault": "E:\\Thomas\\Obsidian_warehouse",  // 可改、可增（多个目录）
   "memory_dir": "memory",            // 信息记忆（用户偏好/行业）→ 项目目录
+  "schedules_dir": "schedules",      // 定时任务配置目录（每任务一个 JSON，二期）
   "skills": ["skills/"],             // 已安装 skill（渐进式披露）
   "mcps": [],                        // 已安装 MCP server
-  "schedules": [                     // 定时检索任务（二期）
-    { "id": "tech-daily", "topic": "大模型行业动态", "cron": "0 8 * * *", "output": "Inbox/" }
-  ]
-}
+  "schedules": []                    // 兼容旧字段（二期用 schedules/ 目录替代）
 ```
 
 **`.env` 规范化**（当前为 `:` 分隔小写，实现时统一为标准格式）：
@@ -171,11 +169,13 @@ store = InMemoryStore()   # store 传给 create_deep_agent，不传给 backend
 
 ### 7.2 定时检索流程（二期，APScheduler）
 ```
-APScheduler 按 javis.json 的 schedules 触发
-→ 调用同一 researcher 子代理（复用，无重复代码）
-→ knowledge_keeper 自动回写 Obsidian 的 Inbox/ 目录
+schedules/<任务>.json 配置（时间/任务/保存路径/要求）
+→ src/scheduler.py 启动时扫描注册 CronTrigger
+→ 到点调同一 researcher 管道（复用，无重复代码）
+→ 结果按 save_path 写文件（vault:Inbox/ 等）
 ```
 要点：定时任务与指定检索**共用同一检索管道**，调度器只负责「何时触发 + 写哪」。
+任务配置**外置为独立 JSON**（每任务一文件，增删 = 加删文件），字段：`id/enabled/cron/task/save_path/requirements`。save_path 前缀约定 `vault:`（相对 vault）、`workspace:`（相对项目）。仅进程内调度，随 CLI 启动。
 
 ---
 
@@ -324,7 +324,7 @@ truly_Javis/
 - [x] `/sessions` `/history` `/replay` `/fork` 会话回退可用
 
 ### 二期
-- [ ] 定时检索自动触发并回写 Obsidian
+- [x] 定时检索自动触发并回写 Obsidian
 - [ ] 多角度并行研究（fan-out）
 - [ ] 用户偏好跨会话记忆（StoreBackend）
 - [x] git 文件回退（`/rollback`）可用

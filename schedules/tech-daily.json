@@ -1,0 +1,8 @@
+{
+  "id": "tech-daily",
+  "enabled": true,
+  "cron": "0 8 * * *",
+  "task": "调研国内 AI 大模型行业最新动态",
+  "save_path": "vault:Inbox/",
+  "requirements": "重点关注模型发布、融资、政策、商业化。输出带来源的中文总结（每条要点标注来源 URL 或 /vault/ 路径），不确定的标「待核实」。"
+}

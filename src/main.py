@@ -7,7 +7,7 @@ import sys
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-from src import time_travel
+from src import scheduler, time_travel
 from src.agent import build_agent
 from src.config import ensure_utf8_stdout, load_config
 
@@ -230,7 +230,13 @@ def main(argv=None) -> int:
         agent = build_agent(config, checkpointer=checkpointer)
         if thread_id.startswith("session-"):
             print(f"新会话: {thread_id}（指定 thread_id 可继续该会话）")
-        _run_session(agent, thread_id)
+
+        sched = scheduler.make_scheduler(agent, config)
+        sched.start()
+        try:
+            _run_session(agent, thread_id)
+        finally:
+            sched.shutdown(wait=False)
     return 0
 
 

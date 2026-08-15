@@ -36,6 +36,7 @@ class Config:
     vault_path: Path
     memory_dir: Path
     checkpoint_db: Path
+    schedules_dir: Path
     skills: tuple[Path, ...]
     mcps: tuple[str, ...]
     schedules: tuple[dict, ...]
@@ -99,6 +100,7 @@ def load_config(env_file: Path | None = None, json_file: Path | None = None) -> 
     vault = Path(os.path.expandvars(data["obsidian_vault"])).resolve()
     memory = (root / data.get("memory_dir", "memory")).resolve()
     checkpoint_db = (root / data.get("checkpoint_db", "checkpoints.sqlite")).resolve()
+    schedules_dir = (root / data.get("schedules_dir", "schedules")).resolve()
     skills = tuple(Path(s).resolve() for s in data.get("skills", []))
     mcps = tuple(data.get("mcps", []))
     schedules = tuple(data.get("schedules", []))
@@ -111,6 +113,7 @@ def load_config(env_file: Path | None = None, json_file: Path | None = None) -> 
         vault_path=vault,
         memory_dir=memory,
         checkpoint_db=checkpoint_db,
+        schedules_dir=schedules_dir,
         skills=skills,
         mcps=mcps,
         schedules=schedules,

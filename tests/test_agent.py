@@ -41,6 +41,7 @@ def _fake_config(tmp_path):
         vault_path=tmp_path / "vault",
         memory_dir=tmp_path / "memory",
         checkpoint_db=tmp_path / "checkpoints.sqlite",
+        schedules_dir=tmp_path / "schedules",
         skills=(),
         mcps=(),
         schedules=(),
