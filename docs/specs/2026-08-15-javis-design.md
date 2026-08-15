@@ -317,11 +317,11 @@ truly_Javis/
 ## 14. 验收标准汇总
 
 ### 一期（MVP）
-- [ ] CLI 启动交互
-- [ ] 问「帮我调研 XXX 最新进展」→ researcher 搜索互联网 + 检索 vault → 带引用 markdown 总结
-- [ ] 问「我笔记里关于 YYY 的内容」→ 原生工具在 `/vault/` 命中并回答
-- [ ] 重启后对话上下文仍在（SqliteSaver）
-- [ ] `/sessions` `/history` `/replay` `/fork` 会话回退可用
+- [x] CLI 启动交互
+- [x] 问「帮我调研 XXX 最新进展」→ researcher 搜索互联网 + 检索 vault → 带引用 markdown 总结
+- [x] 问「我笔记里关于 YYY 的内容」→ 原生工具在 `/vault/` 命中并回答
+- [x] 重启后对话上下文仍在（SqliteSaver）
+- [x] `/sessions` `/history` `/replay` `/fork` 会话回退可用
 
 ### 二期
 - [ ] 定时检索自动触发并回写 Obsidian
