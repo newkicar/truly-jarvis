@@ -15,7 +15,7 @@ from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, FilesystemBackend, StateBackend
 
 from src.config import Config
-from src.subagents import build_researcher
+from src.subagents import build_knowledge_keeper, build_researcher
 from src.tools import make_tavily_tool
 
 MAIN_SYSTEM_PROMPT = """你是 JARVIS，一个个人 AI 助手，专注扩展用户的心智。
@@ -23,6 +23,7 @@ MAIN_SYSTEM_PROMPT = """你是 JARVIS，一个个人 AI 助手，专注扩展用
 ## 能力
 - 调研/检索类问题（最新动态、行业资讯、外部事实）→ 委派 researcher 子代理。
 - 「我的笔记/知识库」类问题 → 委派 researcher 检索本地 Obsidian（/vault/）。
+- 对话中产生了「值得长期保留的新知识」（研究结论、已核实的行业动态、用户要求记住的事实）→ 委派 knowledge_keeper 子代理整理成带 wikilink 的笔记写入 /vault/Inbox/。
 - 闲聊、纯知识问答、与本地/时效无关的问题 → 直接回答，不委派。
 
 ## 输出
@@ -68,6 +69,7 @@ def build_agent(
 
     tavily_tool = make_tavily_tool(config.tavily_key)
     researcher = build_researcher(tavily_tool)
+    knowledge_keeper = build_knowledge_keeper()
 
     memory = [
         str(f).replace("\\", "/")
@@ -84,7 +86,7 @@ def build_agent(
     return create_deep_agent(
         model=model,
         backend=_make_backend(config),
-        subagents=[researcher],  # type: ignore[list-item]
+        subagents=[researcher, knowledge_keeper],  # type: ignore[list-item]
         system_prompt=MAIN_SYSTEM_PROMPT,
         memory=memory,
         skills=skills,

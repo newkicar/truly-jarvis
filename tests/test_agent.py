@@ -10,6 +10,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 
 from src.config import Config
 from src.agent import build_agent
+from src.subagents import build_knowledge_keeper
 
 
 class ToolCapableFake(BaseChatModel):
@@ -100,3 +101,33 @@ def test_build_agent_loads_memory_md_files(tmp_path, monkeypatch):
     memory = captured.get("memory", [])
     assert any(p.endswith("user-profile.md") for p in memory)
     assert not any(p.endswith("README.md") for p in memory)
+
+
+def test_build_agent_registers_researcher_and_knowledge_keeper(tmp_path, monkeypatch):
+    """create_deep_agent 的 subagents 应同时含 researcher 与 knowledge_keeper。"""
+    import src.agent as agent_mod
+    from src.agent import create_deep_agent
+
+    cfg = _fake_config(tmp_path)
+    captured = {}
+
+    def spy(**kwargs):
+        captured.update(kwargs)
+        return create_deep_agent(**kwargs)
+
+    monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+    model = ToolCapableFake(reply="ok")
+    build_agent(cfg, model=model)
+
+    subagents = captured.get("subagents", [])
+    names = {s.get("name") for s in subagents}
+    assert {"researcher", "knowledge_keeper"} <= names
+
+
+def test_build_knowledge_keeper_shape():
+    """knowledge_keeper 子代理应含 name/description/system_prompt，且约束只写 Inbox。"""
+    kk = build_knowledge_keeper()
+    assert kk["name"] == "knowledge_keeper"
+    assert kk["description"]
+    assert "/vault/Inbox/" in kk["system_prompt"]
+    assert "只新增" in kk["system_prompt"]

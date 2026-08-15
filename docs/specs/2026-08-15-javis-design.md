@@ -325,10 +325,11 @@ truly_Javis/
 
 ### 二期
 - [x] 定时检索自动触发并回写 Obsidian
+- [x] knowledge_keeper 知识沉淀（对话中精选知识 → 带 wikilink 笔记写入 /vault/Inbox/，只新增不改动）
 - [ ] 多角度并行研究（fan-out）
 - [ ] 用户偏好跨会话记忆（StoreBackend）
 - [x] git 文件回退（`/rollback`）可用
-- [ ] 事件流式输出（`stream_events` v3）：子代理/工具调用/最终回答实时可见，工具失败能看到 error
+- [x] 事件流式输出（`stream_events` v3）：子代理/工具调用/最终回答实时可见，工具失败能看到 error
 
 ### 三期
 - [ ] executor 执行本地任务
