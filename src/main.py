@@ -20,6 +20,7 @@ HELP = """命令：
   /history        查看当前会话时间线
   /replay <id>    从指定 checkpoint 重跑
   /fork <id>      从指定 checkpoint 分叉出新分支
+  /snapshot       记录当前文件状态到当前 checkpoint（git 快照）
   /snapshots      列出文件快照（git）
   /rollback <id>  按 checkpoint 回退项目文件到对应 git 提交
 直接输入文字开始对话。
@@ -94,15 +95,6 @@ def _stream_turn(agent, thread_id: str, user_input: str):
             print(final_text)
     print("\n")
 
-    # 文件状态快照：本项目目录有变更则 git 提交并记录映射（对齐本次 checkpoint）
-    try:
-        state = agent.get_state({"configurable": {"thread_id": thread_id}})
-        cid = state.config.get("configurable", {}).get("checkpoint_id")
-        if cid:
-            time_travel.snapshot(_project_root(), thread_id, cid)
-    except Exception:
-        pass
-
 
 def _project_root():
     from pathlib import Path
@@ -123,6 +115,8 @@ def _dispatch_command(agent, thread_id: str, command: str) -> str:
         return _replay(agent, thread_id, parts[1])
     if cmd == "/fork" and len(parts) == 2:
         return _fork(agent, thread_id, parts[1])
+    if cmd == "/snapshot":
+        return _snapshot(agent, thread_id)
     if cmd == "/snapshots":
         return _list_snapshots()
     if cmd == "/rollback" and len(parts) == 2:
@@ -191,6 +185,17 @@ def _fork(agent, thread_id: str, checkpoint_id: str) -> str:
         return f"分叉失败: checkpoint {checkpoint_id}"
     new_thread = new_config["configurable"]["thread_id"]
     return f"已从 {checkpoint_id} 分叉（保留原历史），当前会话 {new_thread}"
+
+
+def _snapshot(agent, thread_id: str) -> str:
+    state = agent.get_state({"configurable": {"thread_id": thread_id}})
+    cid = state.config.get("configurable", {}).get("checkpoint_id")
+    if not cid:
+        return "快照失败: 无法确定当前 checkpoint"
+    commit = time_travel.snapshot(_project_root(), thread_id, cid)
+    if commit is None:
+        return "项目文件无变更，未产生快照"
+    return f"已记录文件快照: checkpoint {cid} -> {commit}"
 
 
 def _list_snapshots() -> str:

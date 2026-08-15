@@ -15,8 +15,8 @@
 
 ## 关键决策
 
-- **仅变更时快照**：`_has_changes` 为假（纯聊天没改项目文件）则不产生无谓 commit，避免刷爆 git 历史。
-- **语义**：checkpoint 映射到「该轮结束后的文件状态」——回退到 c1 = 恢复 c1 轮结束时的文件。
+- **手动快照**：不用「每轮自动 commit」（会刷爆 git 历史，用户不接受）。改为用户主动 `/snapshot` 时，把当前项目文件状态 git 提交并记录到当前 checkpoint。
+- **语义**：checkpoint 映射到「手动打快照时的文件状态」——回退到 c1 = 恢复打快照时的文件。
 - **映射库 sqlite**：`git_mapping.sqlite` 被 `*.sqlite` gitignore 覆盖，不随快照提交。
 
 ## 验收
@@ -24,5 +24,5 @@
 - [x] `snapshot` 有变更才提交并记录映射、无变更返回 None
 - [x] `rollback` 按 checkpoint 恢复文件到对应提交；未知 id 返回 None
 - [x] `list_snapshots` 正确列出
-- [x] CLI `/snapshots` `/rollback` 命令可用
+- [x] CLI `/snapshot` `/snapshots` `/rollback` 命令可用（手动，无自动 commit）
 - [x] 单测：tests/test_time_travel.py（3 个）

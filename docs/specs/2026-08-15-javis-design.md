@@ -257,11 +257,11 @@ const r = await task({
 - 子代理：Python 侧 `CompiledSubAgent` 只有 `name/description/runnable`，无 `checkpointer` 参数；子代理内部 time travel **不保证**，一期按「子代理算单个 checkpoint」实现
 - CLI 命令：`/sessions`、`/history`、`/replay <id>`、`/fork <id>`
 
-### 10.3 文件回退（git 快照，每 turn 一 commit）
+### 10.3 文件回退（git 快照，**手动**触发）
 - **纳入 git**：项目目录（`src/`、`memory/`、`javis.json` 等）
-- **每次 turn 结束**：若有文件变更 → `git add -A && git commit -m "javis <checkpoint_id>"`
-- **映射表**（项目内 SQLite）：`{thread_id, checkpoint_id, commit_hash, timestamp}`
-- **回退**：会话 `update_state`/replay 回退 + 文件 `git reset --hard <对应 commit>`，两者对齐
+- **手动 `/snapshot`**：用户主动触发时，若项目目录有文件变更 → `git add -A && git commit -m "javis <checkpoint_id>"`（不自动每轮 commit，避免刷爆历史）
+- **映射表**（项目内 SQLite）：`{thread_id, checkpoint_id, commit_hash, timestamp}`，`git_mapping.sqlite` 被 gitignore
+- **回退**：会话 `update_state`/replay 回退 + 文件 `/rollback <checkpoint_id>` → `git reset --hard <对应 commit>`，两者对齐
 
 ### 10.4 Obsidian vault 处理（不纳入 git）
 - vault 文件写入**不参与 git 回退**，依赖 Obsidian 自带 **File Recovery（文件恢复）插件**兜底。
