@@ -69,3 +69,59 @@ def test_make_scheduler_registers_jobs(tmp_path):
     sched = scheduler.make_scheduler(object(), cfg)
     assert isinstance(sched, BackgroundScheduler)
     assert sched.get_job("javis-a") is not None
+
+
+def test_register_jobs_returns_list(tmp_path):
+    cfg = make_fake_config(tmp_path)
+    _write_schedule(cfg.schedules_dir, "a.json", {"id": "a", "task": "t", "cron": "0 8 * * *"})
+    _write_schedule(cfg.schedules_dir, "b.json", {"id": "b", "task": "t", "cron": "0 8 * * *"})
+    sched = scheduler.make_scheduler(object(), cfg)
+    reg = scheduler.register_jobs(sched, object(), cfg)
+    assert sched.get_job("javis-a") is not None
+    assert sched.get_job("javis-b") is not None
+    assert len(reg) == 2
+    assert "a" in reg[0] and "b" in reg[1]
+
+
+def test_reload_schedules_replaces_cron(tmp_path):
+    from datetime import datetime, timezone
+
+    cfg = make_fake_config(tmp_path)
+    _write_schedule(cfg.schedules_dir, "a.json", {"id": "a", "task": "t", "cron": "*/1 * * * *"})
+    sched = scheduler.make_scheduler(object(), cfg)
+    now = datetime.now(timezone.utc)
+    before = sched.get_job("javis-a").trigger.get_next_fire_time(None, now)
+
+    _write_schedule(cfg.schedules_dir, "a.json", {"id": "a", "task": "t", "cron": "0 8 * * *"})
+    msg = scheduler.reload_schedules(sched, object(), cfg)
+    after = sched.get_job("javis-a").trigger.get_next_fire_time(None, now)
+    assert before != after
+    assert "已重载" in msg
+    assert "a" in msg
+
+
+def test_run_task_error_writes_error_marker(tmp_path):
+    cfg = make_fake_config(tmp_path)
+
+    class BoomAgent:
+        def invoke(self, input, config=None):
+            raise RuntimeError("网络失败")
+
+    task = {"id": "err", "task": "调研 X", "save_path": "vault:Inbox/"}
+    try:
+        scheduler._run_task(BoomAgent(), cfg, task)
+        assert False, "应当抛异常"
+    except RuntimeError:
+        pass
+    err_files = list((cfg.vault_path / "Inbox").glob("err-*.error.md"))
+    assert len(err_files) == 1
+    assert "网络失败" in err_files[0].read_text(encoding="utf-8")
+
+
+def test_describe_cron():
+    assert scheduler.describe_cron("0 8 * * *") == "每天 08:00"
+    assert scheduler.describe_cron("*/5 * * * *") == "每 5 分钟"
+    assert scheduler.describe_cron("30 14 * * *") == "每天 14:30"
+    assert scheduler.describe_cron("0 */2 * * *") == "每 2 小时"
+    assert scheduler.describe_cron("0 0 */2 * *") == "每 2 天"
+    assert scheduler.describe_cron("0 8 * * 1") == "0 8 * * 1"

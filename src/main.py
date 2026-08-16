@@ -23,6 +23,7 @@ HELP = """命令：
   /snapshot       记录当前文件状态到当前 checkpoint（git 快照）
   /snapshots      列出文件快照（git）
   /rollback <id>  按 checkpoint 回退项目文件到对应 git 提交
+  /reload-schedules  重载 schedules/*.json 定时任务配置（无需重启）
 直接输入文字开始对话。
 """
 
@@ -35,8 +36,8 @@ def _render(messages) -> str:
     return ""
 
 
-def _run_session(agent, thread_id: str):
-    """交互循环。agent 已装配，thread_id 即会话标识。"""
+def _run_session(agent, thread_id: str, sched=None):
+    """交互循环。agent 已装配，thread_id 即会话标识。sched 为定时调度器。"""
     print("JARVIS 就绪。输入 /help 查看命令，/exit 退出。")
     while True:
         try:
@@ -54,7 +55,7 @@ def _run_session(agent, thread_id: str):
             continue
 
         if user_input.startswith("/"):
-            print(_dispatch_command(agent, thread_id, user_input))
+            print(_dispatch_command(agent, thread_id, user_input, sched))
             continue
 
         _stream_turn(agent, thread_id, user_input)
@@ -102,7 +103,7 @@ def _project_root():
     return Path(__file__).resolve().parent.parent
 
 
-def _dispatch_command(agent, thread_id: str, command: str) -> str:
+def _dispatch_command(agent, thread_id: str, command: str, sched=None) -> str:
     """处理会话命令，返回要打印的结果文本。"""
     parts = command.split()
     cmd = parts[0]
@@ -121,6 +122,12 @@ def _dispatch_command(agent, thread_id: str, command: str) -> str:
         return _list_snapshots()
     if cmd == "/rollback" and len(parts) == 2:
         return _rollback(parts[1])
+    if cmd == "/reload-schedules":
+        if sched is None:
+            return "调度器未启动，无法重载"
+        import src.scheduler as sched_mod
+
+        return sched_mod.reload_schedules(sched, agent, load_config())
     return f"未知命令: {cmd}（/help 查看帮助）"
 
 
@@ -233,8 +240,15 @@ def main(argv=None) -> int:
 
         sched = scheduler.make_scheduler(agent, config)
         sched.start()
+        jobs = sched.get_jobs()
+        if jobs:
+            print(f"已注册 {len(jobs)} 个定时任务:")
+            for job in jobs:
+                print(f"  - {job.id.removeprefix('javis-')}（{job.trigger}）")
+        else:
+            print("（无定时任务）")
         try:
-            _run_session(agent, thread_id)
+            _run_session(agent, thread_id, sched)
         finally:
             sched.shutdown(wait=False)
     return 0

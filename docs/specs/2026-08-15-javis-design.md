@@ -174,6 +174,7 @@ schedules/<任务>.json 配置（时间/任务/保存路径/要求）
 ```
 要点：定时任务与指定检索**共用同一检索管道**，调度器只负责「何时触发 + 写哪」。
 任务配置**外置为独立 JSON**（每任务一文件，增删 = 加删文件），字段：`id/enabled/cron/task/save_path/requirements`。save_path 前缀约定 `vault:`（相对 vault）、`workspace:`（相对项目）。仅进程内调度，随 CLI 启动。
+改 `schedules/*.json` 后可用 CLI `/reload-schedules` 重载（无需重启）；任务失败会写 `.error.md` 标记并打印 traceback（绝不静默）。
 
 ---
 
