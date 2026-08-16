@@ -39,6 +39,7 @@ class Config:
     schedules_dir: Path
     skills: tuple[Path, ...]
     mcps: tuple[str, ...]
+    permissions: dict[str, object]
 
 
 def parse_env_text(text: str) -> dict[str, str]:
@@ -114,4 +115,5 @@ def load_config(env_file: Path | None = None, json_file: Path | None = None) -> 
         schedules_dir=schedules_dir,
         skills=skills,
         mcps=mcps,
+        permissions=data.get("permissions", {}),
     )

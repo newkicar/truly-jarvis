@@ -19,4 +19,5 @@ def make_fake_config(tmp_path) -> Config:
         schedules_dir=tmp_path / "schedules",
         skills=(),
         mcps=(),
+        permissions={},
     )

@@ -66,16 +66,16 @@ AI 时代，agent 最重要的任务不是自动完成工作，而是扩展人�
                          task() 委派（隔离上下文）
         ┌──────────────────┬──────────────┬──────────────────┐
    ┌────▼─────┐      ┌──────▼──────┐  ┌────▼───────┐   ┌─────▼──────┐
-   │researcher│      │knowledge_   │  │ executor   │   │ (动态编排)   │
-   │ 心智能力  │      │  keeper     │  │ 自动化能力  │   │ fan-out     │
-   │ 搜索+检索 │      │ 知识管理员   │  │ 执行任务    │   │ workflow    │
-   │ 过滤+总结 │      │ 回写+链接维护 │  │ skill/mcp  │   │            │
+   │researcher│      │knowledge_   │  │ shell 执行  │   │ (动态编排)   │
+   │ 心智能力  │      │  keeper     │  │ (主代理直接) │   │ fan-out     │
+   │ 搜索+检索 │      │ 知识管理员   │  │ execute+审批│   │ workflow    │
+   │ 过滤+总结 │      │ 回写+链接维护 │  │ (见 §9)    │   │            │
    └──────────┘      └─────────────┘  └────────────┘   └────────────┘
 ```
 
 **主代理 system_prompt 要点**：
 - 人格：钢铁侠 JARVIS（冷静、专业、条理、带引用）。
-- 路由规则：检索/学习类 → `task(subagent_type="researcher")`；写知识 → `knowledge_keeper`；执行命令 → `executor`；闲聊/探讨 → 自己答。
+- 路由规则：检索/学习类 → `task(subagent_type="researcher")`；写知识 → `knowledge_keeper`；需要执行 shell 命令 → 主代理直接用 `execute`（经 HITL 审批，见 §9）；闲聊/探讨 → 自己答。
 - 复杂/多角度研究 → 触发动态子代理 fan-out（见 §6.2）。
 
 ---
@@ -94,6 +94,10 @@ AI 时代，agent 最重要的任务不是自动完成工作，而是扩展人�
   "schedules_dir": "schedules",      // 定时任务配置目录（每任务一个 JSON，二期）
   "skills": ["skills/"],             // 已安装 skill（渐进式披露）
   "mcps": [],                        // 已安装 MCP server
+  "permissions": {                   // HITL 审批（对标 opencode permission）
+    "*": "ask",                      // 默认：不配置即每次审批
+    "execute": {"*": "ask", "git *": "allow"}  // 可按命令前缀精细控制
+  }
 ```
 
 **`.env` 规范化**（当前为 `:` 分隔小写，实现时统一为标准格式）：
@@ -123,7 +127,7 @@ from deepagents.backends import CompositeBackend, StateBackend, FilesystemBacken
 backend = CompositeBackend(
     default=StateBackend(),   # 内部数据（/large_tool_results/ 等）走临时 state，不落盘
     routes={
-        "/workspace/": FilesystemBackend(root_dir=r"<项目绝对路径>", virtual_mode=True),
+        "/workspace/": LocalShellBackend(root_dir=r"<项目绝对路径>", virtual_mode=True),  # 含 execute
         "/vault/":     FilesystemBackend(root_dir=config.obsidian_vault, virtual_mode=True),
         "/memories/":  FilesystemBackend(root_dir=config.memory_dir, virtual_mode=True),
     },
@@ -234,7 +238,12 @@ const r = await task({
 - **tools 注册接口**：`create_deep_agent(tools=[...])` 统一挂载自定义工具。
 - **skill 接口**：`skills=[...]` 目录扫描 `SKILL.md`（frontmatter 索引 + 按需加载），技能库目录即扩展点。
 - **mcp 接口**：`mcps` 配置项 → `langchain-mcp-adapters` 加载外部 MCP server 工具，动态并入 `tools`。
-- **二期落地**：`executor` 子代理持 `LocalShellBackend` + 上述工具集，负责「可执行任务」。
+- **执行能力**（三期）：主代理 `/workspace/` 路由用 `LocalShellBackend`（= FilesystemBackend + `execute`），主代理与所有子代理直接具备 shell 执行能力，**不设独立 executor 子代理**。
+- **HITL 审批**（对标 opencode `permission`）：`javis.json` 的 `permissions` 段控制哪些 gated 工具需审批。
+  - `"allow"` = 自动放行 / `"ask"` = 每次审批（默认）/ `"deny"` = 拒绝。
+  - 支持对象形态规则集 `{"*": "ask", "git *": "allow"}`（最后匹配胜出），用于按命令前缀/路径模式精细控制。
+  - 实现：`src/permissions.py` 把配置转成 `create_deep_agent(interrupt_on=...)`；`when` 谓词闭包引用可变 state，「always approve」只改 state + 写回 `javis.json`，无需重建 agent。
+  - CLI 审批交互：`[y]本次放行 [n]拒绝 [e]编辑参数 [a]always approve`（三期 TUI 改为选择式，同 opencode）。
 
 ---
 
@@ -335,6 +344,7 @@ truly_Javis/
 - [x] 事件流式输出（`stream_events` v3）：子代理/工具调用/最终回答实时可见，工具失败能看到 error
 
 ### 三期
-- [ ] executor 执行本地任务
+- [x] 主代理直接 shell 执行能力（`/workspace/` 换 `LocalShellBackend`，不再设独立 executor 子代理）
+- [x] HITL 审批（`javis.json` `permissions`：allow/ask/deny + 规则集；CLI y/n/e/a）
 - [ ] 可安装外部 skill / mcp
 - [ ] 增量 RAG 语义增强

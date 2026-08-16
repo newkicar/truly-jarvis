@@ -101,6 +101,18 @@ def _run_task(agent, config: Config, task: dict):
             {"messages": [{"role": "user", "content": prompt}]},
             config={"configurable": {"thread_id": f"sched-{task['id']}"}, "recursion_limit": 30},
         )
+        # HITL：定时任务无人审批，若触发审批中断则视为失败（不悬挂，明确记录）
+        interrupts = getattr(result, "interrupts", None) or []
+        if interrupts:
+            names = [
+                a.get("name", "?")
+                for i in interrupts
+                for a in (getattr(i, "value", None) or {}).get("action_requests", [])
+            ]
+            raise RuntimeError(
+                f"任务 {task['id']} 触发了需人工审批的操作（{', '.join(names)}），"
+                "定时任务无审批交互，已跳过。可在 javis.json permissions 设为 allow。"
+            )
         texts = [m.content for m in result["messages"] if getattr(m, "type", "") == "ai"]
         if not texts:
             raise RuntimeError(f"任务 {task['id']} 未产出 AI 回答")

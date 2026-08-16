@@ -1,8 +1,8 @@
 # AGENTS.md
 
 ## 项目状态
-- **一期 + 二期 MVP 已实现**（2026-08-15），代码在 `src/`，测试在 `tests/`（41 个单测全绿）。权威设计文档：`docs/specs/2026-08-15-javis-design.md`。
-- 交付：`config.py`(.env 兼容解析+javis.json→Config)、`tools.py`(tavily_search)、`subagents.py`(researcher + knowledge_keeper)、`agent.py`(build_agent)、`scheduler.py`(APScheduler 定时检索)、`time_travel.py`(git 快照回退)、`main.py`(CLI + /exit /sessions /history /replay /fork /snapshot /snapshots /rollback /reload-schedules)、`smoke_test.py`(真模型冒烟，手动)、`tests/_manual/fanout_probe.py`(fan-out 实测探针)。
+- **一期 + 二期 MVP 已实现**（2026-08-15），代码在 `src/`，测试在 `tests/`（50 个单测全绿）。权威设计文档：`docs/specs/2026-08-15-javis-design.md`。
+- 交付：`config.py`(.env 兼容解析+javis.json→Config)、`tools.py`(tavily_search)、`subagents.py`(researcher + knowledge_keeper)、`agent.py`(build_agent)、`scheduler.py`(APScheduler 定时检索)、`time_travel.py`(git 快照回退)、`permissions.py`(HITL 审批，对标 opencode permission)、`main.py`(CLI + /exit /sessions /history /replay /fork /snapshot /snapshots /rollback /reload-schedules + 审批 y/n/e/a)、`smoke_test.py`(真模型冒烟，手动)、`tests/_manual/fanout_probe.py`(fan-out 实测探针)。
 - 实现状态跟踪：本地 issue tracker `.scratch/javis-implementation/`（spec + 票 01-15）。
 
 ## 强制要求（README 约定，缺一不可）
@@ -21,6 +21,7 @@
 - 架构：主代理 + 子代理（researcher / knowledge_keeper / executor）；研究类问题二期用动态子代理 fan-out。
 - Time travel 双层：会话回退 = checkpointer（thread_id + checkpoint_id）；文件回退 = git 快照（仅项目目录，vault 不纳入 git），**手动 `/snapshot` 触发**（不用自动每轮 commit）。
 - **CLI 展示约定**（`/history` 与 `/snapshots`）：只显示「边界点」（`/history` 过滤 source in input/fork/update，去掉 loop 超步骤噪音），从旧到新（最后=最新），每行带人类可读标签 + **短 id（checkpoint 前 13 位 / commit 前 10 位）**；`/replay` `/fork` `/rollback` 均支持短 id 前缀唯一匹配（歧义报错）。定时任务线程 `sched-*` 自动 `delete_thread` 清理，`/sessions` 也过滤，避免污染历史。
+- **HITL 审批**（三期，对标 opencode permission）：主代理 `/workspace/` 路由用 `LocalShellBackend`（主代理+子代理直接有 `execute`，**不设独立 executor 子代理**）。`javis.json` 的 `permissions` 段控制 gated 工具（execute/write_file/edit_file/delete）：`allow`=自动放行、`ask`=每次审批（**默认**，不配置即审批）、`deny`=拒绝；支持对象规则集 `{"*": "ask", "git *": "allow"}`（最后匹配胜出）。实现：`src/permissions.py` 转成 `interrupt_on`，`when` 谓词闭包引用可变 state，「always approve」只改 state + 写回 javis.json（**无需重建 agent**）。CLI 审批：`[y]本次放行 [n]拒绝 [e]编辑参数 [a]always approve(q 放弃本轮)`；三期 TUI 改选择式。
 
 ## 环境与配置陷阱
 - `.env` 当前是 `:` 分隔、小写键格式。`config.py` 的 `parse_env_text` 已兼容 `:` 与 `=` 两种分隔、键大小写不敏感；键名：`BASE_URL` / `API_KEY` / `MODEL_ID` / `TAVILY_KEY`。`.env`、`checkpoints.sqlite` 已在 `.gitignore`。

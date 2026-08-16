@@ -10,6 +10,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from src import scheduler, time_travel
 from src.agent import build_agent
 from src.config import ensure_utf8_stdout, load_config
+from src.permissions import build_permission_interrupts
 
 ensure_utf8_stdout()
 
@@ -25,6 +26,8 @@ HELP = """命令：
   /rollback <id>  按 checkpoint 回退项目文件到对应 git 提交
   /reload-schedules  重载 schedules/*.json 定时任务配置（无需重启）
 直接输入文字开始对话。
+审批操作时: [y]本次放行 [n]拒绝 [e]编辑参数 [a]always approve(q 放弃本轮)；
+也可直接编辑 javis.json 的 permissions 段（allow/ask/deny）。
 """
 
 
@@ -36,7 +39,7 @@ def _render(messages) -> str:
     return ""
 
 
-def _run_session(agent, thread_id: str, sched=None):
+def _run_session(agent, thread_id: str, sched=None, permission_state: dict | None = None):
     """交互循环。agent 已装配，thread_id 即会话标识。sched 为定时调度器。"""
     print("JARVIS 就绪。输入 /help 查看命令，/exit 退出。")
     while True:
@@ -62,43 +65,131 @@ def _run_session(agent, thread_id: str, sched=None):
                 print(f"已切换到会话 {thread_id}")
             continue
 
-        _stream_turn(agent, thread_id, user_input)
+        _stream_turn(agent, thread_id, user_input, permission_state)
 
 
-def _stream_turn(agent, thread_id: str, user_input: str):
+def _stream_turn(agent, thread_id: str, user_input: str, permission_state: dict | None = None):
     """用 event streaming(v3) 跑一轮对话，实时打印子代理/工具/最终回答。
 
-    相比 invoke() 全程静默，流式让用户看到「在干嘛」，长时间无响应可定位。
+    遇到 HITL 审批中断时，暂停并让用户在终端决定（y/a/n/e）。
     """
-    print()
-    stream = agent.stream_events(
-        {"messages": [{"role": "user", "content": user_input}]},
-        version="v3",
-        config={"configurable": {"thread_id": thread_id}, "recursion_limit": 30},
-    )
+    from langgraph.types import Command
 
-    consumed = 0
-    for kind, item in stream.interleave("messages", "tool_calls", "subagents"):
-        if kind == "subagents":
-            status = getattr(item, "status", "")
-            print(f"  [{item.name}] {status}")
-        elif kind == "tool_calls":
-            err = getattr(item, "error", None)
-            name = getattr(item, "tool_name", "?")
-            args = getattr(item, "input", "")
-            tag = "✗" if err else "✓"
-            print(f"  {tag} {name}({str(args)[:80]})")
-        else:  # messages
-            for delta in item.text:
-                print(delta, end="", flush=True)
-                consumed += 1
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 30}
+    resume = None
+    while True:
+        print()
+        stream = agent.stream_events(
+            Command(resume=resume) if resume else {"messages": [{"role": "user", "content": user_input}]},
+            version="v3",
+            config=config,
+        )
 
-    final_state = stream.output
-    if not consumed:
-        final_text = _render(final_state["messages"]) if final_state else ""
-        if final_text:
-            print(final_text)
-    print("\n")
+        consumed = 0
+        for kind, item in stream.interleave("messages", "tool_calls", "subagents"):
+            if kind == "subagents":
+                status = getattr(item, "status", "")
+                print(f"  [{item.name}] {status}")
+            elif kind == "tool_calls":
+                err = getattr(item, "error", None)
+                name = getattr(item, "tool_name", "?")
+                args = getattr(item, "input", "")
+                tag = "✗" if err else "✓"
+                print(f"  {tag} {name}({str(args)[:80]})")
+            else:  # messages
+                for delta in item.text:
+                    print(delta, end="", flush=True)
+                    consumed += 1
+
+        if not getattr(stream, "interrupted", False) or not getattr(stream, "interrupts", None):
+            final_state = stream.output
+            if not consumed:
+                final_text = _render(final_state["messages"]) if final_state else ""
+                if final_text:
+                    print(final_text)
+            print("\n")
+            return
+
+        resume = _handle_interrupts(stream.interrupts, permission_state)
+        if resume is None:
+            print("\n")
+            return
+
+
+def _handle_interrupts(interrupts, permission_state: dict | None = None):
+    """展示待审批操作并收集用户决策，返回 Command.resume 内容。
+
+    返回 None 表示用户放弃本轮（未对全部中断做决定）。
+    """
+    from src.permissions import GATED_TOOLS, apply_permission_override
+
+    decisions = []
+    for interrupt in interrupts:
+        value = getattr(interrupt, "value", None) or {}
+        action_requests = value.get("action_requests", [])
+        for action in action_requests:
+            name = action.get("name", "?")
+            args = action.get("args", {})
+            print(f"\n  [审批] {name}")
+            for k, v in (args or {}).items():
+                print(f"    {k}: {str(v)[:120]}")
+            while True:
+                choice = input(
+                    "    操作: [y]本次放行 [n]拒绝 [e]编辑参数 [a]always approve(q 放弃本轮) > "
+                ).strip().lower()
+                if choice == "y":
+                    decisions.append({"type": "approve"})
+                    break
+                if choice == "n":
+                    decisions.append(
+                        {"type": "reject", "message": "用户拒绝了该操作，请更换方案或询问用户。不要重试相同调用。"}
+                    )
+                    break
+                if choice == "a":
+                    if permission_state is not None and name in GATED_TOOLS:
+                        apply_permission_override(permission_state, name, "allow")
+                        from src.config import load_config
+                        from src.permissions import dump_permissions_json
+
+                        cfg = load_config()
+                        dump_permissions_json(_current_permissions(permission_state), _project_root() / "javis.json")
+                        print(f"    已设置 {name} = allow（已写入 javis.json，以后自动放行）")
+                    else:
+                        print(f"    无法持久化 {name} 的 always approve（非 gated tool）")
+                    decisions.append({"type": "approve"})
+                    break
+                if choice == "e":
+                    print("    编辑参数（留空使用原值）:")
+                    edited = dict(args or {})
+                    for k in list(edited.keys()):
+                        new_v = input(f"    {k} [原: {str(edited[k])[:60]}] > ").strip()
+                        if new_v:
+                            edited[k] = new_v
+                    decisions.append(
+                        {"type": "edit", "edited_action": {"name": name, "args": edited}}
+                    )
+                    break
+                if choice == "q":
+                    return None
+                print("    无效输入")
+    return {"decisions": decisions}
+
+
+def _current_permissions(permission_state: dict) -> dict:
+    """把内存 permission_state 还原成 javis.json 的 permissions 配置 dict。
+
+    state 结构: {"default": rule, "tools": {tool: rule}}；
+    default 视为 "*" 键，tools 里与 default 相同的规则可省略（保持文件简洁）。
+    """
+    out: dict = {}
+    default = permission_state["default"]
+    if default != "ask":
+        out["*"] = default
+    for tool, rule in permission_state["tools"].items():
+        if rule == default:
+            continue
+        out[tool] = rule
+    return out
 
 
 def _project_root():
@@ -316,6 +407,7 @@ def main(argv=None) -> int:
 
     with SqliteSaver.from_conn_string(str(config.checkpoint_db)) as checkpointer:
         agent = build_agent(config, checkpointer=checkpointer)
+        _interrupt_on, permission_state = build_permission_interrupts(config.permissions)
         if thread_id.startswith("session-"):
             print(f"新会话: {thread_id}（指定 thread_id 可继续该会话）")
 
@@ -329,7 +421,7 @@ def main(argv=None) -> int:
         else:
             print("（无定时任务）")
         try:
-            _run_session(agent, thread_id, sched)
+            _run_session(agent, thread_id, sched, permission_state)
         finally:
             sched.shutdown(wait=False)
     return 0

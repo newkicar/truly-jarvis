@@ -12,10 +12,16 @@ from langgraph.store.memory import InMemoryStore
 from langgraph.store.base import BaseStore
 
 from deepagents import create_deep_agent
-from deepagents.backends import CompositeBackend, FilesystemBackend, StateBackend
+from deepagents.backends import (
+    CompositeBackend,
+    FilesystemBackend,
+    LocalShellBackend,
+    StateBackend,
+)
 from langchain_quickjs import CodeInterpreterMiddleware
 
 from src.config import Config
+from src.permissions import build_permission_interrupts
 from src.subagents import build_knowledge_keeper, build_researcher
 from src.tools import make_tavily_tool
 
@@ -47,7 +53,7 @@ def _make_backend(config: Config) -> CompositeBackend:
     return CompositeBackend(
         default=StateBackend(),
         routes={
-            "/workspace/": FilesystemBackend(root_dir=str(project_root), virtual_mode=True),
+            "/workspace/": LocalShellBackend(root_dir=str(project_root), virtual_mode=True),
             "/vault/": FilesystemBackend(root_dir=str(config.vault_path), virtual_mode=True),
             "/memories/": FilesystemBackend(root_dir=str(config.memory_dir), virtual_mode=True),
         },
@@ -85,6 +91,8 @@ def build_agent(
         if p.exists() and (p / "SKILL.md").exists()
     ]
 
+    interrupt_on, _permission_state = build_permission_interrupts(config.permissions)
+
     return create_deep_agent(
         model=model,
         backend=_make_backend(config),
@@ -93,6 +101,7 @@ def build_agent(
         middleware=[CodeInterpreterMiddleware(subagents=True)],  # 动态子代理 fan-out（beta）
         memory=memory,
         skills=skills,
+        interrupt_on=interrupt_on,  # HITL 审批（javis.json permissions）
         checkpointer=checkpointer,
         store=store,
         name="javis",
