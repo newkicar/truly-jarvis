@@ -134,7 +134,7 @@ backend = CompositeBackend(
 )
 ```
 - `root_dir` 必须是**绝对路径**（Windows 反斜杠或 `pathlib`）；`virtual_mode=True` 启用路径沙箱。
-- 检索流程（写进 researcher system_prompt）：`grep` 命中关键词 → `read_file` 读笔记 → 顺 **backlink** 追关联笔记 → 再读 → 综合。
+- 检索流程（写进 researcher system_prompt）：`grep` 命中关键词 → `read_file` 读笔记 → 调 `vault_links` 列出出链（沿 `[[wikilink]]` 追关联笔记）→ 调 `vault_backlinks` 查反向链接（谁在讨论它）→ 对相关笔记再读 → 综合。链接解析由 `src/wiki.py` 程序化完成（文件名/别名/大小写不敏感匹配，支持 `[[标题|显示]]`、`[[目录/笔记]]`、`[[标题#小节]]`、frontmatter `aliases`），**零索引**（每次调用实时扫描 vault，不建持久索引）。
 - 回写：`knowledge_keeper` 用 `write_file` 在 `/vault/Inbox/` **新增**带 wikilink 的笔记（**只新增，绝不修改/删除既有笔记**；wikilink 仅关联确实存在的笔记，不编造）。用户在 Obsidian 审核后手动归档。
 - 升级路径：同路径加向量索引工具做语义召回，`grep` 与语义结果合并去重，即「导航 + 增量 RAG 增强」。
 
@@ -296,6 +296,8 @@ truly_Javis/
 │   ├── agent.py              # 组装：model + backend + subagents + memory + checkpointer
 │   ├── subagents.py          # researcher / knowledge_keeper / executor 定义
 │   ├── tools.py              # tavily_search 等自定义工具
+│   ├── wiki.py               # wikilink/backlink 导航工具（出链/反链，零索引实时扫描）
+│   ├── permissions.py        # HITL 审批（javis.json permissions → interrupt_on）
 │   ├── time_travel.py        # /history /replay /fork /sessions + git 映射表
 │   └── scheduler.py          # APScheduler 定时任务（二期）
 ├── memory/                   # 信息记忆（用户偏好等 markdown）

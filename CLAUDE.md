@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 ## 项目状态
-- **一期 + 二期 MVP 已实现**（2026-08-15），代码在 `src/`，测试在 `tests/`（50 个单测全绿）。权威设计文档：`docs/specs/2026-08-15-javis-design.md`。
-- 交付：`config.py`(.env 兼容解析+javis.json→Config)、`tools.py`(tavily_search)、`subagents.py`(researcher + knowledge_keeper)、`agent.py`(build_agent)、`scheduler.py`(APScheduler 定时检索)、`time_travel.py`(git 快照回退)、`permissions.py`(HITL 审批，对标 opencode permission)、`main.py`(CLI + /exit /sessions /history /replay /fork /snapshot /snapshots /rollback /reload-schedules + 审批 y/n/e/a)、`smoke_test.py`(真模型冒烟，手动)、`tests/_manual/fanout_probe.py`(fan-out 实测探针)。
+- **一期 + 二期 MVP 已实现**（2026-08-15），代码在 `src/`，测试在 `tests/`（61 个单测全绿）。权威设计文档：`docs/specs/2026-08-15-javis-design.md`。
+- 交付：`config.py`(.env 兼容解析+javis.json→Config)、`tools.py`(tavily_search)、`wiki.py`(wikilink/backlink 导航工具：出链/反链，零索引实时扫描)、`subagents.py`(researcher + knowledge_keeper)、`agent.py`(build_agent)、`scheduler.py`(APScheduler 定时检索)、`time_travel.py`(git 快照回退)、`permissions.py`(HITL 审批，对标 opencode permission)、`main.py`(CLI + /exit /sessions /history /replay /fork /snapshot /snapshots /rollback /reload-schedules + 审批 y/n/e/a)、`smoke_test.py`(真模型冒烟，手动)、`tests/_manual/fanout_probe.py`(fan-out 实测探针)。
 - 实现状态跟踪：本地 issue tracker `.scratch/javis-implementation/`（spec + 票 01-15）。
 
 ## 强制要求（README 约定，缺一不可）

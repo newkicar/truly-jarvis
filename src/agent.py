@@ -24,6 +24,7 @@ from src.config import Config
 from src.permissions import build_permission_interrupts
 from src.subagents import build_knowledge_keeper, build_researcher
 from src.tools import make_tavily_tool
+from src.wiki import make_wiki_tools
 
 MAIN_SYSTEM_PROMPT = """你是 JARVIS，一个个人 AI 助手，专注扩展用户的心智。
 
@@ -76,7 +77,8 @@ def build_agent(
     store = store or InMemoryStore()
 
     tavily_tool = make_tavily_tool(config.tavily_key)
-    researcher = build_researcher(tavily_tool)
+    wiki_tools = make_wiki_tools(config.vault_path)
+    researcher = build_researcher(tavily_tool, wiki_tools=wiki_tools)
     knowledge_keeper = build_knowledge_keeper()
 
     memory = [
