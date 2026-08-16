@@ -6,9 +6,9 @@
 
 **Status:** resolved
 
-- [ ] `/sessions`：列出历史会话
-- [ ] `/history`：查看当前会话的时间线（checkpoint 列表）
-- [ ] `/replay <checkpoint_id>`：从历史节点重跑（invoke(None, prior.config)）
-- [ ] `/fork <checkpoint_id>`：从历史节点分叉（update_state），保留原历史
-- [ ] 会话回退后新会话延续正确
-- [ ] 冒烟：创建若干轮对话 → history 可见 → replay/fork 可用
+- [x] `/sessions`：列出历史会话
+- [x] `/history`：查看当前会话的时间线（checkpoint 列表）
+- [x] `/replay <checkpoint_id>`：从历史节点重跑（invoke(None, prior.config)）
+- [x] `/fork <checkpoint_id>`：从历史节点分叉（update_state），保留原历史
+- [x] 会话回退后新会话延续正确
+- [x] 冒烟：创建若干轮对话 → history 可见 → replay/fork 可用

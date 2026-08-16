@@ -6,8 +6,8 @@
 
 **Status:** resolved
 
-- [ ] `tavily_search(query, max_results)`：Tavily 搜索返回 URL 列表
-- [ ] 对值得分析的 URL 用 httpx 抓全文，markdownify 转 markdown
-- [ ] 结果拼成结构化文本（含标题/URL/内容）
-- [ ] 异常处理：网络失败、空结果、抓取失败不崩溃
-- [ ] 单测：mock Tavily client 与 httpx，验证拼接与异常分支（tests/test_tools.py）
+- [x] `tavily_search(query, max_results)`：Tavily 搜索返回 URL 列表
+- [x] 对值得分析的 URL 用 httpx 抓全文，markdownify 转 markdown
+- [x] 结果拼成结构化文本（含标题/URL/内容）
+- [x] 异常处理：网络失败、空结果、抓取失败不崩溃
+- [x] 单测：mock Tavily client 与 httpx，验证拼接与异常分支（tests/test_tools.py）

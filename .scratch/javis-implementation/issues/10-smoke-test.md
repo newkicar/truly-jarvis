@@ -6,7 +6,7 @@
 
 **Status:** resolved
 
-- [ ] `smoke_test.py`：真实模型调用（不进 CI，手动触发）
-- [ ] 跑一个「调研」类问题，验证 researcher 被正确委派
-- [ ] 输出为 spec 规定的结构化 markdown（TL;DR + 要点带来源 + 知识库笔记 + 参考资料）
-- [ ] 真实环境端到端通过
+- [x] `smoke_test.py`：真实模型调用（不进 CI，手动触发）
+- [x] 跑一个「调研」类问题，验证 researcher 被正确委派
+- [x] 输出为 spec 规定的结构化 markdown（TL;DR + 要点带来源 + 知识库笔记 + 参考资料）
+- [x] 真实环境端到端通过

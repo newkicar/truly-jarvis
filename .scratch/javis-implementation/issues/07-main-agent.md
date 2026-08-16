@@ -6,10 +6,10 @@
 
 **Status:** resolved
 
-- [ ] `build_agent(config)` 用 `create_deep_agent` 组装，模型为 go 套餐 ChatOpenAI
-- [ ] `CompositeBackend(default=StateBackend(), routes={/workspace/, /vault/, /memories/})`，root_dir 绝对路径 + virtual_mode
-- [ ] `store=InMemoryStore()`；`checkpointer=SqliteSaver`（注意 `from_conn_string` 是 context manager，agent 需在 `with` 内创建）
-- [ ] researcher 子代理按 04 票 Resolution 定义（含 WIKI 导航检索 system_prompt + tavily_search 工具）
-- [ ] 主代理 system_prompt：JARVIS 人格 + 双触发路由（时效/本地知识 → researcher；闲聊 → 自答）
-- [ ] `memory=[...]` 注入、`skills=[...]` 接入
-- [ ] 单测：用 FakeMessagesListChatModel + mock 工具，验证组装成功且 invoke 能返回消息（tests/test_agent.py）
+- [x] `build_agent(config)` 用 `create_deep_agent` 组装，模型为 go 套餐 ChatOpenAI
+- [x] `CompositeBackend(default=StateBackend(), routes={/workspace/, /vault/, /memories/})`，root_dir 绝对路径 + virtual_mode
+- [x] `store=InMemoryStore()`；`checkpointer=SqliteSaver`（注意 `from_conn_string` 是 context manager，agent 需在 `with` 内创建）
+- [x] researcher 子代理按 04 票 Resolution 定义（含 WIKI 导航检索 system_prompt + tavily_search 工具）
+- [x] 主代理 system_prompt：JARVIS 人格 + 双触发路由（时效/本地知识 → researcher；闲聊 → 自答）
+- [x] `memory=[...]` 注入、`skills=[...]` 接入
+- [x] 单测：用 FakeMessagesListChatModel + mock 工具，验证组装成功且 invoke 能返回消息（tests/test_agent.py）

@@ -10,7 +10,7 @@
 2. deepagents 更新很快，先通过 langchain MCP（docs-langchain）确认最新版功能与语法再实现。
 
 ## 关键技术决策（实现时容易跑偏）
-- 主库 `deepagents`（`create_deep_agent`）；模型走 OpenAI 兼容端点 `https://opencode.ai/zen/go/v1`（go 按月套餐，已验证对话 + tool calling），模型 `deepseek-v4-flash`，模型名不加前缀。
+- 主库 `deepagents`（`create_deep_agent`）；模型走 OpenAI 兼容端点 `https://opencode.ai/zen/go/v1`（go 按月套餐，已验证对话 + tool calling），模型 `mimo-v2.5`（2026-08-17 起，原 deepseek-v4-flash 因涨价弃用），模型名不加前缀，经 `.env` 的 `MODEL_ID` 读取。
 - 交互形态：纯 CLI。
 - 知识库 = Obsidian vault（`E:\Thomas\Obsidian_warehouse`，路径可改，走 `javis.json`）。
   - 访问方式 = **WIKI 导航式**：`FilesystemBackend` 指向 vault，复用原生 `grep/glob/read_file`，**不要建 RAG/向量索引**。

@@ -61,9 +61,9 @@ final_state = stream.output
 
 ## 验收标准
 
-- [ ] `python -m src.main` 问调研类问题，实时看到主代理/子代理步骤、工具调用、最终回答流式输出
-- [ ] 长时间静默可定位到具体步骤（而非黑盒）
-- [ ] 工具调用失败能看到 `.error`
-- [ ] checkpoint / `/sessions` `/history` `/replay` `/fork` 不受影响
-- [ ] `tavily_search` 有 `timeout=30`
-- [ ] 单测（fake 模型）锁住 `stream_events` 不抛错且能产出最终文本
+- [x] `python -m src.main` 问调研类问题，实时看到主代理/子代理步骤、工具调用、最终回答流式输出
+- [x] 长时间静默可定位到具体步骤（而非黑盒）
+- [x] 工具调用失败能看到 `.error`
+- [x] checkpoint / `/sessions` `/history` `/replay` `/fork` 不受影响
+- [x] `tavily_search` 有 `timeout=30`
+- [x] 单测（fake 模型）锁住 `stream_events` 不抛错且能产出最终文本

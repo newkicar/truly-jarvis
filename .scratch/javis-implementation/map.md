@@ -8,7 +8,7 @@
 
 ## Notes
 
-- 领域：Python + deepagents 0.7.x + langchain-openai（base_url `https://opencode.ai/zen/go/v1`，模型 `deepseek-v4-flash`，go 按月套餐已验证可用）
+- 领域：Python + deepagents 0.7.x + langchain-openai（base_url `https://opencode.ai/zen/go/v1`，模型 `mimo-v2.5`（2026-08-17 起替换 deepseek-v4-flash），go 按月套餐已验证可用）
 - 环境：Windows；conda env `thomas`（Python 3.12.9，`D:/AIPrograms/Annaconda/envs/thomas/python.exe`）；pip + requirements.txt；一期 git init
 - 每个会话前必读：`AGENTS.md`、`docs/specs/2026-08-15-javis-design.md`、`docs/agents/*.md`
 - 强制要求：实现前到 GitHub 找参考；用 docs-langchain MCP 核对 deepagents 最新语法
@@ -19,7 +19,7 @@
 
 <!-- 一行一条已关闭票：足够判断相关性，点链接看详情 -->
 
-- [01-模型接入验证](issues/01-model-compat.md) — tool calling ✅ 结构化输出 ✅；⚠️ workspace API 余额为 0，付费 deepseek-v4-flash 需充值；free 变体仅够冒烟
+- [01-模型接入验证](issues/01-model-compat.md) — tool calling ✅ 结构化输出 ✅；⚠️ workspace API 余额为 0，付费 deepseek-v4-flash 需充值；free 变体仅够冒烟。**2026-08-17 起模型切换为 mimo-v2.5（deepseek 涨价弃用）**
 - [02-deepagents最新语法核验](issues/02-deepagents-syntax.md) — 最新 0.7.6；本机依赖需升级；设计文档 4 处需修正（CompositeBackend default=StateBackend 等）
 - [03-项目骨架搭建](issues/03-project-scaffold.md) — 已 git init + requirements + src/ 布局 + javis.json；依赖装好、冒烟通过；要点：SqliteSaver.from_conn_string 是 context manager
 - [04-researcher检索心智设计](issues/04-researcher-prompt.md) — researcher 定稿：固定导航式检索 + 搜索抓全文 + vault 优先融合 + 结构化带来源输出 + 双触发路由；⚠️ 发现 vault 已是 git 仓库（与「不纳入 git」决策冲突，待定）
