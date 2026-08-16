@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 ## 项目状态
-- **一期 + 二期 MVP 已实现**（2026-08-15），代码在 `src/`，测试在 `tests/`（32 个单测全绿）。权威设计文档：`docs/specs/2026-08-15-javis-design.md`。
+- **一期 + 二期 MVP 已实现**（2026-08-15），代码在 `src/`，测试在 `tests/`（41 个单测全绿）。权威设计文档：`docs/specs/2026-08-15-javis-design.md`。
 - 交付：`config.py`(.env 兼容解析+javis.json→Config)、`tools.py`(tavily_search)、`subagents.py`(researcher + knowledge_keeper)、`agent.py`(build_agent)、`scheduler.py`(APScheduler 定时检索)、`time_travel.py`(git 快照回退)、`main.py`(CLI + /exit /sessions /history /replay /fork /snapshot /snapshots /rollback /reload-schedules)、`smoke_test.py`(真模型冒烟，手动)、`tests/_manual/fanout_probe.py`(fan-out 实测探针)。
 - 实现状态跟踪：本地 issue tracker `.scratch/javis-implementation/`（spec + 票 01-15）。
 
@@ -20,6 +20,7 @@
 - **复用 deepagents 原生工具**（ls/read_file/write_file/edit_file/glob/grep/execute/task），不重造轮子。
 - 架构：主代理 + 子代理（researcher / knowledge_keeper / executor）；研究类问题二期用动态子代理 fan-out。
 - Time travel 双层：会话回退 = checkpointer（thread_id + checkpoint_id）；文件回退 = git 快照（仅项目目录，vault 不纳入 git），**手动 `/snapshot` 触发**（不用自动每轮 commit）。
+- **CLI 展示约定**（`/history` 与 `/snapshots`）：只显示「边界点」（`/history` 过滤 source in input/fork/update，去掉 loop 超步骤噪音），从旧到新（最后=最新），每行带人类可读标签 + **短 id（checkpoint 前 13 位 / commit 前 10 位）**；`/replay` `/fork` `/rollback` 均支持短 id 前缀唯一匹配（歧义报错）。定时任务线程 `sched-*` 自动 `delete_thread` 清理，`/sessions` 也过滤，避免污染历史。
 
 ## 环境与配置陷阱
 - `.env` 当前是 `:` 分隔、小写键格式。`config.py` 的 `parse_env_text` 已兼容 `:` 与 `=` 两种分隔、键大小写不敏感；键名：`BASE_URL` / `API_KEY` / `MODEL_ID` / `TAVILY_KEY`。`.env`、`checkpoints.sqlite` 已在 `.gitignore`。
@@ -27,7 +28,7 @@
 
 ## 分期
 - ✅ 一期（已完成）：主代理 + researcher（指定检索）+ WIKI 导航知识库 + SqliteSaver 短期记忆 + 会话回退 + javis.json + Tavily。
-- ✅ 二期（已完成）：动态子代理 fan-out（CodeInterpreterMiddleware，实测通过）+ 定时检索（schedules/ 目录配置 + APScheduler + /reload-schedules 热重载）+ knowledge_keeper 知识沉淀 + git 文件回退（手动 /snapshot）+ 事件流式输出（stream_events v3）。单测 32 绿。
+- ✅ 二期（已完成）：动态子代理 fan-out（CodeInterpreterMiddleware，实测通过）+ 定时检索（schedules/ 目录配置 + APScheduler + /reload-schedules 热重载）+ knowledge_keeper 知识沉淀 + git 文件回退（手动 /snapshot）+ 事件流式输出（stream_events v3）。单测 41 绿。
 - 三期：executor + skill/mcp 接口 + 增量 RAG 增强。
 
 ## Agent skills
