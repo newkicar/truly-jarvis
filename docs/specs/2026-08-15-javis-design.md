@@ -22,7 +22,7 @@ AI 时代，agent 最重要的任务不是自动完成工作，而是扩展人�
 ### 1.3 三条工程原则
 1. **复用不重造**：deepagents 原生工具（`ls/read_file/write_file/edit_file/glob/grep/execute/task`）、原生中间件、原生后端优先使用。
 2. **扩展留接口**：skill / mcp / tools 均以「注册接口」方式接入，能力可后装。
-3. **配置外置**：一切可变项（模型、vault 路径、记忆目录、定时任务）进 `javis.json`，不写死在代码里。
+3. **配置外置**：一切可变项（模型、vault 路径、记忆目录、定时任务目录）进 `javis.json` 或外置 JSON（定时任务走 `schedules/` 每任务一文件），不写死在代码里。
 
 ---
 
@@ -94,7 +94,6 @@ AI 时代，agent 最重要的任务不是自动完成工作，而是扩展人�
   "schedules_dir": "schedules",      // 定时任务配置目录（每任务一个 JSON，二期）
   "skills": ["skills/"],             // 已安装 skill（渐进式披露）
   "mcps": [],                        // 已安装 MCP server
-  "schedules": []                    // 兼容旧字段（二期用 schedules/ 目录替代）
 ```
 
 **`.env` 规范化**（当前为 `:` 分隔小写，实现时统一为标准格式）：
@@ -254,7 +253,11 @@ const r = await task({
 - 回放：`invoke(None, prior.config)` 重跑该点之后
 - 分叉：`update_state(prior.config, values, as_node=...)` 开新分支，**原历史保留**
 - 子代理：Python 侧 `CompiledSubAgent` 只有 `name/description/runnable`，无 `checkpointer` 参数；子代理内部 time travel **不保证**，一期按「子代理算单个 checkpoint」实现
-- CLI 命令：`/sessions`、`/history`、`/replay <id>`、`/fork <id>`
+- CLI 命令：`/sessions`、`/history`、`/replay <id>`、`/fork <id>`、`/snapshot`、`/snapshots`、`/rollback <id>`、`/reload-schedules`
+- **`/history` 只显示「边界点」**：`metadata.source in (input, fork, update)`，过滤掉中间 loop 超步骤（工具调用/子代理，会刷出 90+ 条噪音）。顺序从旧到新，每行带用户消息摘要（前 50 字）+ **短 id（前 13 位）**。
+- **短 id 前缀匹配**：`/replay <id>`、`/fork <id>` 接受完整 id 或短 id（`/history` 显示的），按前缀唯一匹配；歧义返回失败。
+- **`/fork` 后切换会话**：分叉成功返回新 thread_id，CLI 交互循环自动切到新会话（原 bug：fork 后仍写回旧线程）。
+- **定时任务线程自动清理**：`_run_task` 结束（成功或失败）后 `checkpointer.delete_thread("sched-<id>")`，避免 `sched-*` 线程累积污染 checkpoints 表；`/sessions` 同时过滤 `sched-` 前缀线程。
 
 ### 10.3 文件回退（git 快照，**手动**触发）
 - **纳入 git**：项目目录（`src/`、`memory/`、`javis.json` 等）

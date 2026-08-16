@@ -2,7 +2,7 @@
 
 ## 项目状态
 - **一期 + 二期 MVP 已实现**（2026-08-15），代码在 `src/`，测试在 `tests/`（27 个单测全绿）。权威设计文档：`docs/specs/2026-08-15-javis-design.md`。
-- 交付：`config.py`(.env 兼容解析+javis.json→Config)、`tools.py`(tavily_search)、`subagents.py`(researcher + knowledge_keeper)、`agent.py`(build_agent)、`scheduler.py`(APScheduler 定时检索)、`time_travel.py`(git 快照回退)、`main.py`(CLI + /exit /sessions /history /replay /fork /snapshot /snapshots /rollback)、`smoke_test.py`(真模型冒烟，手动)、`tests/_manual/fanout_probe.py`(fan-out 实测探针)。
+- 交付：`config.py`(.env 兼容解析+javis.json→Config)、`tools.py`(tavily_search)、`subagents.py`(researcher + knowledge_keeper)、`agent.py`(build_agent)、`scheduler.py`(APScheduler 定时检索)、`time_travel.py`(git 快照回退)、`main.py`(CLI + /exit /sessions /history /replay /fork /snapshot /snapshots /rollback /reload-schedules)、`smoke_test.py`(真模型冒烟，手动)、`tests/_manual/fanout_probe.py`(fan-out 实测探针)。
 - 实现状态跟踪：本地 issue tracker `.scratch/javis-implementation/`（spec + 票 01-15）。
 
 ## 强制要求（README 约定，缺一不可）
@@ -27,7 +27,7 @@
 
 ## 分期
 - ✅ 一期（已完成）：主代理 + researcher（指定检索）+ WIKI 导航知识库 + SqliteSaver 短期记忆 + 会话回退 + javis.json + Tavily。
-- ✅ 二期（已完成）：动态子代理 fan-out（CodeInterpreterMiddleware，实测通过）+ 定时检索（schedules/ 目录配置 + APScheduler）+ knowledge_keeper 知识沉淀 + git 文件回退（手动 /snapshot）+ 事件流式输出（stream_events v3）。单测 27 绿。
+- ✅ 二期（已完成）：动态子代理 fan-out（CodeInterpreterMiddleware，实测通过）+ 定时检索（schedules/ 目录配置 + APScheduler + /reload-schedules 热重载）+ knowledge_keeper 知识沉淀 + git 文件回退（手动 /snapshot）+ 事件流式输出（stream_events v3）。单测 32 绿。
 - 三期：executor + skill/mcp 接口 + 增量 RAG 增强。
 
 ## Agent skills

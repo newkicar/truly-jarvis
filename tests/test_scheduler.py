@@ -63,6 +63,25 @@ def test_run_task_writes_file(tmp_path):
     assert "调研结果正文" in files[0].read_text(encoding="utf-8")
 
 
+def test_run_task_cleans_own_thread(tmp_path):
+    cfg = make_fake_config(tmp_path)
+    deleted = []
+
+    class FakeCheckpointer:
+        def delete_thread(self, thread_id):
+            deleted.append(thread_id)
+
+    class FakeAgent:
+        checkpointer = FakeCheckpointer()
+
+        def invoke(self, input, config=None):
+            return {"messages": [type("M", (), {"type": "ai", "content": "正文"})()]}
+
+    task = {"id": "cleanme", "task": "调研 X", "save_path": "vault:Inbox/"}
+    scheduler._run_task(FakeAgent(), cfg, task)
+    assert deleted == ["sched-cleanme"]
+
+
 def test_make_scheduler_registers_jobs(tmp_path):
     cfg = make_fake_config(tmp_path)
     _write_schedule(cfg.schedules_dir, "a.json", {"id": "a", "task": "t", "cron": "0 8 * * *"})

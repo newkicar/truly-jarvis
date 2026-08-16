@@ -120,6 +120,22 @@ def _run_task(agent, config: Config, task: dict):
     header = f"# {task['id']} — {stamp}\n\n"
     file_path.write_text(header + body, encoding="utf-8")
 
+    _cleanup_thread(agent, task["id"])
+
+
+def _cleanup_thread(agent, task_id: str):
+    """删除定时任务自己的 checkpoint 线程，避免累积污染 /sessions 与 checkpoints 表。
+
+    任务结果已写文件，会话过程无保留价值；失败也不影响（静默跳过）。
+    """
+    checkpointer = getattr(agent, "checkpointer", None)
+    if checkpointer is None:
+        return
+    try:
+        checkpointer.delete_thread(f"sched-{task_id}")
+    except Exception:
+        pass
+
 
 def register_jobs(scheduler: BackgroundScheduler, agent, config: Config) -> list[str]:
     """读取 schedules/*.json 并为每个 enabled 任务注册/替换 job，返回易读清单。

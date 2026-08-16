@@ -35,4 +35,7 @@
 - [x] `_run_task` 复用 agent 研究并写文件（fake agent 不触网）
 - [x] `make_scheduler` 为每个任务注册 CronTrigger job
 - [x] CLI 启动时挂载调度器，退出时 shutdown
-- [x] 单测：tests/test_scheduler.py（5 个）；全套 25 绿
+- [x] 单测：tests/test_scheduler.py（9 个）；全套 32 绿
+- [x] 实测（真模型）：`*/1 * * * *` 触发成功，Inbox 生成 `tech-daily-<date>.md`；任务耗时 > 间隔时 APScheduler 打印「skipped: maximum number of running instances reached (1)」属预期（同任务不并发），不报错。
+- [x] **热重载**：改 `schedules/*.json` 后 CLI `/reload-schedules` 无需重启生效（`register_jobs` 用 `replace_existing` 覆盖 cron）。失败绝不静默：stderr 打印 traceback + save_path 写 `.error.md` + re-raise（`_run_task` try/except）。
+- [x] cron 约定：标准 5 段（分 时 日 月 周），`0 8 * * *` = 每天 08:00，`*/N * * * *` = 每 N 分钟。

@@ -17,9 +17,9 @@ PROMPT = "JARVIS> "
 HELP = """命令：
   /exit           退出
   /sessions       列出历史会话
-  /history        查看当前会话时间线
-  /replay <id>    从指定 checkpoint 重跑
-  /fork <id>      从指定 checkpoint 分叉出新分支
+  /history        查看当前会话时间线（每轮提问/分叉，短 id 可用于回退）
+  /replay <id>    从指定 checkpoint 重跑（支持短 id）
+  /fork <id>      从指定 checkpoint 分叉出新分支（支持短 id）
   /snapshot       记录当前文件状态到当前 checkpoint（git 快照）
   /snapshots      列出文件快照（git）
   /rollback <id>  按 checkpoint 回退项目文件到对应 git 提交
@@ -55,7 +55,11 @@ def _run_session(agent, thread_id: str, sched=None):
             continue
 
         if user_input.startswith("/"):
-            print(_dispatch_command(agent, thread_id, user_input, sched))
+            text, new_thread = _dispatch_command(agent, thread_id, user_input, sched)
+            print(text)
+            if new_thread:
+                thread_id = new_thread
+                print(f"已切换到会话 {thread_id}")
             continue
 
         _stream_turn(agent, thread_id, user_input)
@@ -103,32 +107,32 @@ def _project_root():
     return Path(__file__).resolve().parent.parent
 
 
-def _dispatch_command(agent, thread_id: str, command: str, sched=None) -> str:
-    """处理会话命令，返回要打印的结果文本。"""
+def _dispatch_command(agent, thread_id: str, command: str, sched=None):
+    """处理会话命令，返回 (结果文本, 新 thread_id 或 None)。fork 可能切换会话。"""
     parts = command.split()
     cmd = parts[0]
 
     if cmd == "/sessions":
-        return _list_sessions(agent)
+        return _list_sessions(agent), None
     if cmd == "/history":
-        return _list_history(agent, thread_id)
+        return _list_history(agent, thread_id), None
     if cmd == "/replay" and len(parts) == 2:
-        return _replay(agent, thread_id, parts[1])
+        return _replay(agent, thread_id, parts[1]), None
     if cmd == "/fork" and len(parts) == 2:
         return _fork(agent, thread_id, parts[1])
     if cmd == "/snapshot":
-        return _snapshot(agent, thread_id)
+        return _snapshot(agent, thread_id), None
     if cmd == "/snapshots":
-        return _list_snapshots()
+        return _list_snapshots(), None
     if cmd == "/rollback" and len(parts) == 2:
-        return _rollback(parts[1])
+        return _rollback(parts[1]), None
     if cmd == "/reload-schedules":
         if sched is None:
-            return "调度器未启动，无法重载"
+            return "调度器未启动，无法重载", None
         import src.scheduler as sched_mod
 
-        return sched_mod.reload_schedules(sched, agent, load_config())
-    return f"未知命令: {cmd}（/help 查看帮助）"
+        return sched_mod.reload_schedules(sched, agent, load_config()), None
+    return f"未知命令: {cmd}（/help 查看帮助）", None
 
 
 def _list_sessions(agent) -> str:
@@ -137,39 +141,108 @@ def _list_sessions(agent) -> str:
     if conn is None:
         return "（无 checkpointer，无法列出会话）"
     rows = conn.execute("SELECT DISTINCT thread_id FROM checkpoints ORDER BY thread_id").fetchall()
-    threads = [r[0] for r in rows]
+    threads = [r[0] for r in rows if not str(r[0]).startswith("sched-")]
     if not threads:
         return "（暂无历史会话）"
     return "历史会话:\n" + "\n".join(f"  - {t}" for t in threads)
 
 
-def _list_history(agent, thread_id: str) -> str:
-    lines = []
+def _boundary_checkpoints(agent, thread_id: str):
+    """返回会话的「边界点」checkpoint，从旧到新。
+
+    边界点 = source in (input, fork, update)，即每次用户提问 / 分叉 / 状态更新的
+    起点；过滤掉中间的 loop 超步骤（工具调用、子代理等），避免 90+ 条噪音。
+    """
+    keep_sources = {"input", "fork", "update"}
+    out = []
     try:
-        for i, checkpoint in enumerate(agent.get_state_history(config={"configurable": {"thread_id": thread_id}})):
-            cid = checkpoint.config.get("configurable", {}).get("checkpoint_id")
-            lines.append(f"  {i}. {cid}")
+        for s in agent.get_state_history(config={"configurable": {"thread_id": thread_id}}):
+            if (s.metadata or {}).get("source") in keep_sources:
+                out.append(s)
     except Exception:
-        return "（无法读取历史）"
-    return "\n".join(lines) if lines else "（暂无历史）"
+        return out
+    out.reverse()  # get_state_history 从新到旧，反转成从旧到新
+    return out
+
+
+def _checkpoint_short_id(cid: str) -> str:
+    return cid[:13] if cid else cid
+
+
+def _resolve_checkpoint_id(agent, thread_id: str, raw: str):
+    """把用户输入（完整 id 或短 id 前缀）解析成完整 checkpoint_id。
+
+    短 id = cid[:13]（/history 显示用的短格式）。支持前缀唯一匹配；
+    多个匹配返回 None，表示歧义。
+    """
+    for s in agent.get_state_history(config={"configurable": {"thread_id": thread_id}}):
+        cid = s.config.get("configurable", {}).get("checkpoint_id")
+        if cid == raw:
+            return cid
+    matches = []
+    for s in agent.get_state_history(config={"configurable": {"thread_id": thread_id}}):
+        cid = s.config.get("configurable", {}).get("checkpoint_id")
+        if cid and cid.startswith(raw):
+            matches.append(cid)
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+def _last_human_text(values) -> str:
+    """从 checkpoint 的 messages 里取最后一条用户消息文本（截断 50 字）。"""
+    for msg in reversed(values.get("messages", [])):
+        if getattr(msg, "type", "") == "human":
+            content = getattr(msg, "content", "") or ""
+            if isinstance(content, str):
+                return content.strip().replace("\n", " ")[:50]
+    return ""
+
+
+def _list_history(agent, thread_id: str) -> str:
+    checkpoints = _boundary_checkpoints(agent, thread_id)
+    if not checkpoints:
+        return "（暂无历史）"
+    lines = []
+    for i, s in enumerate(checkpoints):
+        cid = s.config.get("configurable", {}).get("checkpoint_id")
+        src = (s.metadata or {}).get("source")
+        step = s.metadata.get("step") if s.metadata else None
+        short = _checkpoint_short_id(cid)
+        if src == "input":
+            label = f"user: {_last_human_text(s.values)}"
+        elif src == "fork":
+            label = f"分叉点 (step {step})"
+        else:  # update
+            label = f"状态更新 (step {step})"
+        lines.append(f"  {i}. [{src:5s}] {label:<60} {short}")
+    lines.append("   → 用短 id（前 13 位）即可 /replay 或 /fork，如 /replay " + _checkpoint_short_id(checkpoints[-1].config.get("configurable", {}).get("checkpoint_id", "")))
+    return "\n".join(lines)
 
 
 def _replay(agent, thread_id: str, checkpoint_id: str) -> str:
-    prior = {"configurable": {"thread_id": thread_id, "checkpoint_id": checkpoint_id}}
+    full_id = _resolve_checkpoint_id(agent, thread_id, checkpoint_id)
+    if full_id is None:
+        return f"重跑失败: 找不到 checkpoint {checkpoint_id}"
+    prior = {"configurable": {"thread_id": thread_id, "checkpoint_id": full_id}}
     try:
         result = agent.invoke(None, config=prior)
     except Exception:
-        return f"重跑失败: checkpoint {checkpoint_id}"
+        return f"重跑失败: checkpoint {full_id}"
     return "重跑结果:\n" + _render(result["messages"])
 
 
-def _fork(agent, thread_id: str, checkpoint_id: str) -> str:
+def _fork(agent, thread_id: str, checkpoint_id: str):
+    """从指定 checkpoint 分叉出新分支，返回 (提示文本, 新 thread_id 或 None)。"""
     base = {"configurable": {"thread_id": thread_id}}
+    full_id = _resolve_checkpoint_id(agent, thread_id, checkpoint_id)
+    if full_id is None:
+        return f"分叉失败: 找不到 checkpoint {checkpoint_id}", None
     try:
         target = None
         found_terminal = False
         for s in agent.get_state_history(config=base):
-            if s.config["configurable"].get("checkpoint_id") == checkpoint_id:
+            if s.config["configurable"].get("checkpoint_id") == full_id:
                 if s.next:
                     target = s
                 else:
@@ -182,16 +255,16 @@ def _fork(agent, thread_id: str, checkpoint_id: str) -> str:
                     target = s
                     break
         if target is None:
-            return f"分叉失败: 找不到 checkpoint {checkpoint_id}"
+            return f"分叉失败: 找不到 checkpoint {full_id}", None
         new_config = agent.update_state(
             target.config,
             values=target.values,
             as_node="model",
         )
     except Exception:
-        return f"分叉失败: checkpoint {checkpoint_id}"
+        return f"分叉失败: checkpoint {full_id}", None
     new_thread = new_config["configurable"]["thread_id"]
-    return f"已从 {checkpoint_id} 分叉（保留原历史），当前会话 {new_thread}"
+    return f"已从 {full_id} 分叉（保留原历史），当前会话 {new_thread}", new_thread
 
 
 def _snapshot(agent, thread_id: str) -> str:
