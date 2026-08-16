@@ -282,16 +282,24 @@ def _list_snapshots() -> str:
     rows = time_travel.list_snapshots(_project_root())
     if not rows:
         return "（暂无文件快照）"
-    lines = ["文件快照 (checkpoint -> commit):"]
-    for cid, tid, commit in rows:
-        lines.append(f"  - {cid}  [{tid}]  {commit}")
+    lines = ["文件快照 (从旧到新):"]
+    for i, (cid, tid, commit, ts) in enumerate(rows):
+        short_cid = _checkpoint_short_id(cid)
+        lines.append(
+            f"  {i}. [{ts}]  commit {commit[:10]}  thread: {tid}  {short_cid}"
+        )
+    lines.append(
+        "   → 用短 cid（前 13 位）即可 /rollback，如 /rollback "
+        + _checkpoint_short_id(rows[-1][0])
+    )
     return "\n".join(lines)
 
 
 def _rollback(checkpoint_id: str) -> str:
-    commit = time_travel.rollback(_project_root(), checkpoint_id)
+    commit = time_travel.resolve_commit(_project_root(), checkpoint_id)
     if commit is None:
         return f"回退失败: 未找到 checkpoint {checkpoint_id} 的文件快照"
+    time_travel.rollback_commit(_project_root(), commit)
     return f"已回退项目文件到 {commit}（checkpoint {checkpoint_id}）。注意：需 /replay 对齐会话状态。"
 
 

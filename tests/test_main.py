@@ -94,3 +94,24 @@ def test_list_sessions_filters_sched_threads():
     assert "default" in text
     assert "session-abc" in text
     assert "sched-tech-daily" not in text
+
+
+def test_list_snapshots_formats_oldest_first(monkeypatch):
+    import src.time_travel as tt
+
+    monkeypatch.setattr(
+        tt,
+        "list_snapshots",
+        lambda root: [
+            ("cid-0000000-aaaa", "default", "abcdef1234567890", "2026-08-15 06:43:59"),
+            ("cid-0000000-bbbb", "default", "1122334455667788", "2026-08-16 10:15:00"),
+        ],
+    )
+    text = main._list_snapshots()
+    assert "文件快照" in text
+    assert "2026-08-15" in text
+    assert "abcdef12" in text  # 短 commit (前10)
+    assert "cid-0000000-a" in text  # 短 cid
+    assert "cid-0000000-a" in text.split("\n")[1]  # 第一条是旧的
+    assert "cid-0000000-b" in text.split("\n")[2]  # 第二条是新的
+    assert "/rollback" in text

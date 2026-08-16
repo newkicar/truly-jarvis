@@ -264,6 +264,7 @@ const r = await task({
 - **手动 `/snapshot`**：用户主动触发时，若项目目录有文件变更 → `git add -A && git commit -m "javis <checkpoint_id>"`（不自动每轮 commit，避免刷爆历史）
 - **映射表**（项目内 SQLite）：`{thread_id, checkpoint_id, commit_hash, timestamp}`，`git_mapping.sqlite` 被 gitignore
 - **回退**：会话 `update_state`/replay 回退 + 文件 `/rollback <checkpoint_id>` → `git reset --hard <对应 commit>`，两者对齐
+- **`/snapshots`**：从旧到新，每行显示时间戳 + 短 commit（前 10 位）+ 所属线程 + 短 cid（前 13 位）；`/rollback <短cid>` 支持前缀唯一匹配。
 
 ### 10.4 Obsidian vault 处理（不纳入 git）
 - vault 文件写入**不参与 git 回退**，依赖 Obsidian 自带 **File Recovery（文件恢复）插件**兜底。

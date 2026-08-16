@@ -101,13 +101,33 @@ def get_commit(root: Path, checkpoint_id: str) -> Optional[str]:
         return row[0] if row else None
 
 
-def list_snapshots(root: Path) -> list[tuple[str, str, str]]:
-    """列出全部快照 (checkpoint_id, thread_id, commit_hash)。"""
+def list_snapshots(root: Path) -> list[tuple[str, str, str, str]]:
+    """列出全部快照 (checkpoint_id, thread_id, commit_hash, ts)，从旧到新。"""
     with _db(root) as conn:
         return conn.execute(
-            "SELECT checkpoint_id, thread_id, commit_hash FROM snapshots "
-            "ORDER BY ts DESC"
+            "SELECT checkpoint_id, thread_id, commit_hash, ts FROM snapshots "
+            "ORDER BY ts ASC"
         ).fetchall()
+
+
+def resolve_commit(root: Path, raw: str) -> Optional[str]:
+    """把用户输入（完整 checkpoint_id 或短 id 前缀）解析成 commit_hash。
+
+    短 id = checkpoint_id 前缀；要求唯一匹配，多个匹配返回 None（歧义）。
+    """
+    with _db(root) as conn:
+        exact = conn.execute(
+            "SELECT commit_hash FROM snapshots WHERE checkpoint_id = ?", (raw,)
+        ).fetchone()
+        if exact:
+            return exact[0]
+        rows = conn.execute(
+            "SELECT checkpoint_id, commit_hash FROM snapshots WHERE checkpoint_id LIKE ?",
+            (raw + "%",),
+        ).fetchall()
+        if len(rows) == 1:
+            return rows[0][1]
+        return None
 
 
 def rollback(root: Path, checkpoint_id: str) -> Optional[str]:
@@ -116,5 +136,10 @@ def rollback(root: Path, checkpoint_id: str) -> Optional[str]:
     commit = get_commit(root, checkpoint_id)
     if commit is None:
         return None
+    return rollback_commit(root, commit)
+
+
+def rollback_commit(root: Path, commit: str) -> str:
+    """按 commit_hash 回退项目文件到该提交，返回 commit_hash。"""
     _git(root, "reset", "--hard", commit)
     return commit

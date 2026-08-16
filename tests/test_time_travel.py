@@ -56,4 +56,26 @@ def test_list_snapshots(tmp_path):
     (tmp_path / "a.txt").write_text("x", encoding="utf-8")
     time_travel.snapshot(tmp_path, "t9", "c9")
     rows = time_travel.list_snapshots(tmp_path)
-    assert any(cid == "c9" and tid == "t9" for cid, tid, _ in rows)
+    assert any(cid == "c9" and tid == "t9" for cid, tid, _, _ in rows)
+
+
+def test_list_snapshots_orders_oldest_first(tmp_path):
+    _init_git_repo(tmp_path)
+    (tmp_path / "a.txt").write_text("x", encoding="utf-8")
+    time_travel.snapshot(tmp_path, "t1", "c1")
+    time_travel.snapshot(tmp_path, "t2", "c2")
+    rows = time_travel.list_snapshots(tmp_path)
+    assert [r[0] for r in rows] == ["c1", "c2"]
+
+
+def test_resolve_commit_supports_short_prefix(tmp_path):
+    _init_git_repo(tmp_path)
+    (tmp_path / "a.txt").write_text("x", encoding="utf-8")
+    commit1 = time_travel.snapshot(tmp_path, "t1", "c1-1111-2222-3333")
+    (tmp_path / "a.txt").write_text("y", encoding="utf-8")
+    time_travel.snapshot(tmp_path, "t2", "c1-aaaa-bbbb-cccc")
+
+    assert time_travel.resolve_commit(tmp_path, "c1-1111-2222-3333") == commit1
+    assert time_travel.resolve_commit(tmp_path, "c1-1111-2222-33") == commit1  # 短前缀
+    assert time_travel.resolve_commit(tmp_path, "c1-") is None  # 歧义（两个 c1- 开头）
+    assert time_travel.resolve_commit(tmp_path, "zzz") is None  # 未找到
