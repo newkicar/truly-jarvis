@@ -22,6 +22,7 @@ from langchain_quickjs import CodeInterpreterMiddleware
 
 from src.config import Config
 from src.permissions import build_permission_interrupts
+from src.rag import make_semantic_search_tool
 from src.subagents import build_knowledge_keeper, build_researcher
 from src.tools import make_tavily_tool
 from src.wiki import make_wiki_tools
@@ -78,7 +79,8 @@ def build_agent(
 
     tavily_tool = make_tavily_tool(config.tavily_key)
     wiki_tools = make_wiki_tools(config.vault_path)
-    researcher = build_researcher(tavily_tool, wiki_tools=wiki_tools)
+    rag_tool = make_semantic_search_tool(config.vault_path, config.memory_dir / "rag-index")
+    researcher = build_researcher(tavily_tool, wiki_tools=wiki_tools, rag_tool=rag_tool)
     knowledge_keeper = build_knowledge_keeper()
 
     memory = [

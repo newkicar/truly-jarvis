@@ -135,6 +135,7 @@ backend = CompositeBackend(
 ```
 - `root_dir` 必须是**绝对路径**（Windows 反斜杠或 `pathlib`）；`virtual_mode=True` 启用路径沙箱。
 - 检索流程（写进 researcher system_prompt）：`grep` 命中关键词 → `read_file` 读笔记 → 调 `vault_links` 列出出链（沿 `[[wikilink]]` 追关联笔记）→ 调 `vault_backlinks` 查反向链接（谁在讨论它）→ 对相关笔记再读 → 综合。链接解析由 `src/wiki.py` 程序化完成（文件名/别名/大小写不敏感匹配，支持 `[[标题|显示]]`、`[[目录/笔记]]`、`[[标题#小节]]`、frontmatter `aliases`），**零索引**（每次调用实时扫描 vault，不建持久索引）。
+- **增量 RAG 语义增强**（`src/rag.py`）：`grep` 命中少或想找「语义相近但用词不同」的笔记时，调 `vault_semantic_search` 补语义召回。索引持久化于 `memory/rag-index/`（chromadb），embedding 走 Ollama 本地模型 `bge-small-zh-v1.5`（512 维，离线）。**增量机制**：`{文件路径 → 内容 hash}` 缓存，仅对变更/新增文件重新 embedding（设计文档 §5.1「文件 hash 增量索引」），删除文件同步移除。检索结果与 grep/wiki 合并去重。Ollama 不可用时自动回落（返回空，不抛错）。
 - 回写：`knowledge_keeper` 用 `write_file` 在 `/vault/Inbox/` **新增**带 wikilink 的笔记（**只新增，绝不修改/删除既有笔记**；wikilink 仅关联确实存在的笔记，不编造）。用户在 Obsidian 审核后手动归档。
 - 升级路径：同路径加向量索引工具做语义召回，`grep` 与语义结果合并去重，即「导航 + 增量 RAG 增强」。
 
@@ -297,6 +298,7 @@ truly_Javis/
 │   ├── subagents.py          # researcher / knowledge_keeper / executor 定义
 │   ├── tools.py              # tavily_search 等自定义工具
 │   ├── wiki.py               # wikilink/backlink 导航工具（出链/反链，零索引实时扫描）
+│   ├── rag.py                # 增量 RAG 语义增强（chromadb + Ollama embedding，hash 增量）
 │   ├── permissions.py        # HITL 审批（javis.json permissions → interrupt_on）
 │   ├── time_travel.py        # /history /replay /fork /sessions + git 映射表
 │   └── scheduler.py          # APScheduler 定时任务（二期）
@@ -349,4 +351,4 @@ truly_Javis/
 - [x] 主代理直接 shell 执行能力（`/workspace/` 换 `LocalShellBackend`，不再设独立 executor 子代理）
 - [x] HITL 审批（`javis.json` `permissions`：allow/ask/deny + 规则集；CLI y/n/e/a）
 - [ ] 可安装外部 skill / mcp
-- [ ] 增量 RAG 语义增强
+- [x] 增量 RAG 语义增强（`src/rag.py`：Ollama bge-small-zh + chromadb，hash 增量索引，`vault_semantic_search` 工具）

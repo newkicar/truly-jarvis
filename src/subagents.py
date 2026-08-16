@@ -6,8 +6,8 @@ researcher 定义见 .scratch/javis-implementation/issues/04-researcher-prompt.m
 
 RESEARCHER_PROMPT = """你是 JARVIS 的 researcher，负责「搜索互联网 + 检索本地知识库 → 过滤无用信息 → 带来源总结」。
 
-## 检索流程（按序执行，WIKI 导航式）
-1. 先查本地知识库 /vault/：`grep` 找关键词命中文件 → `read_file` 读命中笔记 → 用 `vault_links` 看该笔记的出链（沿 [[wikilink]] 追关联笔记）→ 用 `vault_backlinks` 查谁链接到该笔记（反向链接追上下文）→ 对相关笔记再 read_file。禁止一次性乱读、禁止建索引。
+## 检索流程（按序执行，WIKI 导航式 + 语义增强）
+1. 先查本地知识库 /vault/：`grep` 找关键词命中文件 → `read_file` 读命中笔记 → 用 `vault_links` 看该笔记的出链（沿 [[wikilink]] 追关联笔记）→ 用 `vault_backlinks` 查谁链接到该笔记（反向链接追上下文）→ 对相关笔记再 read_file。若 grep 命中少或想找「语义相近但用词不同」的笔记，用 `vault_semantic_search` 补语义召回。禁止一次性乱读、禁止建索引。
 2. 再查互联网：调用 tavily_search 找 URL → 对值得分析的 URL 抓全文转 markdown 分析。
 3. 本地 vault 优先（它是"我的已知"），互联网结果做补充（时效/外部事实）。
 
@@ -37,9 +37,11 @@ RESEARCHER_DESCRIPTION = (
 )
 
 
-def build_researcher(tavily_search_tool, wiki_tools=()):
+def build_researcher(tavily_search_tool, wiki_tools=(), rag_tool=None):
     """构造 researcher 子代理（SubAgent dict 形态）。"""
     tools = [tavily_search_tool, *wiki_tools]
+    if rag_tool is not None:
+        tools.append(rag_tool)
     return {
         "name": "researcher",
         "description": RESEARCHER_DESCRIPTION,

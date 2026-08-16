@@ -1,8 +1,8 @@
 # AGENTS.md
 
 ## 项目状态
-- **一期 + 二期 MVP 已实现**（2026-08-15），代码在 `src/`，测试在 `tests/`（61 个单测全绿）。权威设计文档：`docs/specs/2026-08-15-javis-design.md`。
-- 交付：`config.py`(.env 兼容解析+javis.json→Config)、`tools.py`(tavily_search)、`wiki.py`(wikilink/backlink 导航工具：出链/反链，零索引实时扫描)、`subagents.py`(researcher + knowledge_keeper)、`agent.py`(build_agent)、`scheduler.py`(APScheduler 定时检索)、`time_travel.py`(git 快照回退)、`permissions.py`(HITL 审批，对标 opencode permission)、`main.py`(CLI + /exit /sessions /history /replay /fork /snapshot /snapshots /rollback /reload-schedules + 审批 y/n/e/a)、`smoke_test.py`(真模型冒烟，手动)、`tests/_manual/fanout_probe.py`(fan-out 实测探针)。
+- **一期 + 二期 MVP 已实现**（2026-08-15），代码在 `src/`，测试在 `tests/`（70 个单测全绿）。权威设计文档：`docs/specs/2026-08-15-javis-design.md`。
+- 交付：`config.py`(.env 兼容解析+javis.json→Config)、`tools.py`(tavily_search)、`wiki.py`(wikilink/backlink 导航工具：出链/反链，零索引实时扫描)、`rag.py`(增量 RAG 语义增强：Ollama bge-small-zh + chromadb，hash 增量索引)、`subagents.py`(researcher + knowledge_keeper)、`agent.py`(build_agent)、`scheduler.py`(APScheduler 定时检索)、`time_travel.py`(git 快照回退)、`permissions.py`(HITL 审批，对标 opencode permission)、`main.py`(CLI + /exit /sessions /history /replay /fork /snapshot /snapshots /rollback /reload-schedules + 审批 y/n/e/a)、`smoke_test.py`(真模型冒烟，手动)、`tests/_manual/fanout_probe.py`(fan-out 实测探针)。
 - 实现状态跟踪：本地 issue tracker `.scratch/javis-implementation/`（spec + 票 01-15）。
 
 ## 强制要求（README 约定，缺一不可）
@@ -13,7 +13,8 @@
 - 主库 `deepagents`（`create_deep_agent`）；模型走 OpenAI 兼容端点 `https://opencode.ai/zen/go/v1`（go 按月套餐，已验证对话 + tool calling），模型 `mimo-v2.5`（2026-08-17 起，原 deepseek-v4-flash 因涨价弃用），模型名不加前缀，经 `.env` 的 `MODEL_ID` 读取。
 - 交互形态：纯 CLI。
 - 知识库 = Obsidian vault（`E:\Thomas\Obsidian_warehouse`，路径可改，走 `javis.json`）。
-  - 访问方式 = **WIKI 导航式**：`FilesystemBackend` 指向 vault，复用原生 `grep/glob/read_file`，**不要建 RAG/向量索引**。
+  - 访问方式 = **WIKI 导航式**：`FilesystemBackend` 指向 vault，复用原生 `grep/glob/read_file`，加 `src/wiki.py` 的 wikilink/backlink 导航工具（出链/反链，**零索引**实时扫描）。
+  - 语义增强 = **增量 RAG**（`src/rag.py`）：Ollama `bge-small-zh-v1.5` embedding + chromadb（索引存 `memory/rag-index/`），hash 增量索引只重建变更文件；`vault_semantic_search` 工具与 grep/wiki 结果合并去重。Ollama 不可用时自动回落。
 - 记忆分离：知识 → Obsidian vault；信息记忆（偏好/行业）→ 项目 `memory/`。
   - 长期记忆用 FilesystemBackend 指向 `memory/`（文件持久、用户可看可编辑），**不用 StoreBackend**；`memory=` 注入所有 `*.md`（除 README）。
 - 全局配置用 `javis.json`（模拟 opencode）；可变项放这里，不写死（含 `checkpoint_db`、`schedules_dir`）。定时任务**外置**到 `schedules/*.json`（每任务一 JSON：时间/任务/保存路径/要求），增删 = 加删文件。
@@ -30,7 +31,7 @@
 ## 分期
 - ✅ 一期（已完成）：主代理 + researcher（指定检索）+ WIKI 导航知识库 + SqliteSaver 短期记忆 + 会话回退 + javis.json + Tavily。
 - ✅ 二期（已完成）：动态子代理 fan-out（CodeInterpreterMiddleware，实测通过）+ 定时检索（schedules/ 目录配置 + APScheduler + /reload-schedules 热重载）+ knowledge_keeper 知识沉淀 + git 文件回退（手动 /snapshot）+ 事件流式输出（stream_events v3）。单测 41 绿。
-- 三期：executor + skill/mcp 接口 + 增量 RAG 增强。
+- 三期：executor（✅ 主代理直接 execute + HITL 审批）+ skill/mcp 接口（待做）+ 增量 RAG 增强（✅）。
 
 ## Agent skills
 
