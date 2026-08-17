@@ -8,8 +8,15 @@ RESEARCHER_PROMPT = """你是 JARVIS 的 researcher，负责「搜索互联网 +
 
 ## 检索流程（按序执行，WIKI 导航式 + 语义增强）
 1. 先查本地知识库 /vault/：`grep` 找关键词命中文件 → `read_file` 读命中笔记 → 用 `vault_links` 看该笔记的出链（沿 [[wikilink]] 追关联笔记）→ 用 `vault_backlinks` 查谁链接到该笔记（反向链接追上下文）→ 对相关笔记再 read_file。若 grep 命中少或想找「语义相近但用词不同」的笔记，用 `vault_semantic_search` 补语义召回。禁止一次性乱读、禁止建索引。
-2. 再查互联网：调用 tavily_search 找 URL → 对值得分析的 URL 抓全文转 markdown 分析。
+2. 再查互联网：按问题复杂度选搜索工具（见下）。对值得深入分析的 URL 用 `deep_search` 拿全文。
 3. 本地 vault 优先（它是"我的已知"），互联网结果做补充（时效/外部事实）。
+
+## 搜索工具选择（按问题复杂度，不硬编码）
+- **quick_search**：简单事实问题（天气、时间、定义、人物简介、一句话能答的）→ 用它，直接采用 AI 摘要即可，约 1-2 秒。
+- **search**：一般查询（技术问题、产品对比、新闻动态、背景信息）→ 用它，浏览摘要片段，约 2-3 秒。
+- **deep_search**：深度调研（行业分析、调研报告、多角度对比、复杂主题）→ 用它拿全文，约 5-10 秒。
+- 不确定时先用 search；发现摘要不够、需要细节时再升级 deep_search 补充。
+- 避免滥用 deep_search 处理简单问题（慢、费额度）。
 
 ## 融合去重
 - 同一事实多来源时，取更新/更权威者；无关或重复内容直接丢弃。
@@ -37,9 +44,12 @@ RESEARCHER_DESCRIPTION = (
 )
 
 
-def build_researcher(tavily_search_tool, wiki_tools=(), rag_tool=None):
-    """构造 researcher 子代理（SubAgent dict 形态）。"""
-    tools = [tavily_search_tool, *wiki_tools]
+def build_researcher(search_tools=(), wiki_tools=(), rag_tool=None):
+    """构造 researcher 子代理（SubAgent dict 形态）。
+
+    search_tools: 分层搜索工具列表（quick_search / search / deep_search）。
+    """
+    tools = [*search_tools, *wiki_tools]
     if rag_tool is not None:
         tools.append(rag_tool)
     return {

@@ -1,75 +1,100 @@
-"""工具层测试。
+"""工具层测试（分层搜索）。
 
-Seam: src.tools.tavily_search（输入 query → 输出结构化 markdown 文本）。
-mock TavilyClient 与 httpx，验证拼接与异常分支，不触网。
+Seam: src.tools._search（输入 → 结构化 markdown）。mock TavilyClient，
+验证 quick/search/deep 三档深度参数、AI 摘要、全文 raw_content、异常分支。
 """
-import httpx
 import pytest
 
 
-def test_tavily_search_returns_structured_markdown(tmp_path, monkeypatch):
-    from src import tools
+class _FakeTavily:
+    """记录调用参数并返回固定结果。"""
 
-    search_results = {
-        "results": [
+    def __init__(self, results=None, answer=None, raw_content=None):
+        self._results = results or [
             {"title": "标题A", "url": "https://example.com/a", "content": "摘要A"},
             {"title": "标题B", "url": "https://example.com/b", "content": "摘要B"},
         ]
-    }
+        self._answer = answer
+        self._raw = raw_content
+        self.calls = []
 
-    class FakeTavily:
-        def search(self, query, max_results, timeout=None):
-            assert query == "大模型 最新动态"
-            assert max_results == 5
-            return search_results
-
-    monkeypatch.setattr(tools, "TavilyClient", lambda api_key: FakeTavily())
-
-    def fake_fetch(url):
-        return f"<html><body><h1>{url}</h1><p>正文内容</p></body></html>"
-
-    monkeypatch.setattr(tools, "_fetch_url", fake_fetch)
-
-    out = tools.tavily_search(query="大模型 最新动态", max_results=5, tavily_key="tvly-test")
-    assert "标题A" in out
-    assert "https://example.com/a" in out
-    assert "正文内容" in out
+    def search(self, query, **kwargs):
+        self.calls.append({"query": query, **kwargs})
+        out = {"results": self._results}
+        if self._answer:
+            out["answer"] = self._answer
+        if self._raw:
+            for i, r in enumerate(self._results):
+                self._results[i]["raw_content"] = self._raw
+        return out
 
 
-def test_tavily_search_handles_empty_results(monkeypatch):
+@pytest.fixture
+def fake_tavily(monkeypatch):
     from src import tools
 
-    monkeypatch.setattr(tools, "TavilyClient", lambda api_key: type("F", (), {"search": lambda self, query, max_results, timeout=None: {"results": []}})())
+    fake = _FakeTavily()
 
-    out = tools.tavily_search(query="不存在的东西", max_results=3, tavily_key="tvly-test")
-    assert "未找到" in out or "没有" in out or "无" in out
+    def _client(api_key):
+        return fake
+
+    monkeypatch.setattr(tools, "TavilyClient", _client)
+    return fake
 
 
-def test_tavily_search_handles_fetch_failure(tmp_path, monkeypatch):
+def test_quick_search_uses_fast_depth_and_answer(fake_tavily):
+    from src.tools import _search
+
+    fake_tavily._answer = "今天晴，25 度。"
+    out = _search("tvly-x", "今天天气", search_depth="fast", include_answer=True, max_results=3)
+    assert fake_tavily.calls[0]["search_depth"] == "fast"
+    assert fake_tavily.calls[0]["include_answer"] is True
+    assert "AI 摘要" in out and "今天晴" in out
+
+
+def test_standard_search_uses_basic_depth(fake_tavily):
+    from src.tools import _search
+
+    out = _search("tvly-x", "大模型 最新动态")
+    assert fake_tavily.calls[0]["search_depth"] == "basic"
+    assert fake_tavily.calls[0]["include_raw_content"] is False
+    assert "标题A" in out and "https://example.com/a" in out
+
+
+def test_deep_search_uses_advanced_and_raw_content(fake_tavily):
+    from src.tools import _search
+
+    fake_tavily._raw = "这是一篇长文正文……" * 10
+    out = _search("tvly-x", "行业调研", search_depth="advanced", include_raw_content=True)
+    assert fake_tavily.calls[0]["search_depth"] == "advanced"
+    assert fake_tavily.calls[0]["include_raw_content"] is True
+    assert "正文节选" in out
+
+
+def test_search_handles_empty_results(fake_tavily):
+    from src.tools import _search
+
+    fake_tavily._results = []
+    out = _search("tvly-x", "不存在")
+    assert "未找到" in out
+
+
+def test_search_handles_failure(monkeypatch):
     from src import tools
 
-    search_results = {"results": [{"title": "A", "url": "https://example.com/a", "content": "摘要"}]}
-    monkeypatch.setattr(tools, "TavilyClient", lambda api_key: type("F", (), {"search": lambda self, query, max_results, timeout=None: search_results})())
-    monkeypatch.setattr(tools, "_fetch_url", lambda url: (_ for _ in ()).throw(httpx.HTTPError("boom")))
-
-    out = tools.tavily_search(query="x", max_results=1, tavily_key="tvly-test")
-    assert "抓取失败" in out or "https://example.com/a" in out
-
-
-def test_tavily_search_handles_search_failure(monkeypatch):
-    from src import tools
-
-    class BrokenTavily:
-        def search(self, query, max_results, timeout=None):
+    class Broken:
+        def search(self, query, **kwargs):
             raise RuntimeError("network down")
 
-    monkeypatch.setattr(tools, "TavilyClient", lambda api_key: BrokenTavily())
-
-    out = tools.tavily_search(query="x", max_results=1, tavily_key="tvly-test")
+    monkeypatch.setattr(tools, "TavilyClient", lambda api_key: Broken())
+    out = tools._search("tvly-x", "x")
     assert "搜索失败" in out
 
 
-def test_tavily_search_is_a_tool():
-    from src import tools
+def test_make_tools_are_callable():
+    from src.tools import make_deep_search_tool, make_quick_search_tool, make_search_tool
 
-    assert callable(tools.tavily_search)
+    for maker in (make_quick_search_tool, make_search_tool, make_deep_search_tool):
+        t = maker("tvly-x")
+        assert hasattr(t, "invoke")
+        assert t.name in ("quick_search", "search", "deep_search")

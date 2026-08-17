@@ -139,6 +139,20 @@ backend = CompositeBackend(
 - 回写：`knowledge_keeper` 用 `write_file` 在 `/vault/Inbox/` **新增**带 wikilink 的笔记（**只新增，绝不修改/删除既有笔记**；wikilink 仅关联确实存在的笔记，不编造）。用户在 Obsidian 审核后手动归档。
 - 升级路径：同路径加向量索引工具做语义召回，`grep` 与语义结果合并去重，即「导航 + 增量 RAG 增强」。
 
+### 5.3 分层搜索策略（互联网检索，按问题复杂度选档）
+
+`src/tools.py` 提供三档 Tavily 搜索工具，**路由交给 LLM**（工具描述 + researcher prompt 引导，不硬编码）：
+
+| 工具 | Tavily depth | 内容 | 耗时 | 场景 |
+|---|---|---|---|---|
+| `quick_search` | `fast` | AI 摘要 + 片段 | ~1-2s | 简单事实（天气/定义/一句话） |
+| `search` | `basic` | 相关片段 | ~2-3s | 一般查询（技术/新闻/产品） |
+| `deep_search` | `advanced` + `include_raw_content` | 全文 | ~5-10s | 调研报告/复杂主题 |
+
+- **不用自研 httpx 抓全文**：Tavily `include_raw_content` 已完成页面清洗（不反爬、不超时），删除原 `_fetch_url`/`markdownify`。
+- **LLM 路由机制**：三个工具各有语义名 + 描述，researcher prompt 写明选择策略（简单→quick、一般→search、调研→deep、不确定先 search 再升级）。LLM 根据用户问题自主选择，零硬编码。
+- 渐进升级：`search` 结果不足时 agent 可再调 `deep_search` 补充。
+
 ---
 
 ## 6. 记忆方案（长短期分离）
@@ -162,7 +176,8 @@ backend = CompositeBackend(
 ### 7.1 指定检索流程（一期核心）
 ```
 用户提问 → 主代理路由 → researcher 子代理：
-  1. tavily_search 搜互联网（Tavily 找 URL → httpx 抓全文 → markdownify 转 md）
+  1. 分层搜索互联网（quick_search 轻量事实 / search 一般查询 / deep_search 深度调研，
+     LLM 按问题复杂度选工具，见 §5.3；不用自研 httpx 抓全文，Tavily include_raw_content 代劳）
   2. grep/glob 检 /vault/ 本地知识库
   3. 融合去重 → 过滤无用信息 → 总结为带引用 markdown
   4. 返回终端展示
@@ -296,7 +311,7 @@ truly_Javis/
 │   ├── config.py             # 读 .env + javis.json → 配置 dataclass
 │   ├── agent.py              # 组装：model + backend + subagents + memory + checkpointer
 │   ├── subagents.py          # researcher / knowledge_keeper / executor 定义
-│   ├── tools.py              # tavily_search 等自定义工具
+│   ├── tools.py              # 分层搜索：quick_search / search / deep_search（Tavily）
 │   ├── wiki.py               # wikilink/backlink 导航工具（出链/反链，零索引实时扫描）
 │   ├── rag.py                # 增量 RAG 语义增强（chromadb + Ollama embedding，hash 增量）
 │   ├── permissions.py        # HITL 审批（javis.json permissions → interrupt_on）

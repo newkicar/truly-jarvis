@@ -16,7 +16,7 @@ from langchain_quickjs import CodeInterpreterMiddleware
 from src.agent import _make_model, _make_backend
 from src.config import load_config
 from src.subagents import build_researcher
-from src.tools import make_tavily_tool
+from src.tools import make_deep_search_tool, make_quick_search_tool, make_search_tool
 
 from deepagents import create_deep_agent
 
@@ -25,8 +25,12 @@ def main() -> int:
     config = load_config()
     model = _make_model(config)
     backend = _make_backend(config)
-    tavily = make_tavily_tool(config.tavily_key)
-    researcher = build_researcher(tavily)
+    search_tools = [
+        make_quick_search_tool(config.tavily_key),
+        make_search_tool(config.tavily_key),
+        make_deep_search_tool(config.tavily_key),
+    ]
+    researcher = build_researcher(search_tools=search_tools)
 
     agent = create_deep_agent(
         model=model,

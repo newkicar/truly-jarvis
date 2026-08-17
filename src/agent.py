@@ -24,7 +24,7 @@ from src.config import Config
 from src.permissions import build_permission_interrupts
 from src.rag import make_semantic_search_tool
 from src.subagents import build_knowledge_keeper, build_researcher
-from src.tools import make_tavily_tool
+from src.tools import make_deep_search_tool, make_quick_search_tool, make_search_tool
 from src.wiki import make_wiki_tools
 
 MAIN_SYSTEM_PROMPT = """你是 JARVIS，一个个人 AI 助手，专注扩展用户的心智。
@@ -77,10 +77,14 @@ def build_agent(
     checkpointer = checkpointer or InMemorySaver()
     store = store or InMemoryStore()
 
-    tavily_tool = make_tavily_tool(config.tavily_key)
+    search_tools = [
+        make_quick_search_tool(config.tavily_key),
+        make_search_tool(config.tavily_key),
+        make_deep_search_tool(config.tavily_key),
+    ]
     wiki_tools = make_wiki_tools(config.vault_path)
     rag_tool = make_semantic_search_tool(config.vault_path, config.memory_dir / "rag-index")
-    researcher = build_researcher(tavily_tool, wiki_tools=wiki_tools, rag_tool=rag_tool)
+    researcher = build_researcher(search_tools=search_tools, wiki_tools=wiki_tools, rag_tool=rag_tool)
     knowledge_keeper = build_knowledge_keeper()
 
     memory = [
