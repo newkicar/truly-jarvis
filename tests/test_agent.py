@@ -8,7 +8,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from src.agent import build_agent
+from src.agent import build_agent, build_main_prompt
 from src.subagents import build_knowledge_keeper
 from conftest import make_fake_config
 
@@ -38,6 +38,36 @@ def test_build_agent_assembles(tmp_path):
     agent = build_agent(cfg)
     assert agent is not None
     assert callable(getattr(agent, "invoke", None))
+
+
+def test_build_main_prompt_injects_today_date():
+    """build_main_prompt() 应动态注入今天日期，而非硬编码。"""
+    from datetime import date
+
+    today = date.today().isoformat()
+    prompt = build_main_prompt()
+    assert f"今天是 {today}" in prompt
+    assert "委派 researcher" in prompt
+
+
+def test_build_agent_uses_build_main_prompt(tmp_path, monkeypatch):
+    """create_deep_agent 收到的 system_prompt 应为 build_main_prompt() 输出。"""
+    import src.agent as agent_mod
+    from src.agent import create_deep_agent
+
+    cfg = make_fake_config(tmp_path)
+    captured = {}
+
+    def spy(**kwargs):
+        captured.update(kwargs)
+        return create_deep_agent(**kwargs)
+
+    monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+    model = ToolCapableFake(reply="ok")
+    build_agent(cfg, model=model)
+
+    assert captured.get("system_prompt") == build_main_prompt()
+    assert "今天是" in captured.get("system_prompt", "")
 
 
 def test_build_agent_invoke_returns_message(tmp_path):

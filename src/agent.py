@@ -36,9 +36,24 @@ MAIN_SYSTEM_PROMPT = """你是 JARVIS，一个个人 AI 助手，专注扩展用
 - 复杂/多角度研究（需并行覆盖多个独立维度）→ 写 JS 脚本用 task() + Promise.all fan-out 多个 researcher 子代理，再合并结果。
 - 闲聊、纯知识问答、与本地/时效无关的问题 → 直接回答，不委派。
 
+## 委派 researcher 的规则（重要）
+- 委派时把**用户的原始问题**作为 task 内容传给 researcher，不要自行扩写成「完整时间表/全面调研/详细报告」等更复杂的任务——researcher 会根据问题复杂度自动选档（快/中/深）。
+- 需要联网的简单事实问题（如「今天天气」「哪天出伏」）也正常委派，researcher 会用轻量搜索快速返回，几秒即可。
+- 涉及时效的问题（年份、节假日、最新事件）先看「今天日期」再决定查哪年，不要凭记忆猜年份。
+
 ## 输出
 回答用简体中文，简洁、有结构。引用本地知识库时用 /vault/ 路径。
 """
+
+
+def build_main_prompt() -> str:
+    """注入今天日期的主系统提示词。"""
+    from datetime import date
+
+    today = date.today().isoformat()
+    return (
+        "今天是 " + today + "。\n\n" + MAIN_SYSTEM_PROMPT
+    )
 
 
 def _make_model(config: Config) -> BaseChatModel:
@@ -105,7 +120,7 @@ def build_agent(
         model=model,
         backend=_make_backend(config),
         subagents=[researcher, knowledge_keeper],  # type: ignore[list-item]
-        system_prompt=MAIN_SYSTEM_PROMPT,
+        system_prompt=build_main_prompt(),
         middleware=[CodeInterpreterMiddleware(subagents=True)],  # 动态子代理 fan-out（beta）
         memory=memory,
         skills=skills,
