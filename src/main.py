@@ -16,12 +16,6 @@ from src.permissions import build_permission_interrupts
 ensure_utf8_stdout()
 
 PROMPT = "JARVIS> "
-HELP = commands.HELP
-
-
-def _render(messages) -> str:
-    """取最后一条 AI 消息内容。"""
-    return commands.render(messages)
 
 
 def _run_session(agent, thread_id: str, sched=None, permission_state: dict | None = None):
@@ -39,7 +33,7 @@ def _run_session(agent, thread_id: str, sched=None, permission_state: dict | Non
         if user_input == "/exit":
             break
         if user_input == "/help":
-            print(HELP)
+            print(commands.CLI_HELP)
             continue
 
         if user_input.startswith("/"):
@@ -89,7 +83,7 @@ def _stream_turn(agent, thread_id: str, user_input: str, permission_state: dict 
         if not getattr(stream, "interrupted", False) or not getattr(stream, "interrupts", None):
             final_state = stream.output
             if not consumed:
-                final_text = _render(final_state["messages"]) if final_state else ""
+                final_text = commands.render(final_state["messages"]) if final_state else ""
                 if final_text:
                     print(final_text)
             print("\n")
@@ -195,7 +189,7 @@ def main(argv=None) -> int:
             if use_tui:
                 from src.tui import JarvisApp
 
-                JarvisApp(config, agent, permission_state, sched, thread_id).run()
+                JarvisApp(config, agent, permission_state, sched, thread_id, mcp_tool_count=len(mcp_tools)).run()
             else:
                 _run_session(agent, thread_id, sched, permission_state)
         finally:

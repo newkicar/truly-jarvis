@@ -71,18 +71,16 @@ class PermissionModal(ModalScreen):
     }
     """
 
-    def __init__(self, tool: str, path: str, args: dict):
+    def __init__(self, inv: commands.ToolInvocation):
         super().__init__()
-        self.tool = tool
-        self.path = path
-        self.path_label = "Command:" if tool == "execute" else "Path:"
-        self.args = args
+        self.inv = inv
+        self.path_label = "Command:" if inv.name == "execute" else "Path:"
 
     def compose(self) -> ComposeResult:
         with Static(id="perm_box"):
-            yield Label(f"Tool: {self.tool}", id="perm_tool")
-            yield Label(f"{self.path_label} {self.path}", id="perm_path")
-            preview_lines = "\n".join(f"{k}: {str(v)[:120]}" for k, v in (self.args or {}).items())
+            yield Label(f"Tool: {self.inv.name}", id="perm_tool")
+            yield Label(f"{self.path_label} {self.inv.path}", id="perm_path")
+            preview_lines = "\n".join(f"{k}: {str(v)[:120]}" for k, v in (self.inv.args or {}).items())
             yield Static(preview_lines or "（无参数）", id="perm_preview")
             with Horizontal(id="perm_buttons"):
                 yield Button("放行", id="btn_approve", variant="success")
@@ -105,7 +103,7 @@ class PermissionModal(ModalScreen):
             if result is not None:
                 self.dismiss({"decision": "edit", "edited": result})
 
-        self.app.push_screen(EditParamsModal(self.args), got_edited)
+        self.app.push_screen(EditParamsModal(self.inv.args), got_edited)
 
     def action_choose(self, decision: str) -> None:
         self.dismiss({"decision": decision})
@@ -165,16 +163,21 @@ class JarvisApp(App):
     }
     """
 
-    def __init__(self, config, agent, permission_state: dict, sched=None, thread_id: str = "default"):
+    def __init__(self, config, agent, permission_state: dict, sched=None, thread_id: str = "default", mcp_tool_count: int = 0):
         super().__init__()
         self.config = config
         self.agent = agent
         self.permission_state = permission_state
         self.sched = sched
         self.thread_id = thread_id
+        self._mcp_tool_count = mcp_tool_count
         self._worker: Worker | None = None
         self.title = "JARVIS"
-        self.sub_title = thread_id
+        self._update_sub_title()
+
+    def _update_sub_title(self) -> None:
+        mcp_tag = f"  MCP:{self._mcp_tool_count}" if self._mcp_tool_count else ""
+        self.sub_title = f"{self.thread_id}{mcp_tag}"
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -198,7 +201,7 @@ class JarvisApp(App):
             self.exit()
             return
         if text == "/help":
-            log.write(commands.HELP)
+            log.write(commands.TUI_HELP)
             return
         if text.startswith("/"):
             self._run_command(text)
@@ -211,7 +214,7 @@ class JarvisApp(App):
         log.write(result)
         if new_thread:
             self.thread_id = new_thread
-            self.sub_title = new_thread
+            self._update_sub_title()
             log.write(f"[b]已切换到会话 {new_thread}[/b]")
 
     def _stream_turn(self, user_input: str) -> None:
@@ -258,7 +261,7 @@ class JarvisApp(App):
                     for delta in item.text:
                         consumed += 1
                         if not cancelled():
-                            self.call_from_thread(log.write, f"[primary]▌[/primary] {delta}", scroll_end=True)
+                            self.call_from_thread(log.write, f"[b][primary]▌ JARVIS[/primary][/b] {delta}", scroll_end=True)
 
             elapsed = time() - started
             model = getattr(self.config, "model_id", "") or "model"
@@ -266,7 +269,7 @@ class JarvisApp(App):
                 final_state = stream.output
                 final_text = commands.render(final_state["messages"]) if final_state else ""
                 if final_text:
-                    write_line(f"[b][primary]▌[/primary][/b] {final_text}")
+                    write_line(f"[b][primary]▌ JARVIS[/primary][/b] {final_text}")
 
             if not getattr(stream, "interrupted", False) or not getattr(stream, "interrupts", None):
                 write_line(f"[dim]▌ {model} ({elapsed:.1f}s)[/dim]")
@@ -294,15 +297,9 @@ class JarvisApp(App):
             value = getattr(interrupt, "value", None) or {}
             action_requests = value.get("action_requests", [])
             for action in action_requests:
-                name = action.get("name", "?")
-                args = action.get("args", {})
-                path = ""
-                if name == "execute":
-                    path = str(args.get("command", args.get("cmd", "")))
-                else:
-                    path = str(args.get("file_path", args.get("path", "")))
+                inv = commands.ToolInvocation.from_action(action)
                 result = self.call_from_thread(
-                    self._push_permission_modal, name, path, args
+                    self._push_permission_modal, inv
                 )
                 if result is None:
                     return None
@@ -314,25 +311,25 @@ class JarvisApp(App):
                         {"type": "reject", "message": "用户拒绝了该操作，请更换方案或询问用户。不要重试相同调用。"}
                     )
                 elif decision == "always_approve":
-                    if self.permission_state and commands.always_approve(self.permission_state, name):
+                    if self.permission_state and commands.always_approve(self.permission_state, inv.name):
                         self.call_from_thread(
                             self.query_one("#messages", RichLog).write,
-                            f"[b]已设置 {name} = allow（已写入 javis.json）[/b]",
+                            f"[b]已设置 {inv.name} = allow（已写入 javis.json）[/b]",
                         )
                     decisions.append({"type": "approve"})
                 elif decision == "edit":
                     edited = result.get("edited") or {}
                     decisions.append(
-                        {"type": "edit", "edited_action": {"name": name, "args": edited}}
+                        {"type": "edit", "edited_action": {"name": inv.name, "args": edited}}
                     )
                 else:  # cancel
                     return None
         return {"decisions": decisions}
 
-    async def _push_permission_modal(self, tool: str, path: str, args: dict):
-        return await self._wait_modal_dismiss(tool, path, args)
+    async def _push_permission_modal(self, inv: commands.ToolInvocation):
+        return await self._wait_modal_dismiss(inv)
 
-    async def _wait_modal_dismiss(self, tool: str, path: str, args: dict):
+    async def _wait_modal_dismiss(self, inv: commands.ToolInvocation):
         """push PermissionModal 并等待 dismiss 结果（在 UI 线程执行）。"""
         result_holder: dict[str, object] = {}
         done = asyncio.Event()
@@ -341,7 +338,7 @@ class JarvisApp(App):
             result_holder["value"] = result
             done.set()
 
-        self.push_screen(PermissionModal(tool, path, args), on_dismiss)
+        self.push_screen(PermissionModal(inv), on_dismiss)
         # 等待用户决定；UI 事件循环继续处理按钮/键位
         await done.wait()
         value = result_holder.get("value")
@@ -355,6 +352,6 @@ class JarvisApp(App):
         import uuid
 
         self.thread_id = f"session-{uuid.uuid4().hex[:8]}"
-        self.sub_title = self.thread_id
+        self._update_sub_title()
         log = self.query_one("#messages", RichLog)
         log.write(f"[b]已开启新会话 {self.thread_id}[/b]")

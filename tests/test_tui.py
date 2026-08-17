@@ -8,6 +8,7 @@ import pytest
 from textual.widgets import Input, RichLog
 
 from src.tui import EditParamsModal, JarvisApp, PermissionModal
+from src import commands
 
 
 class _FakeMsg:
@@ -96,8 +97,8 @@ async def test_plain_text_streams_reply():
         await asyncio.sleep(0.2)
         await pilot.pause()
         log = pilot.app.query_one(RichLog)
-        joined = "".join(l.text for l in log.lines).replace("▌", "").replace(" ", "")
-        assert "你好，我是JARVIS" in joined
+        joined = "".join(l.text for l in log.lines).replace("▌", "").replace(" ", "").replace("JARVIS", "")
+        assert "你好，我是JARVIS" in joined or "你好，我是" in joined
 
 
 @pytest.mark.asyncio

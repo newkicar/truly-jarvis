@@ -189,3 +189,24 @@ def test_always_approve_persists_gated_tool(monkeypatch, tmp_path):
     assert commands.always_approve(state, "execute") is True
     assert state["tools"]["execute"] == "allow"
     assert written["permissions"] == {"execute": "allow"}
+
+
+def test_cli_help_and_tui_help_share_commands():
+    assert "/exit" in commands.CLI_HELP
+    assert "/exit" in commands.TUI_HELP
+    assert "[y]本次放行" in commands.CLI_HELP
+    assert "按钮" in commands.TUI_HELP
+    assert "[y]本次放行" not in commands.TUI_HELP
+
+
+def test_tool_invocation_from_action_execute():
+    inv = commands.ToolInvocation.from_action({"name": "execute", "args": {"command": "ls -la"}})
+    assert inv.name == "execute"
+    assert inv.path == "ls -la"
+    assert inv.args == {"command": "ls -la"}
+
+
+def test_tool_invocation_from_action_write_file():
+    inv = commands.ToolInvocation.from_action({"name": "write_file", "args": {"file_path": "/tmp/x.py"}})
+    assert inv.name == "write_file"
+    assert inv.path == "/tmp/x.py"

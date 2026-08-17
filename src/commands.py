@@ -3,11 +3,13 @@
 从 main.py 抽取：不依赖终端交互（无 input()/print()），
 所有函数「接收 agent/thread_id → 返回文本」，可被 CLI 与 TUI 直接复用。
 """
+from dataclasses import dataclass
 from pathlib import Path
 
 from src import time_travel
 
-HELP = """命令：
+_HELP_COMMANDS = """\
+命令：
   /exit           退出
   /sessions       列出历史会话
   /history        查看当前会话时间线（每轮提问/分叉，短 id 可用于回退）
@@ -18,9 +20,38 @@ HELP = """命令：
   /rollback <id>  按 checkpoint 回退项目文件到对应 git 提交
   /reload-schedules  重载 schedules/*.json 定时任务配置（无需重启）
 直接输入文字开始对话。
-审批操作时: [y]本次放行 [n]拒绝 [e]编辑参数 [a]always approve(q 放弃本轮)；
-也可直接编辑 javis.json 的 permissions 段（allow/ask/deny）。
 """
+
+CLI_HELP = (
+    _HELP_COMMANDS
+    + "审批操作时: [y]本次放行 [n]拒绝 [e]编辑参数 [a]always approve(q 放弃本轮)；\n"
+    + "也可直接编辑 javis.json 的 permissions 段（allow/ask/deny）。\n"
+)
+
+TUI_HELP = (
+    _HELP_COMMANDS
+    + "HITL 审批时: 点击按钮选择（放行/永久放行/拒绝/编辑参数），Esc 放弃。\n"
+)
+
+
+@dataclass(frozen=True)
+class ToolInvocation:
+    """HITL 审批的工具调用信息（tool 名称 + 路径/命令 + 参数）。"""
+
+    name: str
+    path: str
+    args: dict
+
+    @classmethod
+    def from_action(cls, action: dict) -> "ToolInvocation":
+        """从 stream.interrupts 的 action_requests 项构造。"""
+        name = action.get("name", "?")
+        args = action.get("args", {})
+        if name == "execute":
+            path = str(args.get("command", args.get("cmd", "")))
+        else:
+            path = str(args.get("file_path", args.get("path", "")))
+        return cls(name=name, path=path, args=args)
 
 
 def project_root() -> Path:
@@ -61,19 +92,18 @@ def resolve_checkpoint_id(agent, thread_id: str, raw: str):
     """把用户输入（完整 id 或短 id 前缀）解析成完整 checkpoint_id。
 
     短 id = cid[:13]（/history 显示用的短格式）。支持前缀唯一匹配；
-    多个匹配返回 None，表示歧义。
+    多个匹配返回 None，表示歧义。单次遍历完成精确 + 前缀匹配。
     """
+    exact = None
+    prefix_matches: list[str] = []
     for s in agent.get_state_history(config={"configurable": {"thread_id": thread_id}}):
         cid = s.config.get("configurable", {}).get("checkpoint_id")
         if cid == raw:
             return cid
-    matches = []
-    for s in agent.get_state_history(config={"configurable": {"thread_id": thread_id}}):
-        cid = s.config.get("configurable", {}).get("checkpoint_id")
         if cid and cid.startswith(raw):
-            matches.append(cid)
-    if len(matches) == 1:
-        return matches[0]
+            prefix_matches.append(cid)
+    if len(prefix_matches) == 1:
+        return prefix_matches[0]
     return None
 
 
