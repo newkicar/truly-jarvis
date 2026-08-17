@@ -44,20 +44,24 @@ RESEARCHER_DESCRIPTION = (
 )
 
 
-def build_researcher(search_tools=(), wiki_tools=(), rag_tool=None):
+def build_researcher(search_tools=(), wiki_tools=(), rag_tool=None, deny_middleware=None):
     """构造 researcher 子代理（SubAgent dict 形态）。
 
     search_tools: 分层搜索工具列表（quick_search / search / deep_search）。
+    deny_middleware: 权限 deny 拦截 middleware（命中 deny 的工具不执行）。
     """
     tools = [*search_tools, *wiki_tools]
     if rag_tool is not None:
         tools.append(rag_tool)
-    return {
+    spec: dict[str, object] = {
         "name": "researcher",
         "description": RESEARCHER_DESCRIPTION,
         "system_prompt": RESEARCHER_PROMPT,
         "tools": tools,
-    }  # type: ignore[return-value]
+    }
+    if deny_middleware is not None:
+        spec["middleware"] = [deny_middleware]
+    return spec  # type: ignore[return-value]
 
 
 KNOWLEDGE_KEEPER_PROMPT = """你是 JARVIS 的 knowledge_keeper，负责「把对话中值得沉淀的知识整理成带 wikilink 的 vault 笔记」。
@@ -91,13 +95,17 @@ KNOWLEDGE_KEEPER_DESCRIPTION = (
 )
 
 
-def build_knowledge_keeper():
+def build_knowledge_keeper(deny_middleware=None):
     """构造 knowledge_keeper 子代理（SubAgent dict 形态）。
 
     工具继承主代理后端默认的 write_file（可写 /vault/Inbox/），无需显式声明。
+    deny_middleware: 权限 deny 拦截 middleware（命中 deny 的工具不执行）。
     """
-    return {
+    spec: dict[str, object] = {
         "name": "knowledge_keeper",
         "description": KNOWLEDGE_KEEPER_DESCRIPTION,
         "system_prompt": KNOWLEDGE_KEEPER_PROMPT,
-    }  # type: ignore[return-value]
+    }
+    if deny_middleware is not None:
+        spec["middleware"] = [deny_middleware]
+    return spec  # type: ignore[return-value]

@@ -138,13 +138,48 @@ def test_build_agent_registers_researcher_and_knowledge_keeper(tmp_path, monkeyp
     assert {"researcher", "knowledge_keeper"} <= names
 
 
+def test_build_agent_wires_deny_middleware_and_shared_state(tmp_path, monkeypatch):
+    """deny middleware 应注入主代理与子代理，且与外部传入的 permission_state 共享引用。"""
+    import src.agent as agent_mod
+    from src.agent import create_deep_agent
+    from src.permissions import (
+        PermissionDenyMiddleware,
+        build_permission_deny_middleware,
+        build_permission_interrupts,
+    )
+
+    cfg = make_fake_config(tmp_path)
+    captured = {}
+
+    def spy(**kwargs):
+        captured.update(kwargs)
+        return create_deep_agent(**kwargs)
+
+    monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+    model = ToolCapableFake(reply="ok")
+
+    _interrupt_on, permission_state = build_permission_interrupts({"execute": "deny"})
+    build_agent(cfg, model=model, permission_state=permission_state)
+
+    mws = captured.get("middleware", [])
+    deny_mws = [m for m in mws if isinstance(m, PermissionDenyMiddleware)]
+    assert deny_mws, "主代理应挂 PermissionDenyMiddleware"
+    assert deny_mws[0].state is permission_state, "deny middleware 应共享外部 state"
+
+    for sub in captured.get("subagents", []):
+        sub_mws = sub.get("middleware", [])
+        assert any(isinstance(m, PermissionDenyMiddleware) for m in sub_mws), (
+            f"子代理 {sub.get('name')} 应挂 deny middleware"
+        )
+
+
 def test_build_knowledge_keeper_shape():
     """knowledge_keeper 子代理应含 name/description/system_prompt，且约束只写 Inbox。"""
     kk = build_knowledge_keeper()
     assert kk["name"] == "knowledge_keeper"
     assert kk["description"]
-    assert "/vault/Inbox/" in kk["system_prompt"]
-    assert "只新增" in kk["system_prompt"]
+    assert "/vault/Inbox/" in kk["system_prompt"]  # type: ignore[operator]
+    assert "只新增" in kk["system_prompt"]  # type: ignore[operator]
 
 
 def test_stream_events_v3_does_not_throw_and_produces_text(tmp_path):

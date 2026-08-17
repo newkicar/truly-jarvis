@@ -21,7 +21,11 @@ from deepagents.backends import (
 from langchain_quickjs import CodeInterpreterMiddleware
 
 from src.config import Config
-from src.permissions import build_permission_interrupts
+from src.permissions import (
+    build_permission_deny_middleware,
+    build_permission_interrupts,
+    build_permission_interrupts_from_state,
+)
 from src.rag import make_semantic_search_tool
 from src.subagents import build_knowledge_keeper, build_researcher
 from src.tools import make_deep_search_tool, make_quick_search_tool, make_search_tool
@@ -82,11 +86,14 @@ def build_agent(
     model: BaseChatModel | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
     store: BaseStore | None = None,
+    permission_state: dict | None = None,
 ):
     """组装主代理。
 
     未传 model 时用 config 构造真实模型；checkpointer 默认 InMemorySaver
     （生产用 SqliteSaver，由调用方在 with 块内传入）。
+    permission_state 由外部传入（如 main.py）时复用同一引用，保证
+    always approve 等运行时修改与 deny middleware / when 谓词联动。
     """
     model = model or _make_model(config)
     checkpointer = checkpointer or InMemorySaver()
@@ -99,8 +106,16 @@ def build_agent(
     ]
     wiki_tools = make_wiki_tools(config.vault_path)
     rag_tool = make_semantic_search_tool(config.vault_path, config.memory_dir / "rag-index")
-    researcher = build_researcher(search_tools=search_tools, wiki_tools=wiki_tools, rag_tool=rag_tool)
-    knowledge_keeper = build_knowledge_keeper()
+    if permission_state is not None:
+        interrupt_on = build_permission_interrupts_from_state(permission_state)
+    else:
+        interrupt_on, permission_state = build_permission_interrupts(config.permissions)
+    deny_middleware = build_permission_deny_middleware(permission_state)
+    researcher = build_researcher(
+        search_tools=search_tools, wiki_tools=wiki_tools, rag_tool=rag_tool,
+        deny_middleware=deny_middleware,
+    )
+    knowledge_keeper = build_knowledge_keeper(deny_middleware=deny_middleware)
 
     memory = [
         str(f).replace("\\", "/")
@@ -114,14 +129,12 @@ def build_agent(
         if p.exists() and (p / "SKILL.md").exists()
     ]
 
-    interrupt_on, _permission_state = build_permission_interrupts(config.permissions)
-
     return create_deep_agent(
         model=model,
         backend=_make_backend(config),
         subagents=[researcher, knowledge_keeper],  # type: ignore[list-item]
         system_prompt=build_main_prompt(),
-        middleware=[CodeInterpreterMiddleware(subagents=True)],  # 动态子代理 fan-out（beta）
+        middleware=[CodeInterpreterMiddleware(subagents=True), deny_middleware],  # type: ignore[list-item]  # 动态子代理 fan-out + deny 拦截
         memory=memory,
         skills=skills,
         interrupt_on=interrupt_on,  # HITL 审批（javis.json permissions）

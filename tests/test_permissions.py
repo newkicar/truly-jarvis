@@ -93,3 +93,127 @@ def test_dump_permissions_roundtrip(tmp_path):
 def test_gated_tools_include_execute():
     assert "execute" in GATED_TOOLS
     assert set(GATED_TOOLS) == {"execute", "write_file", "edit_file", "delete"}
+
+
+def _fake_req(tool: str, args: dict, tid: str = "t1"):
+    """构造最小 ToolCallRequest（仅暴露 tool_call，middleware 只读该字段）。"""
+    from typing import cast
+
+    from langchain.agents.middleware.types import ToolCallRequest
+    from types import SimpleNamespace
+
+    return cast(
+        ToolCallRequest,
+        SimpleNamespace(tool_call={"name": tool, "args": args, "id": tid}),
+    )
+
+
+def test_deny_middleware_blocks_execute():
+    """deny 规则下 execute 工具调用被拦截，不执行 handler。"""
+    from langchain_core.messages import ToolMessage
+
+    from src.permissions import (
+        PermissionDenyMiddleware,
+        build_permission_deny_middleware,
+        build_permission_interrupts,
+    )
+
+    interrupt_on, state = build_permission_interrupts(
+        {"execute": {"*": "allow", "rm *": "deny"}}
+    )
+
+    req = _fake_req("execute", {"command": "rm -rf /tmp/x"})
+
+    # deny 不中断：when 谓词返回 False（拦截走工具层，不弹审批）
+    assert interrupt_on["execute"]["when"](req) is False
+
+    mw = build_permission_deny_middleware(state)
+    assert isinstance(mw, PermissionDenyMiddleware)
+
+    called = []
+
+    def handler(_req):
+        called.append(True)
+        return ToolMessage(content="ok", name="execute", tool_call_id="t1")
+
+    out = mw.wrap_tool_call(req, handler)
+    assert called == []  # 未执行工具
+    assert isinstance(out, ToolMessage)
+    assert out.status == "error"
+    assert "deny" in out.content
+
+
+def test_deny_middleware_passes_allow_through():
+    """非 deny 调用放行，正常执行 handler。"""
+    from langchain_core.messages import ToolMessage
+
+    from src.permissions import build_permission_deny_middleware, build_permission_interrupts
+
+    _interrupt_on, state = build_permission_interrupts(
+        {"execute": {"*": "allow", "rm *": "deny"}}
+    )
+    mw = build_permission_deny_middleware(state)
+
+    req = _fake_req("execute", {"command": "git status"}, "t2")
+
+    called = []
+
+    def handler(_req):
+        called.append(True)
+        return ToolMessage(content="ok", name="execute", tool_call_id="t2")
+
+    out = mw.wrap_tool_call(req, handler)
+    assert called == [True]
+    assert isinstance(out, ToolMessage) and out.content == "ok"
+
+
+def test_deny_middleware_respects_override():
+    """运行时改 state 为 allow，deny 立即失效（共享引用）。"""
+    from langchain_core.messages import ToolMessage
+
+    from src.permissions import (
+        apply_permission_override,
+        build_permission_deny_middleware,
+        build_permission_interrupts,
+    )
+
+    _interrupt_on, state = build_permission_interrupts({"execute": "deny"})
+    mw = build_permission_deny_middleware(state)
+
+    req = _fake_req("execute", {"command": "anything"}, "t3")
+
+    def handler(_req):
+        return ToolMessage(content="ok", name="execute", tool_call_id="t3")
+
+    out1 = mw.wrap_tool_call(req, handler)
+    assert isinstance(out1, ToolMessage) and out1.status == "error"
+
+    apply_permission_override(state, "execute", "allow")
+    out2 = mw.wrap_tool_call(req, handler)
+    assert isinstance(out2, ToolMessage) and out2.content == "ok"
+
+
+def test_deny_middleware_async_blocks(monkeypatch):
+    """awrap_tool_call（stream_events 路径）同样拦截 deny。"""
+    import asyncio
+
+    from langchain_core.messages import ToolMessage
+
+    from src.permissions import build_permission_deny_middleware, build_permission_interrupts
+
+    _interrupt_on, state = build_permission_interrupts({"write_file": "deny"})
+    mw = build_permission_deny_middleware(state)
+
+    req = _fake_req(
+        "write_file",
+        {"file_path": "/vault/Inbox/危险.md", "content": "x"},
+        "t4",
+    )
+
+    async def handler(_req):
+        return ToolMessage(content="ok", name="write_file", tool_call_id="t4")
+
+    out = asyncio.run(mw.awrap_tool_call(req, handler))
+    assert isinstance(out, ToolMessage)
+    assert out.status == "error"
+    assert "deny" in out.content

@@ -8,6 +8,8 @@
 不再用 httpx 抓全文：Tavily 的 include_raw_content 已完成页面清洗，
 更稳定（不反爬、不超时），省去自研抓取层。
 """
+from typing import Literal
+
 from langchain_core.tools import tool
 from tavily import TavilyClient
 
@@ -16,11 +18,11 @@ def _search(
     tavily_key: str,
     query: str,
     *,
-    search_depth: str = "basic",
+    search_depth: Literal["basic", "advanced", "fast", "ultra-fast"] = "basic",
     max_results: int = 5,
     include_answer: bool = False,
     include_raw_content: bool = False,
-    topic: str = "general",
+    topic: Literal["general", "news", "finance"] = "general",
 ) -> str:
     """通用 Tavily 搜索 → 结构化 markdown。"""
     try:

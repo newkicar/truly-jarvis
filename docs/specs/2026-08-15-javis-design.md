@@ -259,6 +259,7 @@ const r = await task({
   - `"allow"` = 自动放行 / `"ask"` = 每次审批（默认）/ `"deny"` = 拒绝。
   - 支持对象形态规则集 `{"*": "ask", "git *": "allow"}`（最后匹配胜出），用于按命令前缀/路径模式精细控制。
   - 实现：`src/permissions.py` 把配置转成 `create_deep_agent(interrupt_on=...)`；`when` 谓词闭包引用可变 state，「always approve」只改 state + 写回 `javis.json`，无需重建 agent。
+  - **deny 拦截**：`allow`/`deny` 都不触发中断；`deny` 由 `PermissionDenyMiddleware`（`wrap_tool_call` / `awrap_tool_call`）在工具执行前拦截，返回 `status="error"` 的 ToolMessage 给模型（不执行、不弹审批）。middleware 与 `when` 谓词**共享同一 state 引用**，且注入主代理与所有子代理（子代理不继承主代理自定义 middleware，须显式挂载）。
   - CLI 审批交互：`[y]本次放行 [n]拒绝 [e]编辑参数 [a]always approve`（三期 TUI 改为选择式，同 opencode）。
 
 ---
@@ -314,7 +315,7 @@ truly_Javis/
 │   ├── tools.py              # 分层搜索：quick_search / search / deep_search（Tavily）
 │   ├── wiki.py               # wikilink/backlink 导航工具（出链/反链，零索引实时扫描）
 │   ├── rag.py                # 增量 RAG 语义增强（chromadb + Ollama embedding，hash 增量）
-│   ├── permissions.py        # HITL 审批（javis.json permissions → interrupt_on）
+│   ├── permissions.py        # HITL 审批（javis.json permissions → interrupt_on + deny 拦截 middleware）
 │   ├── time_travel.py        # /history /replay /fork /sessions + git 映射表
 │   └── scheduler.py          # APScheduler 定时任务（二期）
 ├── memory/                   # 信息记忆（用户偏好等 markdown）

@@ -406,8 +406,8 @@ def main(argv=None) -> int:
         thread_id = args[0]
 
     with SqliteSaver.from_conn_string(str(config.checkpoint_db)) as checkpointer:
-        agent = build_agent(config, checkpointer=checkpointer)
-        _interrupt_on, permission_state = build_permission_interrupts(config.permissions)
+        _, permission_state = build_permission_interrupts(config.permissions)
+        agent = build_agent(config, checkpointer=checkpointer, permission_state=permission_state)
         if thread_id.startswith("session-"):
             print(f"新会话: {thread_id}（指定 thread_id 可继续该会话）")
 
