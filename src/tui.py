@@ -10,6 +10,7 @@
 """
 import asyncio
 from functools import partial
+from pathlib import Path
 from time import time
 from typing import cast
 
@@ -146,6 +147,7 @@ class JarvisApp(App):
 
     BINDINGS = [
         Binding("ctrl+n", "new_session", "新会话"),
+        Binding("ctrl+t", "change_theme", "切换主题"),
         Binding("escape", "cancel", "取消", show=False),
         Binding("ctrl+c", "quit", "退出", priority=True),
     ]
@@ -173,7 +175,33 @@ class JarvisApp(App):
         self._mcp_tool_count = mcp_tool_count
         self._worker: Worker | None = None
         self.title = "JARVIS"
+        self._restore_theme()
         self._update_sub_title()
+
+    def _config_path(self) -> Path:
+        return commands.project_root() / "javis.json"
+
+    def _restore_theme(self) -> None:
+        try:
+            import json
+
+            data = json.loads(self._config_path().read_text(encoding="utf-8"))
+            saved = data.get("theme")
+            if saved and saved in self.available_themes:
+                self.theme = saved
+        except Exception:
+            pass
+
+    def watch_theme(self, theme_name: str) -> None:
+        try:
+            import json
+
+            path = self._config_path()
+            data = json.loads(path.read_text(encoding="utf-8"))
+            data["theme"] = theme_name
+            path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        except Exception:
+            pass
 
     def _update_sub_title(self) -> None:
         mcp_tag = f"  MCP:{self._mcp_tool_count}" if self._mcp_tool_count else ""

@@ -199,3 +199,30 @@ async def test_exit_command_quits():
         await _type_and_enter(pilot, "/exit")
         await pilot.pause()
         assert not app.is_running
+
+
+@pytest.mark.asyncio
+async def test_theme_persistence(tmp_path):
+    import json
+    config_file = tmp_path / "javis.json"
+    config_file.write_text(json.dumps({"permissions": {"*": "ask"}}), encoding="utf-8")
+
+    # Patch _config_path to use tmp_path
+    app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
+    app._config_path = lambda: config_file
+
+    async with app.run_test() as pilot:
+        # Theme should be default
+        assert app.theme == "textual-dark"
+        # Simulate theme change
+        app.theme = "dracula"
+        await pilot.pause()
+        # Verify saved
+        saved = json.loads(config_file.read_text(encoding="utf-8"))
+        assert saved["theme"] == "dracula"
+
+    # New app instance should restore
+    app2 = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
+    app2._config_path = lambda: config_file
+    app2._restore_theme()
+    assert app2.theme == "dracula"
