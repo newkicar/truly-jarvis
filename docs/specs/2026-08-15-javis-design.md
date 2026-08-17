@@ -378,7 +378,9 @@ truly_Javis/
 
 ### TUI（四期，2026-08-18）
 - [x] Textual TUI 默认入口，`--cli` 回退纯 CLI（`src/tui.py` + `src/main.py`）
-- [x] 命令/会话纯逻辑抽 `src/commands.py`，CLI 与 TUI 共用
+- [x] 命令/会话纯逻辑抽 `src/commands.py`，CLI 与 TUI 共用（含 CLI_HELP / TUI_HELP 分离）
 - [x] 消息区流式输出（`@work(thread=True)` + `call_from_thread` + `stream_events` v3），Esc 取消
-- [x] 消息样式对标 opencode：用户 secondary / AI primary 粗竖线 + 模型耗时、工具 muted、子代理黄色
-- [x] HITL 审批 Modal（放行/永久放行/拒绝/编辑参数），resume 与 CLI 契约一致
+- [x] 消息样式对标 opencode：用户 secondary / AI primary 粗竖线带 `[b]JARVIS[/b]` 标题 + 模型耗时、工具 muted、子代理黄色
+- [x] HITL 审批 Modal（放行/永久放行/拒绝/编辑参数），resume 与 CLI 契约一致（纯 dict，`ToolInvocation` dataclass）
+- [x] Header 显示 title `JARVIS` + `thread_id + MCP:N`
+- [x] 主题持久化：`ctrl+t` 切换（20 可选），写回 `javis.json`，启动恢复
