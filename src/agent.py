@@ -87,6 +87,7 @@ def build_agent(
     checkpointer: BaseCheckpointSaver | None = None,
     store: BaseStore | None = None,
     permission_state: dict | None = None,
+    mcp_tools: list | None = None,
 ):
     """组装主代理。
 
@@ -94,6 +95,8 @@ def build_agent(
     （生产用 SqliteSaver，由调用方在 with 块内传入）。
     permission_state 由外部传入（如 main.py）时复用同一引用，保证
     always approve 等运行时修改与 deny middleware / when 谓词联动。
+    mcp_tools 为 MCP server 加载出的额外工具（仅主代理），由调用方
+    （如 main.py 经 src.mcps.load_mcp_tools）在启动时一次性注入。
     """
     model = model or _make_model(config)
     checkpointer = checkpointer or InMemorySaver()
@@ -134,6 +137,7 @@ def build_agent(
         backend=_make_backend(config),
         subagents=[researcher, knowledge_keeper],  # type: ignore[list-item]
         system_prompt=build_main_prompt(),
+        tools=list(mcp_tools or []),  # MCP 工具仅注入主代理
         middleware=[CodeInterpreterMiddleware(subagents=True), deny_middleware],  # type: ignore[list-item]  # 动态子代理 fan-out + deny 拦截
         memory=memory,
         skills=skills,

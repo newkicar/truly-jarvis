@@ -38,7 +38,7 @@ class Config:
     checkpoint_db: Path
     schedules_dir: Path
     skills: tuple[Path, ...]
-    mcps: tuple[str, ...]
+    mcps: dict[str, object]
     permissions: dict[str, object]
 
 
@@ -102,7 +102,9 @@ def load_config(env_file: Path | None = None, json_file: Path | None = None) -> 
     checkpoint_db = (root / data.get("checkpoint_db", "checkpoints.sqlite")).resolve()
     schedules_dir = (root / data.get("schedules_dir", "schedules")).resolve()
     skills = tuple(Path(s).resolve() for s in data.get("skills", []))
-    mcps = tuple(data.get("mcps", []))
+    mcps = data.get("mcps", {})
+    if not isinstance(mcps, dict):
+        mcps = {}
 
     return Config(
         base_url=base_url,

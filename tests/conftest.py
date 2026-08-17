@@ -18,6 +18,6 @@ def make_fake_config(tmp_path) -> Config:
         checkpoint_db=tmp_path / "cp.sqlite",
         schedules_dir=tmp_path / "schedules",
         skills=(),
-        mcps=(),
+        mcps={},
         permissions={},
     )

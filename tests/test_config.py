@@ -73,7 +73,7 @@ def test_load_config_builds_dataclass(tmp_path: Path):
                 "obsidian_vault": str(tmp_path / "vault"),
                 "memory_dir": "memory",
                 "skills": ["skills/"],
-                "mcps": [],
+                "mcps": {"servers": {}},
                 "schedules": [],
             }
         ),
@@ -99,7 +99,7 @@ def test_load_config_absolutizes_paths(tmp_path: Path):
                 "obsidian_vault": str(vault_rel),
                 "memory_dir": "memory",
                 "skills": [],
-                "mcps": [],
+                "mcps": {"servers": {}},
                 "schedules": [],
             }
         ),
@@ -120,7 +120,7 @@ def test_load_config_missing_required_key_raises(tmp_path: Path):
                 "obsidian_vault": str(tmp_path / "vault"),
                 "memory_dir": "memory",
                 "skills": [],
-                "mcps": [],
+                "mcps": {"servers": {}},
                 "schedules": [],
             }
         ),
@@ -128,3 +128,56 @@ def test_load_config_missing_required_key_raises(tmp_path: Path):
     )
     with pytest.raises(KeyError):
         load_config(env_file=env_file, json_file=json_file)
+
+
+def test_load_config_parses_mcps_dict(tmp_path: Path):
+    """mcps 应按 OpenCode 风格 dict（{"servers": {...}}）解析，而非旧 list。"""
+    env_file = tmp_path / ".env"
+    env_file.write_text("base_url:https://x.com\napi_key:k\nmodel_id:m\ntavily_key:t\n", encoding="utf-8")
+    json_file = tmp_path / "javis.json"
+    json_file.write_text(
+        json.dumps(
+            {
+                "model": {"base_url_env": "BASE_URL", "api_key_env": "API_KEY", "model_id_env": "MODEL_ID"},
+                "obsidian_vault": str(tmp_path / "vault"),
+                "memory_dir": "memory",
+                "skills": [],
+                "mcps": {
+                    "servers": {
+                        "git": {"type": "local", "command": ["uvx", "mcp-server-git"], "enabled": True},
+                        "playwright": {"type": "local", "command": ["npx", "@playwright/mcp"], "enabled": False},
+                        "api": {"type": "remote", "url": "http://localhost:8000/mcp"},
+                    }
+                },
+                "schedules": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = load_config(env_file=env_file, json_file=json_file)
+    servers = cfg.mcps["servers"]
+    assert isinstance(servers, dict)
+    assert set(servers.keys()) == {"git", "playwright", "api"}
+    assert servers["git"]["command"] == ["uvx", "mcp-server-git"]
+    assert servers["api"]["url"] == "http://localhost:8000/mcp"
+
+
+def test_load_config_mcps_missing_defaults_to_empty(tmp_path: Path):
+    """未配置 mcps 键时 cfg.mcps 默认为空 dict（向后兼容旧 list 格式）。"""
+    env_file = tmp_path / ".env"
+    env_file.write_text("base_url:https://x.com\napi_key:k\nmodel_id:m\ntavily_key:t\n", encoding="utf-8")
+    json_file = tmp_path / "javis.json"
+    json_file.write_text(
+        json.dumps(
+            {
+                "model": {"base_url_env": "BASE_URL", "api_key_env": "API_KEY", "model_id_env": "MODEL_ID"},
+                "obsidian_vault": str(tmp_path / "vault"),
+                "memory_dir": "memory",
+                "skills": [],
+                "schedules": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = load_config(env_file=env_file, json_file=json_file)
+    assert cfg.mcps == {}

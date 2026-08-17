@@ -92,6 +92,59 @@ def test_build_agent_with_sqlite_checkpointer_assembles(tmp_path):
         assert agent is not None
 
 
+def test_build_agent_injects_mcp_tools(tmp_path, monkeypatch):
+    """mcp_tools 应作为 tools= 注入 create_deep_agent（仅主代理）。"""
+    import src.agent as agent_mod
+    from langchain_core.tools import StructuredTool
+    from src.agent import create_deep_agent
+
+    cfg = make_fake_config(tmp_path)
+    captured = {}
+
+    def spy(**kwargs):
+        captured.update(kwargs)
+        return create_deep_agent(**kwargs)
+
+    monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+    model = ToolCapableFake(reply="ok")
+    from langchain_core.tools import StructuredTool
+    from pydantic import BaseModel
+
+    class _Args(BaseModel):
+        query: str
+
+    fake_tools = [
+        StructuredTool(
+            name="git_status",
+            description="git status",
+            args_schema=_Args,
+            func=lambda query: "ok",
+        )
+    ]
+    build_agent(cfg, model=model, mcp_tools=fake_tools)
+
+    assert [t.name for t in captured.get("tools", [])] == ["git_status"]
+
+
+def test_build_agent_no_mcp_tools_defaults_empty(tmp_path, monkeypatch):
+    """未传 mcp_tools 时 tools 应为空列表，不影响组装。"""
+    import src.agent as agent_mod
+    from src.agent import create_deep_agent
+
+    cfg = make_fake_config(tmp_path)
+    captured = {}
+
+    def spy(**kwargs):
+        captured.update(kwargs)
+        return create_deep_agent(**kwargs)
+
+    monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+    model = ToolCapableFake(reply="ok")
+    build_agent(cfg, model=model)
+
+    assert captured.get("tools") == []
+
+
 def test_build_agent_loads_memory_md_files(tmp_path, monkeypatch):
     """memory/ 下的记忆 md（除 README）应作为 memory= 注入 create_deep_agent。"""
     import src.agent as agent_mod

@@ -10,6 +10,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from src import scheduler, time_travel
 from src.agent import build_agent
 from src.config import ensure_utf8_stdout, load_config
+from src.mcps import load_mcp_tools
 from src.permissions import build_permission_interrupts
 
 ensure_utf8_stdout()
@@ -405,9 +406,18 @@ def main(argv=None) -> int:
     elif args:
         thread_id = args[0]
 
+    mcp_tools = load_mcp_tools(config.mcps)
+    if mcp_tools:
+        print(f"[MCP] 已加载 {len(mcp_tools)} 个外部工具")
+
     with SqliteSaver.from_conn_string(str(config.checkpoint_db)) as checkpointer:
         _, permission_state = build_permission_interrupts(config.permissions)
-        agent = build_agent(config, checkpointer=checkpointer, permission_state=permission_state)
+        agent = build_agent(
+            config,
+            checkpointer=checkpointer,
+            permission_state=permission_state,
+            mcp_tools=mcp_tools,
+        )
         if thread_id.startswith("session-"):
             print(f"新会话: {thread_id}（指定 thread_id 可继续该会话）")
 
