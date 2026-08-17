@@ -263,7 +263,7 @@ const r = await task({
   - 支持对象形态规则集 `{"*": "ask", "git *": "allow"}`（最后匹配胜出），用于按命令前缀/路径模式精细控制。
   - 实现：`src/permissions.py` 把配置转成 `create_deep_agent(interrupt_on=...)`；`when` 谓词闭包引用可变 state，「always approve」只改 state + 写回 `javis.json`，无需重建 agent。
   - **deny 拦截**：`allow`/`deny` 都不触发中断；`deny` 由 `PermissionDenyMiddleware`（`wrap_tool_call` / `awrap_tool_call`）在工具执行前拦截，返回 `status="error"` 的 ToolMessage 给模型（不执行、不弹审批）。middleware 与 `when` 谓词**共享同一 state 引用**，且注入主代理与所有子代理（子代理不继承主代理自定义 middleware，须显式挂载）。
-  - CLI 审批交互：`[y]本次放行 [n]拒绝 [e]编辑参数 [a]always approve`（三期 TUI 改为选择式，同 opencode）。
+  - CLI 审批交互：`[y]本次放行 [n]拒绝 [e]编辑参数 [a]always approve`；TUI 为 Modal 四按钮（放行/永久放行/拒绝/编辑参数），resume 契约一致。
 
 ---
 
@@ -311,7 +311,9 @@ truly_Javis/
 ├── docs/specs/               # 设计文档
 ├── src/
 │   ├── __init__.py
-│   ├── main.py               # CLI 入口（readline 交互循环，/exit 退出）
+│   ├── main.py               # 入口：默认 TUI（Textual），--cli 回退 readline 交互循环
+│   ├── commands.py           # 命令分发/会话管理纯逻辑（CLI + TUI 共用）
+│   ├── tui.py                # Textual TUI（消息区流式输出 + 权限审批 Modal）
 │   ├── config.py             # 读 .env + javis.json → 配置 dataclass
 │   ├── agent.py              # 组装：model + backend + subagents + memory + checkpointer
 │   ├── subagents.py          # researcher / knowledge_keeper / executor 定义
@@ -335,6 +337,7 @@ truly_Javis/
 | **一期（MVP）** | 主代理 + researcher（指定检索，直接 task() 委派）+ WIKI 导航知识库 + SqliteSaver 短期记忆（`langgraph-checkpoint-sqlite`，`SqliteSaver.from_conn_string("checkpoints.sqlite")`）+ 会话回退（/history /replay /fork /sessions）+ javis.json + Tavily | 问「调研 XXX」→ 搜索+检索+带引用总结；问「笔记里 YYY」→ vault 命中；重启续上下文；可回退历史会话 |
 | **二期** | 动态子代理 fan-out（CodeInterpreterMiddleware，先实测 deepseek-v4-flash 写 JS）+ knowledge_keeper 回写 + APScheduler 定时检索 + 长期记忆（memory/ FilesystemBackend）+ git 文件回退（/rollback）+ **事件流式输出（event streaming）** | 定时自动检索并回写 Obsidian；偏好跨会话记忆（memory/*.md 注入）；多角度并行研究；文件可回退；CLI 实时可见子代理/工具/回答流式输出（见票 11） |
 | **三期** | executor + LocalShellBackend + skill/mcp 扩展接口（✅）+ 增量 RAG 增强（✅）+ vault 回退增强（可选） | 可执行任务；可安装外部 skill/mcp；语义检索增强 |
+| **TUI（四期）** | Textual 界面（✅ 2026-08-18）：`commands.py` 命令公共层 + 消息区流式输出（对标 opencode 粗竖线）+ 权限审批 Modal（放行/永久放行/拒绝/编辑参数）+ `--tui`/`--cli` 双入口 | 终端下更优交互：流式输出、工具调用实时展示、HITL 审批不打断视线 |
 
 ---
 
@@ -372,3 +375,10 @@ truly_Javis/
 - [x] HITL 审批（`javis.json` `permissions`：allow/ask/deny + 规则集；CLI y/n/e/a）
 - [x] 可安装外部 skill / mcp（`skills/README.md` 编写指南 + `mcps.servers` 即插即拔，2026-08-18）
 - [x] 增量 RAG 语义增强（`src/rag.py`：Ollama bge-small-zh + chromadb，hash 增量索引，`vault_semantic_search` 工具）
+
+### TUI（四期，2026-08-18）
+- [x] Textual TUI 默认入口，`--cli` 回退纯 CLI（`src/tui.py` + `src/main.py`）
+- [x] 命令/会话纯逻辑抽 `src/commands.py`，CLI 与 TUI 共用
+- [x] 消息区流式输出（`@work(thread=True)` + `call_from_thread` + `stream_events` v3），Esc 取消
+- [x] 消息样式对标 opencode：用户 secondary / AI primary 粗竖线 + 模型耗时、工具 muted、子代理黄色
+- [x] HITL 审批 Modal（放行/永久放行/拒绝/编辑参数），resume 与 CLI 契约一致
