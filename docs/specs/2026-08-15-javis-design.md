@@ -253,7 +253,10 @@ const r = await task({
 - **原生工具**：`execute`（`LocalShellBackend` 提供）、文件工具直接可用，不重造。
 - **tools 注册接口**：`create_deep_agent(tools=[...])` 统一挂载自定义工具。
 - **skill 接口**：`skills=[...]` 目录扫描 `SKILL.md`（frontmatter 索引 + 按需加载），技能库目录即扩展点。
-- **mcp 接口**：`mcps` 配置项 → `langchain-mcp-adapters` 加载外部 MCP server 工具，动态并入 `tools`。
+- **mcp 接口**（已实现）：`javis.json` 的 `mcps.servers` 段（OpenCode 风格）配置 MCP server，即插即拔（编辑 → 重启生效，`enabled` 开关单个 server）。
+  - 配置格式：`type: "local"`(stdio，`command` 数组) / `"remote"`(streamable_http，`url`)，可选 `env`/`headers`/`cwd`。
+  - 实现：`src/mcps.py` 的 `load_mcp_tools`（同步入口，启动时一次性加载，工具名带 server 前缀如 `git_get_file`）；依赖 `langchain-mcp-adapters>=0.3.2`。**0.3.2 起每次工具调用自动开新 session（stdio 子进程随开随关），无长期生命周期**。
+  - 只注入主代理（`create_deep_agent(tools=...)`），子代理不含 MCP 工具。单个 server 连接失败 → 跳过 + 警告，不影响启动。
 - **执行能力**（三期）：主代理 `/workspace/` 路由用 `LocalShellBackend`（= FilesystemBackend + `execute`），主代理与所有子代理直接具备 shell 执行能力，**不设独立 executor 子代理**。
 - **HITL 审批**（对标 opencode `permission`）：`javis.json` 的 `permissions` 段控制哪些 gated 工具需审批。
   - `"allow"` = 自动放行 / `"ask"` = 每次审批（默认）/ `"deny"` = 拒绝。
@@ -316,6 +319,7 @@ truly_Javis/
 │   ├── wiki.py               # wikilink/backlink 导航工具（出链/反链，零索引实时扫描）
 │   ├── rag.py                # 增量 RAG 语义增强（chromadb + Ollama embedding，hash 增量）
 │   ├── permissions.py        # HITL 审批（javis.json permissions → interrupt_on + deny 拦截 middleware）
+│   ├── mcps.py               # MCP 工具加载（javis.json mcps.servers → langchain-mcp-adapters → 主代理 tools）
 │   ├── time_travel.py        # /history /replay /fork /sessions + git 映射表
 │   └── scheduler.py          # APScheduler 定时任务（二期）
 ├── memory/                   # 信息记忆（用户偏好等 markdown）
@@ -330,7 +334,7 @@ truly_Javis/
 |---|---|---|
 | **一期（MVP）** | 主代理 + researcher（指定检索，直接 task() 委派）+ WIKI 导航知识库 + SqliteSaver 短期记忆（`langgraph-checkpoint-sqlite`，`SqliteSaver.from_conn_string("checkpoints.sqlite")`）+ 会话回退（/history /replay /fork /sessions）+ javis.json + Tavily | 问「调研 XXX」→ 搜索+检索+带引用总结；问「笔记里 YYY」→ vault 命中；重启续上下文；可回退历史会话 |
 | **二期** | 动态子代理 fan-out（CodeInterpreterMiddleware，先实测 deepseek-v4-flash 写 JS）+ knowledge_keeper 回写 + APScheduler 定时检索 + 长期记忆（memory/ FilesystemBackend）+ git 文件回退（/rollback）+ **事件流式输出（event streaming）** | 定时自动检索并回写 Obsidian；偏好跨会话记忆（memory/*.md 注入）；多角度并行研究；文件可回退；CLI 实时可见子代理/工具/回答流式输出（见票 11） |
-| **三期** | executor + LocalShellBackend + skill/mcp 扩展接口 + 增量 RAG 增强 + vault 回退增强（可选） | 可执行任务；可安装外部 skill/mcp；语义检索增强 |
+| **三期** | executor + LocalShellBackend + skill/mcp 扩展接口（✅）+ 增量 RAG 增强（✅）+ vault 回退增强（可选） | 可执行任务；可安装外部 skill/mcp；语义检索增强 |
 
 ---
 
@@ -366,5 +370,5 @@ truly_Javis/
 ### 三期
 - [x] 主代理直接 shell 执行能力（`/workspace/` 换 `LocalShellBackend`，不再设独立 executor 子代理）
 - [x] HITL 审批（`javis.json` `permissions`：allow/ask/deny + 规则集；CLI y/n/e/a）
-- [ ] 可安装外部 skill / mcp
+- [x] 可安装外部 skill / mcp（`skills/README.md` 编写指南 + `mcps.servers` 即插即拔，2026-08-18）
 - [x] 增量 RAG 语义增强（`src/rag.py`：Ollama bge-small-zh + chromadb，hash 增量索引，`vault_semantic_search` 工具）
