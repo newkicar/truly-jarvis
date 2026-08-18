@@ -1,14 +1,6 @@
-"""Textual TUI 界面（对标 opencode 终端界面）。
-
-结构：
-- JarvisApp: 主 App，Header + 消息区 RichLog + Input + Footer
-- 命令路由：`/` 前缀 → commands.dispatch_command；普通文本 → 流式对话
-- 流式：@work(thread=True) 消费 stream_events(v3)，call_from_thread 逐字写 RichLog；
-  工具/子代理即时显示，Esc 取消当前轮次
-- 消息样式：用户 secondary 粗竖线、AI primary 粗竖线 + 模型/耗时、工具 muted、子代理黄
-- HITL 审批：stream.interrupts → PermissionModal（放行/永久放行/拒绝/编辑参数）→ resume
-"""
+"""Textual TUI 界面（对标 opencode 终端界面）。"""
 import asyncio
+import sys
 from functools import partial
 from pathlib import Path
 from time import time
@@ -16,12 +8,24 @@ from typing import cast
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
+from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Footer, Header, Input, Label, RichLog, Static
 from textual.worker import Worker, get_current_worker
 
-from src import commands
+from src import commands, streaming
+from src.tui_format import (
+    DEFAULT_TUI_THEME,
+    LEGACY_BAD_THEMES,
+    AiStreamThrottler,
+    ai_message_header_markup,
+    ai_stream_renderable,
+    format_tool_call,
+    permission_preview,
+    render_markdown,
+    system_message_markup,
+    user_message_markup,
+)
 
 
 class PermissionModal(ModalScreen):
@@ -72,17 +76,23 @@ class PermissionModal(ModalScreen):
     }
     """
 
-    def __init__(self, inv: commands.ToolInvocation):
+    def __init__(self, inv: commands.ToolInvocation, *, vault_path: Path | None = None, workspace_root: Path | None = None):
         super().__init__()
         self.inv = inv
+        self.vault_path = vault_path
+        self.workspace_root = workspace_root
         self.path_label = "Command:" if inv.name == "execute" else "Path:"
 
     def compose(self) -> ComposeResult:
         with Static(id="perm_box"):
             yield Label(f"Tool: {self.inv.name}", id="perm_tool")
             yield Label(f"{self.path_label} {self.inv.path}", id="perm_path")
-            preview_lines = "\n".join(f"{k}: {str(v)[:120]}" for k, v in (self.inv.args or {}).items())
-            yield Static(preview_lines or "（无参数）", id="perm_preview")
+            preview = permission_preview(
+                self.inv,
+                vault_path=self.vault_path,
+                workspace_root=self.workspace_root,
+            )
+            yield Static(preview, id="perm_preview")
             with Horizontal(id="perm_buttons"):
                 yield Button("放行", id="btn_approve", variant="success")
                 yield Button("永久放行", id="btn_always", variant="primary")
@@ -153,19 +163,108 @@ class JarvisApp(App):
     ]
 
     CSS = """
+    Screen {
+        background: $background;
+    }
+
+    Header {
+        background: $surface;
+        border-bottom: solid $primary;
+    }
+
+    Footer {
+        background: $surface;
+        /* height:1 的 Footer 加 border-top 会把快捷键挤到屏幕外 */
+        height: 2;
+        border-top: solid $primary;
+    }
+
+    #body {
+        height: 1fr;
+        min-height: 0;
+        margin: 0;
+    }
+
+    #chat_frame {
+        height: 1fr;
+        margin: 0 1;
+        border: round $primary;
+        background: $surface;
+        padding: 0 1;
+    }
+
+    #chat_stack {
+        height: 100%;
+    }
+
     #messages {
         height: 1fr;
-        border: round $primary;
-        padding: 0 1;
-        background: $surface;
+        width: 100%;
+        background: transparent;
+        border: none;
+        padding: 0;
+        scrollbar-size-vertical: 1;
+        scrollbar-background: $surface;
+        scrollbar-color: $primary 40%;
     }
+
+    #ai_stream {
+        height: auto;
+        max-height: 50%;
+        display: none;
+        overflow-y: auto;
+        scrollbar-size-vertical: 1;
+        padding: 0 0 1 0;
+        border-top: solid $primary 20%;
+    }
+
+    #ai_stream.-active {
+        display: block;
+    }
+
+    #editor_frame {
+        height: auto;
+        margin: 1 1 1 1;
+        border: round $primary;
+        background: $panel;
+        padding: 0 1;
+    }
+
+    #editor_frame:focus-within {
+        border: round $accent;
+    }
+
+    #prompt {
+        width: auto;
+        min-width: 2;
+        color: $accent;
+        content-align: center middle;
+    }
+
     #input {
-        dock: bottom;
-        margin: 1 2 1 2;
+        width: 1fr;
+        height: 1;
+        border: none;
+        background: transparent;
+        color: $text;
+        padding: 0;
+    }
+
+    #input:focus {
+        border: none;
     }
     """
 
-    def __init__(self, config, agent, permission_state: dict, sched=None, thread_id: str = "default", mcp_tool_count: int = 0):
+    def __init__(
+        self,
+        config,
+        agent,
+        permission_state: dict,
+        sched=None,
+        thread_id: str = "default",
+        mcp_tool_count: int = 0,
+        startup_lines: list[str] | None = None,
+    ):
         super().__init__()
         self.config = config
         self.agent = agent
@@ -173,6 +272,7 @@ class JarvisApp(App):
         self.sched = sched
         self.thread_id = thread_id
         self._mcp_tool_count = mcp_tool_count
+        self._startup_lines = startup_lines or []
         self._worker: Worker | None = None
         self.title = "JARVIS"
         self._restore_theme()
@@ -185,12 +285,22 @@ class JarvisApp(App):
         try:
             import json
 
-            data = json.loads(self._config_path().read_text(encoding="utf-8"))
+            path = self._config_path()
+            data = json.loads(path.read_text(encoding="utf-8"))
             saved = data.get("theme")
+            if saved in LEGACY_BAD_THEMES or (
+                sys.platform == "win32" and saved and saved.startswith("ansi")
+            ):
+                saved = DEFAULT_TUI_THEME
+                data["theme"] = saved
+                path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             if saved and saved in self.available_themes:
                 self.theme = saved
+            elif DEFAULT_TUI_THEME in self.available_themes:
+                self.theme = DEFAULT_TUI_THEME
         except Exception:
-            pass
+            if DEFAULT_TUI_THEME in self.available_themes:
+                self.theme = DEFAULT_TUI_THEME
 
     def watch_theme(self, theme_name: str) -> None:
         try:
@@ -204,18 +314,69 @@ class JarvisApp(App):
             pass
 
     def _update_sub_title(self) -> None:
-        mcp_tag = f"  MCP:{self._mcp_tool_count}" if self._mcp_tool_count else ""
-        self.sub_title = f"{self.thread_id}{mcp_tag}"
+        parts = [self.thread_id]
+        if self._mcp_tool_count:
+            parts.append(f"MCP:{self._mcp_tool_count}")
+        if self.sched is not None:
+            try:
+                n = len(self.sched.get_jobs())
+                parts.append(f"sched:{n}")
+            except Exception:
+                pass
+        self.sub_title = "  ".join(parts)
+
+    def _vault_path(self) -> Path | None:
+        return getattr(self.config, "vault_path", None) if self.config else None
+
+    def _workspace_root(self) -> Path | None:
+        if not self.config:
+            return None
+        return getattr(self.config, "memory_dir", Path(".")).parent
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        yield RichLog(id="messages", wrap=True, markup=True)
-        yield Input(placeholder="输入消息（/ 开头为命令，ctrl+c 退出，Esc 取消本轮）", id="input")
+        with Vertical(id="body"):
+            with Container(id="chat_frame"):
+                with Vertical(id="chat_stack"):
+                    yield RichLog(id="messages", wrap=True, markup=True, auto_scroll=True)
+                    yield Static("", id="ai_stream")
+            with Horizontal(id="editor_frame"):
+                yield Static("›", id="prompt")
+                yield Input(placeholder="输入消息，/ 开头为命令", id="input")
         yield Footer()
+
+    def _write_system(self, log: RichLog, text: str) -> None:
+        log.write(system_message_markup(text))
+
+    def _write_ai(self, log: RichLog, text: str) -> None:
+        log.write(ai_message_header_markup())
+        log.write(render_markdown(text))
+        log.write("")
+
+    def _show_ai_stream(self) -> None:
+        stream = self.query_one("#ai_stream", Static)
+        stream.add_class("-active")
+
+    def _hide_ai_stream(self) -> None:
+        stream = self.query_one("#ai_stream", Static)
+        stream.remove_class("-active")
+        stream.update("")
+
+    def _update_ai_stream(self, text: str) -> None:
+        stream = self.query_one("#ai_stream", Static)
+        stream.update(ai_stream_renderable(text))
+
+    def _finalize_ai_stream(self, log: RichLog, text: str) -> None:
+        self._hide_ai_stream()
+        if text.strip():
+            self._write_ai(log, text)
 
     def on_mount(self) -> None:
         log = self.query_one("#messages", RichLog)
-        log.write("JARVIS 就绪。输入 /help 查看命令，/exit 退出。")
+        self._write_system(log, "JARVIS 就绪。输入 /help 查看命令，/exit 退出。")
+        for line in self._startup_lines:
+            self._write_system(log, line)
+        self.query_one("#input", Input).focus()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
@@ -224,7 +385,7 @@ class JarvisApp(App):
         input_widget = self.query_one("#input", Input)
         input_widget.value = ""
         log = self.query_one("#messages", RichLog)
-        log.write(f"[b][secondary]▌[/secondary][/b] [b]You[/b] {text}")
+        log.write(user_message_markup(text))
         if text == "/exit":
             self.exit()
             return
@@ -247,12 +408,12 @@ class JarvisApp(App):
 
     def _stream_turn(self, user_input: str) -> None:
         """后台线程消费 stream_events(v3)，逐字写入 RichLog。"""
-        from langgraph.types import Command
-
-        config = {"configurable": {"thread_id": self.thread_id}, "recursion_limit": 30}
         worker = get_current_worker()
         started = time()
         log = cast(RichLog, self.call_from_thread(self.query_one, "#messages", RichLog))
+        throttler = AiStreamThrottler()
+        stream_active = False
+        cancel_notified = False
 
         def cancelled() -> bool:
             return worker.is_cancelled
@@ -261,101 +422,97 @@ class JarvisApp(App):
             if not cancelled():
                 self.call_from_thread(log.write, text)
 
-        resume = None
-        while not cancelled():
-            stream = self.agent.stream_events(
-                Command(resume=resume)
-                if resume
-                else {"messages": [{"role": "user", "content": user_input}]},
-                version="v3",
-                config=config,
+        def reset_header() -> None:
+            nonlocal stream_active
+            throttler.reset()
+            stream_active = False
+            self.call_from_thread(self._hide_ai_stream)
+
+        def refresh_stream(force: bool = False) -> None:
+            nonlocal stream_active
+            if cancelled() or not throttler.buffer:
+                return
+            if not stream_active:
+                self.call_from_thread(self._show_ai_stream)
+                stream_active = True
+            if force or throttler.due():
+                throttler.mark_refreshed()
+                self.call_from_thread(self._update_ai_stream, throttler.buffer)
+
+        def on_message_end(segment: str) -> None:
+            if cancelled() or not segment.strip():
+                return
+            refresh_stream(force=True)
+            self.call_from_thread(self._finalize_ai_stream, log, segment)
+            throttler.reset()
+            nonlocal stream_active
+            stream_active = False
+
+        def on_message_delta(delta: str) -> None:
+            nonlocal cancel_notified
+            if cancelled():
+                if not cancel_notified:
+                    on_cancelled()
+                return
+            throttler.append(delta)
+            refresh_stream()
+
+        def on_subagent(name: str, status: str, depth: int) -> None:
+            indent = max(0, depth - 1)
+            prefix = "  " * indent
+            write_line(f"{prefix}[yellow]▌ [{name}] {status}[/yellow]")
+
+        def on_tool_call(name: str, args: str, err: bool, output: str | None, depth: int) -> None:
+            write_line(format_tool_call(name, args, error=err, output=output, indent=depth))
+
+        def handle_interrupts(interrupts):
+            return streaming.collect_interrupt_decisions(
+                interrupts,
+                lambda inv: self.call_from_thread(self._wait_modal_dismiss, inv),
+                permission_state=self.permission_state,
+                on_always_approve=lambda name: self.call_from_thread(
+                    log.write, f"[b]已设置 {name} = allow（已写入 javis.json）[/b]"
+                ),
             )
 
-            consumed = 0
-            for kind, item in stream.interleave("messages", "tool_calls", "subagents"):
-                if cancelled():
-                    self.call_from_thread(log.write, "[i][dim]（已取消）[/dim][/i]")
-                    return
-                if kind == "subagents":
-                    status = getattr(item, "status", "")
-                    write_line(f"[yellow]▌ [{item.name}] {status}[/yellow]")
-                elif kind == "tool_calls":
-                    err = getattr(item, "error", None)
-                    name = getattr(item, "tool_name", "?")
-                    args = getattr(item, "input", "")
-                    tag = "✗" if err else "✓"
-                    write_line(f"[dim]  {tag} {name}({str(args)[:80]})[/dim]")
-                else:  # messages
-                    for delta in item.text:
-                        consumed += 1
-                        if not cancelled():
-                            self.call_from_thread(log.write, f"[b][primary]▌ JARVIS[/primary][/b] {delta}", scroll_end=True)
+        def on_cancelled() -> None:
+            nonlocal cancel_notified, stream_active
+            cancel_notified = True
+            stream_active = False
+            self.call_from_thread(self._hide_ai_stream)
+            write_line("[i][dim]（已取消）[/dim][/i]")
 
+        ok = False
+        try:
+            ok = streaming.run_agent_turn(
+                self.agent,
+                self.thread_id,
+                user_input,
+                handle_interrupts=handle_interrupts,
+                callbacks={
+                    "on_subagent": on_subagent,
+                    "on_tool_call": on_tool_call,
+                    "on_message_delta": on_message_delta,
+                    "on_message_end": on_message_end,
+                },
+                is_cancelled=cancelled,
+                on_fallback_message=lambda text: self.call_from_thread(
+                    self._finalize_ai_stream, log, text or throttler.buffer
+                ),
+                on_stream_start=reset_header,
+                on_cancelled=on_cancelled,
+            )
+        finally:
             elapsed = time() - started
             model = getattr(self.config, "model_id", "") or "model"
-            if not consumed:
-                final_state = stream.output
-                final_text = commands.render(final_state["messages"]) if final_state else ""
-                if final_text:
-                    write_line(f"[b][primary]▌ JARVIS[/primary][/b] {final_text}")
-
-            if not getattr(stream, "interrupted", False) or not getattr(stream, "interrupts", None):
-                write_line(f"[dim]▌ {model} ({elapsed:.1f}s)[/dim]")
-                write_line("")
-                return
-
-            # HITL 审批：弹 Modal 收集决策，返回 resume dict（外层包 Command）
-            resume = self._tui_handle_interrupts(stream.interrupts)
-            if resume is None:
+            self.call_from_thread(self._hide_ai_stream)
+            if cancelled() and not cancel_notified:
+                write_line("[i][dim]（已取消）[/dim][/i]")
+            elif not ok and not cancelled():
                 write_line("[i][dim]（已放弃本轮）[/dim][/i]")
-                write_line("")
-                return
-
-    def _tui_handle_interrupts(self, interrupts):
-        """TUI 审批：逐条弹 PermissionModal，收集决策返回 resume dict。
-
-        在 worker 线程调用；call_from_thread 会在 UI 线程 push 模态并阻塞等待
-        dismiss 结果。任一中断放弃（cancel）→ 返回 None（放弃本轮）。
-
-        返回结构与 CLI _handle_interrupts 契约一致：{"decisions": [...]}。
-        外层循环负责包成 Command(resume=...)，此处只返回纯 dict（不重复包装）。
-        """
-        decisions = []
-        for interrupt in interrupts:
-            value = getattr(interrupt, "value", None) or {}
-            action_requests = value.get("action_requests", [])
-            for action in action_requests:
-                inv = commands.ToolInvocation.from_action(action)
-                result = self.call_from_thread(
-                    self._push_permission_modal, inv
-                )
-                if result is None:
-                    return None
-                decision = result.get("decision")
-                if decision == "approve":
-                    decisions.append({"type": "approve"})
-                elif decision == "reject":
-                    decisions.append(
-                        {"type": "reject", "message": "用户拒绝了该操作，请更换方案或询问用户。不要重试相同调用。"}
-                    )
-                elif decision == "always_approve":
-                    if self.permission_state and commands.always_approve(self.permission_state, inv.name):
-                        self.call_from_thread(
-                            self.query_one("#messages", RichLog).write,
-                            f"[b]已设置 {inv.name} = allow（已写入 javis.json）[/b]",
-                        )
-                    decisions.append({"type": "approve"})
-                elif decision == "edit":
-                    edited = result.get("edited") or {}
-                    decisions.append(
-                        {"type": "edit", "edited_action": {"name": inv.name, "args": edited}}
-                    )
-                else:  # cancel
-                    return None
-        return {"decisions": decisions}
-
-    async def _push_permission_modal(self, inv: commands.ToolInvocation):
-        return await self._wait_modal_dismiss(inv)
+            elif ok:
+                write_line(f"[dim]▌ {model} ({elapsed:.1f}s)[/dim]")
+            write_line("")
 
     async def _wait_modal_dismiss(self, inv: commands.ToolInvocation):
         """push PermissionModal 并等待 dismiss 结果（在 UI 线程执行）。"""
@@ -366,7 +523,14 @@ class JarvisApp(App):
             result_holder["value"] = result
             done.set()
 
-        self.push_screen(PermissionModal(inv), on_dismiss)
+        self.push_screen(
+            PermissionModal(
+                inv,
+                vault_path=self._vault_path(),
+                workspace_root=self._workspace_root(),
+            ),
+            on_dismiss,
+        )
         # 等待用户决定；UI 事件循环继续处理按钮/键位
         await done.wait()
         value = result_holder.get("value")
@@ -374,6 +538,9 @@ class JarvisApp(App):
 
     def action_cancel(self) -> None:
         if self._worker is not None:
+            log = self.query_one("#messages", RichLog)
+            self._hide_ai_stream()
+            log.write("[i][dim]（已取消）[/dim][/i]")
             self._worker.cancel()
 
     def action_new_session(self) -> None:

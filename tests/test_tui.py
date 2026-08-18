@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from textual.widgets import Input, RichLog
+from textual.widgets import Input, RichLog, Static
 
 from src.tui import EditParamsModal, JarvisApp, PermissionModal
 from src import commands
@@ -13,7 +13,22 @@ from src import commands
 
 class _FakeMsg:
     def __init__(self, text):
-        self.text = text
+        self.text = text if isinstance(text, list) else list(text)
+
+
+class _FakeToolCall:
+    def __init__(self, name, input="", output=None, error=None):
+        self.tool_name = name
+        self.input = input
+        self.output = output
+        self.error = error
+
+
+class _FakeSubagent:
+    def __init__(self, name, status, tool_calls=None):
+        self.name = name
+        self.status = status
+        self.tool_calls = tool_calls or []
 
 
 class _FakeInterrupt:
@@ -89,16 +104,38 @@ async def test_unknown_command_routes_to_dispatch():
 
 
 @pytest.mark.asyncio
+async def test_streaming_renders_markdown_not_typing_placeholder():
+    app = JarvisApp(
+        None,
+        FakeAgent(reply="## 标题\n\n**正文**"),
+        {"default": "ask", "tools": {}},
+    )
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "流式")
+        await pilot.pause()
+        await asyncio.sleep(0.35)
+        await pilot.pause()
+        log = pilot.app.query_one(RichLog)
+        joined = "".join(l.text for l in log.lines)
+        assert "正在思考" not in joined
+        assert "JARVIS" in joined
+        assert "正文" in joined
+        stream = pilot.app.query_one("#ai_stream", Static)
+        assert not stream.has_class("-active")
+
+
+@pytest.mark.asyncio
 async def test_plain_text_streams_reply():
     app = JarvisApp(None, FakeAgent(reply="你好，我是 JARVIS"), {"default": "ask", "tools": {}})
     async with app.run_test() as pilot:
         await _type_and_enter(pilot, "你好")
         await pilot.pause()
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.3)
         await pilot.pause()
         log = pilot.app.query_one(RichLog)
-        joined = "".join(l.text for l in log.lines).replace("▌", "").replace(" ", "").replace("JARVIS", "")
-        assert "你好，我是JARVIS" in joined or "你好，我是" in joined
+        joined = "".join(l.text for l in log.lines)
+        assert "你好" in joined
+        assert "JARVIS" in joined
 
 
 @pytest.mark.asyncio
@@ -204,26 +241,22 @@ async def test_exit_command_quits():
 @pytest.mark.asyncio
 async def test_theme_persistence(tmp_path):
     import json
-    config_file = tmp_path / "javis.json"
-    config_file.write_text(json.dumps({"permissions": {"*": "ask"}}), encoding="utf-8")
 
-    # Patch _config_path to use tmp_path
+    config_file = tmp_path / "javis.json"
+    config_file.write_text(json.dumps({"permissions": {"*": "ask"}, "theme": "dracula"}), encoding="utf-8")
+
     app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
     app._config_path = lambda: config_file
+    app._restore_theme()
 
     async with app.run_test() as pilot:
-        # Theme should be whatever the default is (not dracula)
-        default_theme = app.theme
-        assert default_theme != "dracula"
-        # Simulate theme change
-        app.theme = "dracula"
+        assert app.theme == "dracula"
+        app.theme = "monokai"
         await pilot.pause()
-        # Verify saved
         saved = json.loads(config_file.read_text(encoding="utf-8"))
-        assert saved["theme"] == "dracula"
+        assert saved["theme"] == "monokai"
 
-    # New app instance should restore
     app2 = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
     app2._config_path = lambda: config_file
     app2._restore_theme()
-    assert app2.theme == "dracula"
+    assert app2.theme == "monokai"

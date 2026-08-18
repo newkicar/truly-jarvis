@@ -4,7 +4,7 @@
 
 **Blocked by:** 04 — Inbox 边界 ADR 与设计文档同步
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] 流式过程中 RichLog 增量更新 Markdown 渲染（或节流重渲染），用户可边看边等
 - [ ] 段结束时的最终展示与流式过程视觉一致，无重复标题或闪烁
