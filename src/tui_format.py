@@ -8,6 +8,7 @@ from rich.markdown import Markdown
 from src.commands import ToolInvocation
 
 TOOL_PREVIEW_MAX_LINES = 10
+PERMISSION_DIFF_MAX_LINES = 30
 DEFAULT_TUI_THEME = "textual-dark"
 LEGACY_BAD_THEMES = frozenset({"ansi-light"})
 
@@ -119,36 +120,96 @@ def resolve_virtual_path(path: str, *, vault_path: Path, workspace_root: Path) -
     return p if p.is_absolute() and p.exists() else None
 
 
+def read_local_file_text(local: Path | None) -> str | None:
+    if local is None or not local.is_file():
+        return None
+    try:
+        return local.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
+def proposed_file_content(inv: ToolInvocation, before: str | None) -> str:
+    """根据工具参数推断写入/编辑后的文件内容。"""
+    args = inv.args or {}
+    if inv.name == "write_file":
+        return str(args.get("content") or args.get("text") or "")
+    if inv.name == "edit_file":
+        old = str(args.get("old_string") or args.get("old_text") or "")
+        new = str(args.get("new_string") or args.get("new_text") or args.get("replacement") or "")
+        base = before if before is not None else ""
+        if old and old in base:
+            return base.replace(old, new, 1)
+        if args.get("content") or args.get("text"):
+            return str(args.get("content") or args.get("text"))
+        return base
+    if inv.name == "delete":
+        return ""
+    return ""
+
+
+def format_file_diff(
+    before: str | None,
+    after: str,
+    *,
+    path: str,
+    max_lines: int = PERMISSION_DIFF_MAX_LINES,
+) -> str:
+    """新建文件摘要或 unified diff 预览。"""
+    import difflib
+
+    if before is None:
+        header = f"新建文件: {path}\n\n"
+        body = after if after else "（空文件）"
+        return header + truncate_lines(body, max_lines=max_lines)
+
+    before_lines = before.splitlines(keepends=True)
+    after_lines = after.splitlines(keepends=True)
+    if after and not after_lines:
+        after_lines = [""]
+
+    diff_lines = list(
+        difflib.unified_diff(
+            before_lines,
+            after_lines,
+            fromfile=f"{path} (当前)",
+            tofile=f"{path} (修改后)",
+            lineterm="",
+        )
+    )
+    if not diff_lines:
+        return f"文件: {path}\n（内容无变化）"
+    return truncate_lines("\n".join(diff_lines), max_lines=max_lines)
+
+
 def permission_preview(
     inv: ToolInvocation, *, vault_path: Path | None = None, workspace_root: Path | None = None
 ) -> str:
-    """权限 Modal 中间区预览：execute 显示命令，write/edit 显示内容摘要。"""
+    """权限 Modal 中间区预览：execute 显示命令，write/edit 显示 diff。"""
     args = inv.args or {}
     if inv.name == "execute":
         cmd = inv.path or str(args.get("command", args.get("cmd", "")))
         return truncate_lines(cmd, max_lines=20)
 
     if inv.name in ("write_file", "edit_file", "delete"):
-        content = (
-            args.get("content")
-            or args.get("new_string")
-            or args.get("new_text")
-            or args.get("text")
-            or args.get("replacement")
-            or ""
-        )
-        if isinstance(content, list):
-            content = "\n".join(str(x) for x in content)
-        if not content and inv.path and vault_path and workspace_root:
-            local = resolve_virtual_path(inv.path, vault_path=vault_path, workspace_root=workspace_root)
-            if local and local.is_file():
-                try:
-                    content = local.read_text(encoding="utf-8", errors="replace")
-                except OSError:
-                    content = ""
-        header = f"文件: {inv.path}\n" if inv.path else ""
-        body = truncate_lines(str(content)) if content else "（无内容预览，请查看 Path）"
-        return header + body
+        path = inv.path or str(args.get("file_path") or args.get("path") or "")
+        before: str | None = None
+        if path and vault_path and workspace_root:
+            local = resolve_virtual_path(path, vault_path=vault_path, workspace_root=workspace_root)
+            before = read_local_file_text(local)
+
+        if inv.name == "delete":
+            if before is not None:
+                header = f"将删除: {path}\n\n"
+                return header + truncate_lines(before, max_lines=PERMISSION_DIFF_MAX_LINES)
+            return f"将删除: {path or '（未指定路径）'}"
+
+        after = proposed_file_content(inv, before)
+        if inv.name == "write_file" and before is None:
+            return format_file_diff(None, after, path=path or "（未指定路径）")
+        if before is not None:
+            return format_file_diff(before, after, path=path or "（未指定路径）")
+        return format_file_diff(None, after, path=path or "（未指定路径）")
 
     lines = [f"{k}: {str(v)[:120]}" for k, v in args.items()]
     return "\n".join(lines) if lines else "（无参数）"

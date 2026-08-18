@@ -4,7 +4,7 @@
 
 **Blocked by:** 05 — TUI 逐 token + Markdown 同屏流式
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] 审批前读取目标 Inbox 文件写前内容（可与快照或直读 vault 结合）
 - [ ] Modal 中间区域展示 diff，长内容截断规则明确（如 ≤30 行 + 「…」）

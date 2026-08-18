@@ -5,6 +5,7 @@ from src.commands import ToolInvocation
 from src.tui_format import (
     AiStreamThrottler,
     ai_stream_renderable,
+    format_file_diff,
     format_tool_call,
     permission_preview,
     truncate_lines,
@@ -47,6 +48,51 @@ def test_permission_preview_execute():
     assert "echo hi" in permission_preview(inv)
 
 
+def test_permission_preview_write_new_file(tmp_path):
+    inv = ToolInvocation.from_action(
+        {
+            "name": "write_file",
+            "args": {"file_path": "/vault/Inbox/n.md", "content": "# Title\n\nbody"},
+        }
+    )
+    text = permission_preview(
+        inv,
+        vault_path=tmp_path / "vault",
+        workspace_root=tmp_path,
+    )
+    assert "新建文件" in text
+    assert "Title" in text
+    assert "body" in text
+
+
+def test_permission_preview_edit_unified_diff(tmp_path):
+    vault = tmp_path / "vault" / "Inbox"
+    vault.mkdir(parents=True)
+    f = vault / "note.md"
+    f.write_text("line one\nline two\n", encoding="utf-8")
+    inv = ToolInvocation.from_action(
+        {
+            "name": "edit_file",
+            "args": {
+                "file_path": "/vault/Inbox/note.md",
+                "old_string": "line two",
+                "new_string": "line TWO",
+            },
+        }
+    )
+    text = permission_preview(inv, vault_path=tmp_path / "vault", workspace_root=tmp_path)
+    assert "---" in text
+    assert "-line two" in text or "-line two\n" in text
+    assert "+line TWO" in text
+
+
+def test_format_file_diff_truncates_long_diff():
+    before = "\n".join(f"old{i}" for i in range(50))
+    after = "\n".join(f"new{i}" for i in range(50))
+    text = format_file_diff(before, after, path="/vault/Inbox/x.md", max_lines=10)
+    assert "已截断" in text
+
+
 def test_permission_preview_write_content(tmp_path):
     inv = ToolInvocation.from_action(
         {
@@ -59,16 +105,26 @@ def test_permission_preview_write_content(tmp_path):
         vault_path=tmp_path / "vault",
         workspace_root=tmp_path,
     )
+    assert "新建文件" in text
     assert "Title" in text
 
 
-def test_permission_preview_reads_existing_file(tmp_path):
+def test_permission_preview_reads_existing_file_as_diff(tmp_path):
     vault = tmp_path / "vault"
     vault.mkdir()
     f = vault / "note.md"
     f.write_text("existing content", encoding="utf-8")
     inv = ToolInvocation.from_action(
-        {"name": "edit_file", "args": {"file_path": "/vault/note.md", "old_string": "x"}}
+        {
+            "name": "edit_file",
+            "args": {
+                "file_path": "/vault/note.md",
+                "old_string": "existing",
+                "new_string": "updated",
+            },
+        }
     )
     text = permission_preview(inv, vault_path=vault, workspace_root=tmp_path)
-    assert "existing content" in text
+    assert "---" in text
+    assert "existing" in text
+    assert "updated" in text
