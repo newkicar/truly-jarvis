@@ -96,6 +96,24 @@ def test_list_sessions_filters_sched_threads():
     assert "sched-tech-daily" not in text
 
 
+def test_session_thread_ids_filters_sched_threads():
+    class FakeConn:
+        def execute(self, sql):
+            return self
+
+        def fetchall(self):
+            return [("default",), ("sched-tech-daily",), ("session-abc",)]
+
+    class FakeCp:
+        conn = FakeConn()
+
+    class FakeAgent2:
+        checkpointer = FakeCp()
+
+    threads = commands.session_thread_ids(FakeAgent2())
+    assert threads == ["default", "session-abc"]
+
+
 def test_list_snapshots_formats_oldest_first(monkeypatch):
     import src.time_travel as tt
 

@@ -7,7 +7,7 @@ import pytest
 
 from textual.widgets import Input, RichLog, Static
 
-from src.tui import EditParamsModal, JarvisApp, PathCompletionOverlay, PermissionModal
+from src.tui import EditParamsModal, JarvisApp, PathCompletionOverlay, PermissionModal, SessionSidebar
 from src import commands
 
 
@@ -243,6 +243,72 @@ class _FakeConfig:
         self.vault_path = vault_path
         self.memory_dir = memory_dir or (vault_path.parent / "memory")
         self.model_id = model_id
+
+
+class _FakeCheckpointer:
+    def __init__(self, threads):
+        self._threads = threads
+
+    @property
+    def conn(self):
+        return self
+
+    def execute(self, sql):
+        return self
+
+    def fetchall(self):
+        return [(t,) for t in self._threads]
+
+
+class _SidebarAgent(FakeAgent):
+    def __init__(self, threads, **kwargs):
+        super().__init__(**kwargs)
+        self.checkpointer = _FakeCheckpointer(threads)
+
+
+@pytest.mark.asyncio
+async def test_path_completion_overlay_not_in_main_layout():
+    app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        assert pilot.app.query_one("#path_completion", PathCompletionOverlay) is not None
+        assert not pilot.app.query("#editor_column")
+
+
+@pytest.mark.asyncio
+async def test_session_sidebar_lists_and_switches_thread():
+    app = JarvisApp(
+        None,
+        _SidebarAgent(["default", "session-old"]),
+        {"default": "ask", "tools": {}},
+        thread_id="default",
+    )
+    async with app.run_test() as pilot:
+        sidebar = pilot.app.query_one("#session_sidebar", SessionSidebar)
+        assert sidebar.option_count == 2
+        assert "▸ default" in str(sidebar.get_option_at_index(0).prompt)
+
+        sidebar.highlighted = 1
+        sidebar.action_select()
+        await pilot.pause()
+
+        assert app.thread_id == "session-old"
+        assert "session-old" in app.sub_title
+        log = pilot.app.query_one(RichLog)
+        assert "已切换到会话 session-old" in "".join(l.text for l in log.lines)
+
+
+@pytest.mark.asyncio
+async def test_toggle_sidebar_collapses():
+    app = JarvisApp(None, _SidebarAgent(["default"]), {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        sidebar = pilot.app.query_one("#session_sidebar", SessionSidebar)
+        assert not sidebar.has_class("-collapsed")
+        app.action_toggle_sidebar()
+        await pilot.pause()
+        assert sidebar.has_class("-collapsed")
+        app.action_toggle_sidebar()
+        await pilot.pause()
+        assert not sidebar.has_class("-collapsed")
 
 
 @pytest.mark.asyncio

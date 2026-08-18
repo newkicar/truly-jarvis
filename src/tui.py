@@ -12,6 +12,7 @@ from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Footer, Header, Input, Label, OptionList, RichLog, Static
+from textual.widgets.option_list import Option
 from textual.worker import Worker, get_current_worker
 
 from src import commands, streaming
@@ -155,16 +156,19 @@ class EditParamsModal(ModalScreen):
 
 
 class PathCompletionOverlay(OptionList):
-    """@ 触发的路径补全列表。"""
+    """@ 触发的路径补全列表（overlay 层，不参与主布局）。"""
 
     DEFAULT_CSS = """
     PathCompletionOverlay {
+        layer: overlay;
         display: none;
+        dock: bottom;
+        width: 1fr;
         height: auto;
         max-height: 10;
+        margin: 0 2 4 2;
         border: round $primary;
         background: $panel;
-        margin: 0 1 0 3;
     }
 
     PathCompletionOverlay.-visible {
@@ -196,11 +200,52 @@ class PathCompletionOverlay(OptionList):
         return str(option.prompt) if option is not None else None
 
 
+class SessionSidebar(OptionList):
+    """可折叠会话列表侧边栏。"""
+
+    DEFAULT_CSS = """
+    SessionSidebar {
+        width: 22;
+        min-width: 18;
+        max-width: 28;
+        height: 1fr;
+        border-right: solid $primary;
+        background: $surface;
+        padding: 0 1;
+        scrollbar-size-vertical: 1;
+    }
+
+    SessionSidebar.-collapsed {
+        display: none;
+        width: 0;
+        min-width: 0;
+        max-width: 0;
+        padding: 0;
+        border: none;
+    }
+    """
+
+    def refresh_sessions(self, agent, current: str) -> None:
+        threads = commands.session_thread_ids(agent)
+        if current and current not in threads:
+            threads = [current, *threads]
+        self.clear_options()
+        for thread_id in threads:
+            label = f"▸ {thread_id}" if thread_id == current else thread_id
+            self.add_option(Option(label, id=thread_id))
+        if threads:
+            try:
+                self.highlighted = threads.index(current)
+            except ValueError:
+                self.highlighted = 0
+
+
 class JarvisApp(App):
     """JARVIS TUI。BINDINGS: ctrl+c 退出、Tab 切换焦点、ctrl+n 新会话。"""
 
     BINDINGS = [
         Binding("ctrl+n", "new_session", "新会话"),
+        Binding("ctrl+b", "toggle_sidebar", "侧边栏"),
         Binding("ctrl+t", "change_theme", "切换主题"),
         Binding("escape", "cancel", "取消", show=False),
         Binding("ctrl+c", "quit", "退出", priority=True),
@@ -223,15 +268,21 @@ class JarvisApp(App):
         border-top: solid $primary;
     }
 
-    #body {
+    #main_row {
         height: 1fr;
         min-height: 0;
         margin: 0;
     }
 
+    #content_column {
+        height: 1fr;
+        min-height: 0;
+        width: 1fr;
+    }
+
     #chat_frame {
         height: 1fr;
-        margin: 0 1;
+        margin: 0 1 0 0;
         border: round $primary;
         background: $surface;
         padding: 0 1;
@@ -268,7 +319,7 @@ class JarvisApp(App):
 
     #editor_frame {
         height: auto;
-        margin: 1 1 1 1;
+        margin: 1 1 1 0;
         border: round $primary;
         background: $panel;
         padding: 0 1;
@@ -320,6 +371,7 @@ class JarvisApp(App):
         self._worker: Worker | None = None
         self._completion_active = False
         self._completion_session_paths: list[str] | None = None
+        self._sidebar_visible = True
         self.title = "JARVIS"
         self._restore_theme()
         self._update_sub_title()
@@ -381,16 +433,17 @@ class JarvisApp(App):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        with Vertical(id="body"):
-            with Container(id="chat_frame"):
-                with Vertical(id="chat_stack"):
-                    yield RichLog(id="messages", wrap=True, markup=True, auto_scroll=True)
-                    yield Static("", id="ai_stream")
-            with Vertical(id="editor_column"):
+        with Horizontal(id="main_row"):
+            yield SessionSidebar(id="session_sidebar")
+            with Vertical(id="content_column"):
+                with Container(id="chat_frame"):
+                    with Vertical(id="chat_stack"):
+                        yield RichLog(id="messages", wrap=True, markup=True, auto_scroll=True)
+                        yield Static("", id="ai_stream")
                 with Horizontal(id="editor_frame"):
                     yield Static("›", id="prompt")
                     yield Input(placeholder="输入消息，/ 开头为命令，@ 引用路径", id="input")
-                yield PathCompletionOverlay(id="path_completion")
+        yield PathCompletionOverlay(id="path_completion")
         yield Footer()
 
     def _write_system(self, log: RichLog, text: str) -> None:
@@ -424,7 +477,39 @@ class JarvisApp(App):
         self._write_system(log, "JARVIS 就绪。输入 /help 查看命令，/exit 退出。")
         for line in self._startup_lines:
             self._write_system(log, line)
+        self._refresh_session_sidebar()
         self.query_one("#input", Input).focus()
+
+    def _session_sidebar(self) -> SessionSidebar:
+        return self.query_one("#session_sidebar", SessionSidebar)
+
+    def _refresh_session_sidebar(self) -> None:
+        self._session_sidebar().refresh_sessions(self.agent, self.thread_id)
+
+    def _switch_session(self, thread_id: str) -> None:
+        if not thread_id or thread_id == self.thread_id:
+            return
+        self.thread_id = thread_id
+        self._update_sub_title()
+        self._refresh_session_sidebar()
+        log = self.query_one("#messages", RichLog)
+        log.write(f"[b]已切换到会话 {thread_id}[/b]")
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        if event.option_list.id != "session_sidebar":
+            return
+        thread_id = event.option.id
+        if thread_id is not None:
+            self._switch_session(str(thread_id))
+        self.query_one("#input", Input).focus()
+
+    def action_toggle_sidebar(self) -> None:
+        sidebar = self._session_sidebar()
+        self._sidebar_visible = not self._sidebar_visible
+        if self._sidebar_visible:
+            sidebar.remove_class("-collapsed")
+        else:
+            sidebar.add_class("-collapsed")
 
     def _path_completion_overlay(self) -> PathCompletionOverlay:
         return self.query_one("#path_completion", PathCompletionOverlay)
@@ -523,6 +608,7 @@ class JarvisApp(App):
         if new_thread:
             self.thread_id = new_thread
             self._update_sub_title()
+            self._refresh_session_sidebar()
             log.write(f"[b]已切换到会话 {new_thread}[/b]")
 
     def _stream_turn(self, user_input: str) -> None:
@@ -667,5 +753,6 @@ class JarvisApp(App):
 
         self.thread_id = f"session-{uuid.uuid4().hex[:8]}"
         self._update_sub_title()
+        self._refresh_session_sidebar()
         log = self.query_one("#messages", RichLog)
         log.write(f"[b]已开启新会话 {self.thread_id}[/b]")

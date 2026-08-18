@@ -123,13 +123,21 @@ def last_human_text(values) -> str:
     return ""
 
 
-def list_sessions(agent) -> str:
+def session_thread_ids(agent) -> list[str]:
+    """从 checkpointer 拉取非 sched-* 的 thread_id 列表（供 TUI 侧边栏等）。"""
     checkpointer = getattr(agent, "checkpointer", None)
     conn = getattr(checkpointer, "conn", None)
     if conn is None:
-        return "（无 checkpointer，无法列出会话）"
+        return []
     rows = conn.execute("SELECT DISTINCT thread_id FROM checkpoints ORDER BY thread_id").fetchall()
-    threads = [r[0] for r in rows if not str(r[0]).startswith("sched-")]
+    return [str(r[0]) for r in rows if not str(r[0]).startswith("sched-")]
+
+
+def list_sessions(agent) -> str:
+    threads = session_thread_ids(agent)
+    checkpointer = getattr(agent, "checkpointer", None)
+    if getattr(checkpointer, "conn", None) is None:
+        return "（无 checkpointer，无法列出会话）"
     if not threads:
         return "（暂无历史会话）"
     return "历史会话:\n" + "\n".join(f"  - {t}" for t in threads)
