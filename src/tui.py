@@ -6,14 +6,16 @@ from pathlib import Path
 from time import time
 from typing import cast
 
+from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Footer, Header, Input, Label, RichLog, Static
+from textual.widgets import Button, Footer, Header, Input, Label, OptionList, RichLog, Static
 from textual.worker import Worker, get_current_worker
 
 from src import commands, streaming
+from src.path_completion import apply_completion, at_query, collect_completion_paths, filter_paths
 from src.tui_format import (
     DEFAULT_TUI_THEME,
     LEGACY_BAD_THEMES,
@@ -152,6 +154,48 @@ class EditParamsModal(ModalScreen):
         self.dismiss(None)
 
 
+class PathCompletionOverlay(OptionList):
+    """@ 触发的路径补全列表。"""
+
+    DEFAULT_CSS = """
+    PathCompletionOverlay {
+        display: none;
+        height: auto;
+        max-height: 10;
+        border: round $primary;
+        background: $panel;
+        margin: 0 1 0 3;
+    }
+
+    PathCompletionOverlay.-visible {
+        display: block;
+    }
+    """
+
+    def show_paths(self, paths: list[str]) -> None:
+        self.clear_options()
+        if not paths:
+            self.remove_class("-visible")
+            return
+        self.add_options(paths)
+        self.highlighted = 0
+        self.add_class("-visible")
+
+    def hide(self) -> None:
+        self.remove_class("-visible")
+        self.clear_options()
+
+    @property
+    def visible_paths(self) -> bool:
+        return self.has_class("-visible") and self.option_count > 0
+
+    def selected_path(self) -> str | None:
+        if not self.visible_paths:
+            return None
+        option = self.get_option_at_index(self.highlighted)
+        return str(option.prompt) if option is not None else None
+
+
 class JarvisApp(App):
     """JARVIS TUI。BINDINGS: ctrl+c 退出、Tab 切换焦点、ctrl+n 新会话。"""
 
@@ -274,6 +318,8 @@ class JarvisApp(App):
         self._mcp_tool_count = mcp_tool_count
         self._startup_lines = startup_lines or []
         self._worker: Worker | None = None
+        self._completion_active = False
+        self._completion_session_paths: list[str] | None = None
         self.title = "JARVIS"
         self._restore_theme()
         self._update_sub_title()
@@ -340,9 +386,11 @@ class JarvisApp(App):
                 with Vertical(id="chat_stack"):
                     yield RichLog(id="messages", wrap=True, markup=True, auto_scroll=True)
                     yield Static("", id="ai_stream")
-            with Horizontal(id="editor_frame"):
-                yield Static("›", id="prompt")
-                yield Input(placeholder="输入消息，/ 开头为命令", id="input")
+            with Vertical(id="editor_column"):
+                with Horizontal(id="editor_frame"):
+                    yield Static("›", id="prompt")
+                    yield Input(placeholder="输入消息，/ 开头为命令，@ 引用路径", id="input")
+                yield PathCompletionOverlay(id="path_completion")
         yield Footer()
 
     def _write_system(self, log: RichLog, text: str) -> None:
@@ -378,7 +426,78 @@ class JarvisApp(App):
             self._write_system(log, line)
         self.query_one("#input", Input).focus()
 
+    def _path_completion_overlay(self) -> PathCompletionOverlay:
+        return self.query_one("#path_completion", PathCompletionOverlay)
+
+    def _begin_completion_session(self) -> list[str]:
+        if self._completion_session_paths is None:
+            self._completion_session_paths = collect_completion_paths(
+                self._vault_path(),
+                self._workspace_root(),
+                include_workspace=True,
+            )
+        return self._completion_session_paths
+
+    def _refresh_path_completion(self) -> None:
+        inp = self.query_one("#input", Input)
+        overlay = self._path_completion_overlay()
+        ctx = at_query(inp.value, inp.cursor_position)
+        if ctx is None:
+            self._completion_session_paths = None
+            self._completion_active = False
+            overlay.hide()
+            return
+        _at_index, query = ctx
+        paths = filter_paths(self._begin_completion_session(), query)
+        overlay.show_paths(paths)
+        self._completion_active = overlay.visible_paths
+
+    def _apply_path_completion(self) -> None:
+        inp = self.query_one("#input", Input)
+        overlay = self._path_completion_overlay()
+        selected = overlay.selected_path()
+        ctx = at_query(inp.value, inp.cursor_position)
+        if not selected or ctx is None:
+            return
+        at_index, _query = ctx
+        new_value, new_cursor = apply_completion(inp.value, at_index, inp.cursor_position, selected)
+        inp.value = new_value
+        inp.cursor_position = new_cursor
+        self._completion_session_paths = None
+        self._completion_active = False
+        overlay.hide()
+        inp.focus()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "input":
+            self._refresh_path_completion()
+
+    def on_key(self, event: events.Key) -> None:
+        if not self._completion_active:
+            return
+        overlay = self._path_completion_overlay()
+        if event.key == "down":
+            overlay.action_cursor_down()
+            event.prevent_default()
+            event.stop()
+        elif event.key == "up":
+            overlay.action_cursor_up()
+            event.prevent_default()
+            event.stop()
+        elif event.key == "enter":
+            self._apply_path_completion()
+            event.prevent_default()
+            event.stop()
+        elif event.key == "escape":
+            overlay.hide()
+            self._completion_active = False
+            event.prevent_default()
+            event.stop()
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
+        if self._completion_active:
+            self._apply_path_completion()
+            return
         text = event.value.strip()
         if not text:
             return

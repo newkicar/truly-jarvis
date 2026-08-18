@@ -7,7 +7,7 @@ import pytest
 
 from textual.widgets import Input, RichLog, Static
 
-from src.tui import EditParamsModal, JarvisApp, PermissionModal
+from src.tui import EditParamsModal, JarvisApp, PathCompletionOverlay, PermissionModal
 from src import commands
 
 
@@ -236,6 +236,71 @@ async def test_exit_command_quits():
         await _type_and_enter(pilot, "/exit")
         await pilot.pause()
         assert not app.is_running
+
+
+class _FakeConfig:
+    def __init__(self, vault_path, memory_dir=None, model_id="test-model"):
+        self.vault_path = vault_path
+        self.memory_dir = memory_dir or (vault_path.parent / "memory")
+        self.model_id = model_id
+
+
+@pytest.mark.asyncio
+async def test_at_completion_shows_candidates_and_inserts_path(tmp_path):
+    vault = tmp_path / "vault"
+    (vault / "Inbox").mkdir(parents=True)
+    (vault / "Inbox" / "note.md").write_text("# note", encoding="utf-8")
+    (vault / "other").mkdir()
+    (vault / "other" / "x.md").write_text("# x", encoding="utf-8")
+    ws = tmp_path / "project"
+    (ws / "memory").mkdir(parents=True)
+    (ws / "readme.md").write_text("# readme", encoding="utf-8")
+
+    app = JarvisApp(
+        _FakeConfig(vault, memory_dir=ws / "memory"),
+        FakeAgent(),
+        {"default": "ask", "tools": {}},
+    )
+    app._workspace_root = lambda: ws
+
+    async with app.run_test() as pilot:
+        inp = pilot.app.query_one(Input)
+        inp.focus()
+        inp.value = "@"
+        inp.cursor_position = 1
+        pilot.app._refresh_path_completion()
+        await pilot.pause()
+
+        overlay = pilot.app.query_one("#path_completion", PathCompletionOverlay)
+        assert overlay.visible_paths
+        assert overlay.option_count >= 2
+        assert "/vault/Inbox/note.md" in [str(o.prompt) for o in overlay.options]
+
+        await pilot.press("enter")
+        await pilot.pause()
+        assert "/vault/Inbox/note.md" in inp.value
+
+
+@pytest.mark.asyncio
+async def test_at_completion_escape_closes_overlay(tmp_path):
+    vault = tmp_path / "vault"
+    (vault / "Inbox").mkdir(parents=True)
+    (vault / "Inbox" / "note.md").write_text("# note", encoding="utf-8")
+
+    app = JarvisApp(_FakeConfig(vault), FakeAgent(), {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        inp = pilot.app.query_one(Input)
+        inp.value = "@In"
+        inp.cursor_position = 3
+        pilot.app._refresh_path_completion()
+        await pilot.pause()
+        overlay = pilot.app.query_one("#path_completion", PathCompletionOverlay)
+        assert overlay.visible_paths
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not overlay.visible_paths
+        assert inp.value == "@In"
 
 
 @pytest.mark.asyncio

@@ -4,9 +4,9 @@
 
 **Blocked by:** 06 — 权限对话框完整 diff
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `@` 触发补全 Overlay 或 Textual 等价组件
-- [ ] 列表来源：vault 下 `.md` 实时扫描（Inbox 优先排序），workspace 可选
-- [ ] 键盘选择 + Enter 插入；Esc 关闭
-- [ ] 单测或 run_test：输入 `@` 后出现候选、选中后 Input 值含路径
+- [x] `@` 触发补全 Overlay 或 Textual 等价组件
+- [x] 列表来源：vault 下 `.md` 实时扫描（Inbox 优先排序），workspace 可选
+- [x] 键盘选择 + Enter 插入；Esc 关闭
+- [x] 单测或 run_test：输入 `@` 后出现候选、选中后 Input 值含路径
