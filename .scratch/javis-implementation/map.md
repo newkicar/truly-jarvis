@@ -38,9 +38,11 @@
 
 ## Not yet specified
 
-- 定时检索的 cron 约定已定型为 schedules/*.json（每任务一 JSON），vault 回写目录待用户确认 Inbox 归档流程
+- 定时检索的 cron 约定已定型为 schedules/*.json（每任务一 JSON），save_path 锁定 `vault:Inbox/`；Inbox 归档仍为人工在 Obsidian 完成
 - long-term memory `StoreBackend` 的 namespace 结构（已决策改用 FilesystemBackend 指向 `memory/`，**不用 StoreBackend**）
-- 三期已收尾（executor 定为主代理直接 execute，不再设独立 executor 子代理；skill/mcp 接口已实现）；后续待办：vault 回退增强（可选）
+- 三期已收尾（executor 定为主代理直接 execute，不再设独立 executor 子代理；skill/mcp 接口已实现）
+- **Inbox 写边界 + 项目内快照回退**（✅ 2026-08-18，ADR-0002）：仅 Inbox 可写；写入前快照；会话 `/rollback` 还原 Inbox
+- 后续待办：TUI 体验增强（流式 Markdown、权限 diff、`@` 补全、侧边栏）；测试补全（见 `.scratch/javis-roadmap/`）
 
 ## Out of scope
 

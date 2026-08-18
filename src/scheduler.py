@@ -21,6 +21,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from src.config import Config
+from src import inbox_snapshots
+from src.commands import project_root
 
 
 class ScheduleConfigError(ValueError):
@@ -67,12 +69,31 @@ def load_schedules(schedules_dir: Path) -> list[dict]:
             continue
         if not data.get("id") or not data.get("task"):
             raise ScheduleConfigError(f"{path.name}: 缺少 id 或 task")
+        try:
+            validate_schedule_save_path(str(data.get("save_path", "vault:Inbox/")))
+        except ScheduleConfigError as e:
+            raise ScheduleConfigError(f"{path.name}: {e}") from e
         tasks.append({"file": path.name, **data})
     return tasks
 
 
+def validate_schedule_save_path(save_path: str) -> None:
+    """定时任务 save_path 必须指向 Vault Inbox。"""
+    raw = (save_path or "vault:Inbox/").strip()
+    if not raw.startswith("vault:"):
+        raise ScheduleConfigError(
+            f"save_path 必须指向 Vault Inbox（如 vault:Inbox/），当前为 {raw!r}"
+        )
+    rel = raw[len("vault:") :].strip("/").replace("\\", "/")
+    if rel != "Inbox" and not rel.startswith("Inbox/"):
+        raise ScheduleConfigError(
+            f"save_path 必须落在 Inbox 内（vault:Inbox/），当前为 {raw!r}"
+        )
+
+
 def resolve_save_path(config: Config, save_path: str) -> Path:
     """把 save_path 前缀解析为绝对路径。"""
+    validate_schedule_save_path(save_path)
     save_path = (save_path or "vault:Inbox/").strip()
     if save_path.startswith("vault:"):
         return (config.vault_path / save_path[len("vault:"):]).resolve()
@@ -130,6 +151,17 @@ def _run_task(agent, config: Config, task: dict):
 
     file_path = save_path / f"{task['id']}-{stamp}.md"
     header = f"# {task['id']} — {stamp}\n\n"
+    thread_id = f"sched-{task['id']}"
+    virtual_path = f"/vault/Inbox/{file_path.name}"
+    pre_exists, pre_content = inbox_snapshots.read_pre_state(config.vault_path, virtual_path)
+    inbox_snapshots.record_write(
+        project_root(),
+        thread_id=thread_id,
+        checkpoint_id=f"sched-{task['id']}-{stamp}",
+        virtual_path=virtual_path,
+        pre_exists=pre_exists,
+        pre_content=pre_content,
+    )
     file_path.write_text(header + body, encoding="utf-8")
 
     _cleanup_thread(agent, task["id"])

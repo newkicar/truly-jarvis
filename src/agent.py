@@ -20,7 +20,9 @@ from deepagents.backends import (
 )
 from langchain_quickjs import CodeInterpreterMiddleware
 
+from src.commands import project_root
 from src.config import Config
+from src.inbox_snapshot_middleware import InboxSnapshotMiddleware
 from src.permissions import (
     build_permission_deny_middleware,
     build_permission_interrupts,
@@ -28,6 +30,7 @@ from src.permissions import (
 )
 from src.rag import make_semantic_search_tool
 from src.subagents import build_knowledge_keeper, build_researcher
+from src.vault_guard import VaultWriteGuardMiddleware
 from src.tools import make_deep_search_tool, make_quick_search_tool, make_search_tool
 from src.wiki import make_wiki_tools
 
@@ -108,17 +111,29 @@ def build_agent(
         make_deep_search_tool(config.tavily_key),
     ]
     wiki_tools = make_wiki_tools(config.vault_path)
-    rag_tool = make_semantic_search_tool(config.vault_path, config.memory_dir / "rag-index")
+    rag_tool = make_semantic_search_tool(
+        config.vault_path,
+        config.memory_dir / "rag-index",
+        base_url=config.rag_ollama_base_url,
+        embed_model=config.rag_embed_model,
+    )
     if permission_state is not None:
         interrupt_on = build_permission_interrupts_from_state(permission_state)
     else:
         interrupt_on, permission_state = build_permission_interrupts(config.permissions)
     deny_middleware = build_permission_deny_middleware(permission_state)
+    vault_guard = VaultWriteGuardMiddleware()
+    root = project_root()
+    inbox_snapshot = InboxSnapshotMiddleware(root, config.vault_path)
     researcher = build_researcher(
         search_tools=search_tools, wiki_tools=wiki_tools, rag_tool=rag_tool,
         deny_middleware=deny_middleware,
     )
-    knowledge_keeper = build_knowledge_keeper(deny_middleware=deny_middleware)
+    knowledge_keeper = build_knowledge_keeper(
+        deny_middleware=deny_middleware,
+        project_root=root,
+        vault_path=config.vault_path,
+    )
 
     memory = [
         str(f).replace("\\", "/")
@@ -138,7 +153,12 @@ def build_agent(
         subagents=[researcher, knowledge_keeper],  # type: ignore[list-item]
         system_prompt=build_main_prompt(),
         tools=list(mcp_tools or []),  # MCP 工具仅注入主代理
-        middleware=[CodeInterpreterMiddleware(subagents=True), deny_middleware],  # type: ignore[list-item]  # 动态子代理 fan-out + deny 拦截
+        middleware=[
+            CodeInterpreterMiddleware(subagents=True),
+            deny_middleware,
+            vault_guard,
+            inbox_snapshot,
+        ],  # type: ignore[list-item]
         memory=memory,
         skills=skills,
         interrupt_on=interrupt_on,  # HITL 审批（javis.json permissions）

@@ -1,8 +1,10 @@
 """子代理定义。
 
-researcher / knowledge_keeper / executor（SubAgent dict 形态）。
+researcher / knowledge_keeper（SubAgent dict 形态）。
 researcher 定义见 .scratch/javis-implementation/issues/04-researcher-prompt.md Resolution。
 """
+from src.inbox_snapshot_middleware import InboxSnapshotMiddleware
+from src.vault_guard import VaultWriteGuardMiddleware
 
 RESEARCHER_PROMPT = """你是 JARVIS 的 researcher，负责「搜索互联网 + 检索本地知识库 → 过滤无用信息 → 带来源总结」。
 
@@ -95,17 +97,21 @@ KNOWLEDGE_KEEPER_DESCRIPTION = (
 )
 
 
-def build_knowledge_keeper(deny_middleware=None):
+def build_knowledge_keeper(deny_middleware=None, project_root=None, vault_path=None):
     """构造 knowledge_keeper 子代理（SubAgent dict 形态）。
 
     工具继承主代理后端默认的 write_file（可写 /vault/Inbox/），无需显式声明。
     deny_middleware: 权限 deny 拦截 middleware（命中 deny 的工具不执行）。
     """
+    middlewares: list = [VaultWriteGuardMiddleware(actor="knowledge_keeper")]
+    if project_root is not None and vault_path is not None:
+        middlewares.append(InboxSnapshotMiddleware(project_root, vault_path))
+    if deny_middleware is not None:
+        middlewares.insert(0, deny_middleware)
     spec: dict[str, object] = {
         "name": "knowledge_keeper",
         "description": KNOWLEDGE_KEEPER_DESCRIPTION,
         "system_prompt": KNOWLEDGE_KEEPER_PROMPT,
+        "middleware": middlewares,
     }
-    if deny_middleware is not None:
-        spec["middleware"] = [deny_middleware]
     return spec  # type: ignore[return-value]

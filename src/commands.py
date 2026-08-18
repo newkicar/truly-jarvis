@@ -66,6 +66,13 @@ def render(messages) -> str:
     return ""
 
 
+def render_markdown(text: str):
+    """Rich Markdown 渲染对象（供 TUI RichLog 使用）。"""
+    from src.tui_format import render_markdown as _render_markdown
+
+    return _render_markdown(text)
+
+
 def checkpoint_short_id(cid: str) -> str:
     return cid[:13] if cid else cid
 
@@ -94,7 +101,6 @@ def resolve_checkpoint_id(agent, thread_id: str, raw: str):
     短 id = cid[:13]（/history 显示用的短格式）。支持前缀唯一匹配；
     多个匹配返回 None，表示歧义。单次遍历完成精确 + 前缀匹配。
     """
-    exact = None
     prefix_matches: list[str] = []
     for s in agent.get_state_history(config={"configurable": {"thread_id": thread_id}}):
         cid = s.config.get("configurable", {}).get("checkpoint_id")
@@ -228,12 +234,34 @@ def list_snapshots() -> str:
     return "\n".join(lines)
 
 
-def rollback(checkpoint_id: str) -> str:
-    commit = time_travel.resolve_commit(project_root(), checkpoint_id)
+def rollback(agent, thread_id: str, checkpoint_id: str, vault_path: Path | None = None) -> str:
+    full_id = resolve_checkpoint_id(agent, thread_id, checkpoint_id)
+    if not full_id:
+        return f"回退失败: 未找到 checkpoint {checkpoint_id}"
+
+    lines: list[str] = []
+    commit = time_travel.resolve_commit(project_root(), full_id)
     if commit is None:
-        return f"回退失败: 未找到 checkpoint {checkpoint_id} 的文件快照"
-    time_travel.rollback_commit(project_root(), commit)
-    return f"已回退项目文件到 {commit}（checkpoint {checkpoint_id}）。注意：需 /replay 对齐会话状态。"
+        lines.append(f"未找到 checkpoint {checkpoint_id} 的项目 git 快照（跳过项目文件回退）")
+    else:
+        time_travel.rollback_commit(project_root(), commit)
+        lines.append(f"已回退项目文件到 {commit}（checkpoint {full_id}）")
+
+    if vault_path is not None:
+        from src import inbox_snapshots
+
+        actions = inbox_snapshots.restore_inbox_for_rollback(
+            project_root(), vault_path, agent, thread_id, full_id
+        )
+        if actions:
+            lines.append("Inbox 还原:")
+            for vp, action in actions:
+                lines.append(f"  - {action} {vp}")
+        else:
+            lines.append("Inbox：该会话无需要还原的文件")
+
+    lines.append("注意：可用 /replay 对齐会话状态。")
+    return "\n".join(lines)
 
 
 def current_permissions(permission_state: dict) -> dict:
@@ -274,7 +302,7 @@ def always_approve(permission_state: dict, tool: str) -> bool:
     return True
 
 
-def dispatch_command(agent, thread_id: str, command: str, sched=None):
+def dispatch_command(agent, thread_id: str, command: str, sched=None, vault_path: Path | None = None):
     """处理会话命令，返回 (结果文本, 新 thread_id 或 None)。fork 可能切换会话。"""
     parts = command.split()
     cmd = parts[0]
@@ -292,7 +320,15 @@ def dispatch_command(agent, thread_id: str, command: str, sched=None):
     if cmd == "/snapshots":
         return list_snapshots(), None
     if cmd == "/rollback" and len(parts) == 2:
-        return rollback(parts[1]), None
+        vp = vault_path
+        if vp is None:
+            try:
+                from src.config import load_config
+
+                vp = load_config().vault_path
+            except Exception:
+                vp = None
+        return rollback(agent, thread_id, parts[1], vp), None
     if cmd == "/reload-schedules":
         if sched is None:
             return "调度器未启动，无法重载", None

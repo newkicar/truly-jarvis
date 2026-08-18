@@ -295,10 +295,12 @@ const r = await task({
 - **回退**：会话 `update_state`/replay 回退 + 文件 `/rollback <checkpoint_id>` → `git reset --hard <对应 commit>`，两者对齐
 - **`/snapshots`**：从旧到新，每行显示时间戳 + 短 commit（前 10 位）+ 所属线程 + 短 cid（前 13 位）；`/rollback <短cid>` 支持前缀唯一匹配。
 
-### 10.4 Obsidian vault 处理（不纳入 git）
-- vault 文件写入**不参与 git 回退**，依赖 Obsidian 自带 **File Recovery（文件恢复）插件**兜底。
-- 后果：agent 回写 vault 的知识笔记无法 git 回退，只能靠 Obsidian 快照/手动改。
-- 后续如需 vault 可回退，再补「vault 单独 git」或「写前日志」（接口预留）。
+### 10.4 Obsidian vault 处理（Inbox 隔离 + 项目内快照）
+- vault 文件写入**不参与** JARVIS 项目 git 回退；Inbox 目录在 vault `.gitignore` 排除。
+- JARVIS **仅可写** `/vault/Inbox/`；其它 vault 路径只读（middleware 硬拒绝，含 HITL 已审批）。
+- **Inbox 快照**（`inbox_snapshots.sqlite`）：每次写入 Inbox 前记录写前状态，关联 `thread_id` + `checkpoint_id`。
+- **会话 `/rollback`**：还原该会话写过的 Inbox 文件（列出路径）；`sched-*` 定时任务写入不在此范围。归档由人在 Obsidian 完成。
+- 全库 vault git 回退仍为可选未来项（接口预留）。
 
 ---
 
@@ -321,6 +323,9 @@ truly_Javis/
 │   ├── wiki.py               # wikilink/backlink 导航工具（出链/反链，零索引实时扫描）
 │   ├── rag.py                # 增量 RAG 语义增强（chromadb + Ollama embedding，hash 增量）
 │   ├── permissions.py        # HITL 审批（javis.json permissions → interrupt_on + deny 拦截 middleware）
+│   ├── vault_guard.py        # Vault 写边界：仅 Inbox 可写
+│   ├── inbox_snapshots.py    # Inbox 写入前快照 + 会话 rollback 还原
+│   ├── inbox_snapshot_middleware.py  # 写入 Inbox 时自动打快照
 │   ├── mcps.py               # MCP 工具加载（javis.json mcps.servers → langchain-mcp-adapters → 主代理 tools）
 │   ├── time_travel.py        # /history /replay /fork /sessions + git 映射表
 │   └── scheduler.py          # APScheduler 定时任务（二期）

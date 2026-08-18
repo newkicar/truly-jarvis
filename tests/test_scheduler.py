@@ -36,12 +36,41 @@ def test_load_schedules_requires_id_and_task(tmp_path):
         pass
 
 
-def test_resolve_save_path_vault(tmp_path):
+def test_resolve_save_path_inbox_only(tmp_path):
     cfg = make_fake_config(tmp_path)
     assert scheduler.resolve_save_path(cfg, "vault:Inbox/") == (cfg.vault_path / "Inbox").resolve()
-    assert scheduler.resolve_save_path(cfg, "workspace:out/") == (
-        cfg.memory_dir.parent / "out"
-    ).resolve()
+
+
+def test_resolve_save_path_rejects_workspace(tmp_path):
+    cfg = make_fake_config(tmp_path)
+    try:
+        scheduler.resolve_save_path(cfg, "workspace:out/")
+        assert False, "定时任务 save_path 必须指向 vault:Inbox/"
+    except scheduler.ScheduleConfigError:
+        pass
+
+
+def test_resolve_save_path_rejects_non_inbox_vault(tmp_path):
+    cfg = make_fake_config(tmp_path)
+    try:
+        scheduler.resolve_save_path(cfg, "vault:Notes/")
+        assert False, "应当拒绝非 Inbox 的 vault save_path"
+    except scheduler.ScheduleConfigError as e:
+        assert "Inbox" in str(e)
+
+
+def test_load_schedules_rejects_bad_save_path(tmp_path):
+    cfg = make_fake_config(tmp_path)
+    _write_schedule(
+        cfg.schedules_dir,
+        "bad.json",
+        {"id": "bad", "task": "t", "cron": "0 8 * * *", "save_path": "vault:Notes/"},
+    )
+    try:
+        scheduler.load_schedules(cfg.schedules_dir)
+        assert False, "应当拒绝非 Inbox save_path"
+    except scheduler.ScheduleConfigError as e:
+        assert "Inbox" in str(e)
 
 
 def test_run_task_writes_file(tmp_path):
