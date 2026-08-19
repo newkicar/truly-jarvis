@@ -4,11 +4,14 @@ Seam: src.agent.build_agent（输入 config → 输出可调用的 deep agent）
 用自定义 fake 模型（支持 bind_tools）模拟模型，不触网、不碰真 vault，
 验证组装成功且 invoke 能返回消息。
 """
+from datetime import datetime
+
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from src.agent import build_agent, build_main_prompt
+from src.skill_paths import USER_SKILLS_VPATH
 from src.subagents import build_knowledge_keeper
 from conftest import make_fake_config
 
@@ -33,26 +36,26 @@ class ToolCapableFake(BaseChatModel):
         return "tool-capable-fake"
 
 
-def test_build_agent_assembles(tmp_path):
+def test_build_agent_assembles(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
     cfg = make_fake_config(tmp_path)
     agent = build_agent(cfg)
     assert agent is not None
     assert callable(getattr(agent, "invoke", None))
 
 
-def test_build_main_prompt_is_static_without_datetime():
-    """日期/时间/地点不写入 system prompt；采用结果导向 + 工作方式结构。"""
-    prompt = build_main_prompt()
-    assert "现在是" not in prompt
-    assert "2026-" not in prompt
-    assert "加载 **system-context**" not in prompt
+def test_build_main_prompt_injects_session_date():
+    """会话日期写入 system prompt；不含时分秒与专项工具名。"""
+    prompt = build_main_prompt(now=datetime(2026, 8, 20, 12, 0, 0))
+    assert "今天是 2026-08-20 星期四。" in prompt
+    assert "12:00" not in prompt
     assert "get_system_context" not in prompt
     assert "目标" in prompt
     assert "工作方式" in prompt
     assert "完成标准" in prompt
-    assert "停止规则" in prompt
+    assert "停止规则" not in prompt
     assert "skills" in prompt and "MCP" in prompt
-    assert "简单问题直接回答" in prompt
+    assert "execute" in prompt
     assert "Reports" in prompt
 
 
@@ -61,6 +64,7 @@ def test_build_agent_uses_build_main_prompt(tmp_path, monkeypatch):
     import src.agent as agent_mod
     from src.agent import create_deep_agent
 
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
     cfg = make_fake_config(tmp_path)
     captured = {}
 
@@ -74,11 +78,11 @@ def test_build_agent_uses_build_main_prompt(tmp_path, monkeypatch):
 
     assert captured.get("system_prompt") == build_main_prompt()
     assert "工作方式" in captured.get("system_prompt", "")
-    tool_names = [getattr(t, "name", None) for t in captured.get("tools", [])]
-    assert "get_system_context" in tool_names
+    assert captured.get("tools") == []
 
 
-def test_build_agent_invoke_returns_message(tmp_path):
+def test_build_agent_invoke_returns_message(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
     cfg = make_fake_config(tmp_path)
     model = ToolCapableFake(reply="我是 JARVIS，你好！")
     agent = build_agent(cfg, model=model)
@@ -91,7 +95,8 @@ def test_build_agent_invoke_returns_message(tmp_path):
     assert "JARVIS" in messages[-1].content
 
 
-def test_build_agent_with_sqlite_checkpointer_assembles(tmp_path):
+def test_build_agent_with_sqlite_checkpointer_assembles(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
     cfg = make_fake_config(tmp_path)
     from langgraph.checkpoint.sqlite import SqliteSaver
 
@@ -106,6 +111,7 @@ def test_build_agent_injects_mcp_tools(tmp_path, monkeypatch):
     from langchain_core.tools import StructuredTool
     from src.agent import create_deep_agent
 
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
     cfg = make_fake_config(tmp_path)
     captured = {}
 
@@ -115,7 +121,6 @@ def test_build_agent_injects_mcp_tools(tmp_path, monkeypatch):
 
     monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
     model = ToolCapableFake(reply="ok")
-    from langchain_core.tools import StructuredTool
     from pydantic import BaseModel
 
     class _Args(BaseModel):
@@ -131,17 +136,15 @@ def test_build_agent_injects_mcp_tools(tmp_path, monkeypatch):
     ]
     build_agent(cfg, model=model, mcp_tools=fake_tools)
 
-    assert [t.name for t in captured.get("tools", [])] == [
-        "get_system_context",
-        "git_status",
-    ]
+    assert [t.name for t in captured.get("tools", [])] == ["git_status"]
 
 
 def test_build_agent_no_mcp_tools_defaults_empty(tmp_path, monkeypatch):
-    """未传 mcp_tools 时仍注入 get_system_context。"""
+    """未传 mcp_tools 时 tools 为空列表。"""
     import src.agent as agent_mod
     from src.agent import create_deep_agent
 
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
     cfg = make_fake_config(tmp_path)
     captured = {}
 
@@ -153,7 +156,33 @@ def test_build_agent_no_mcp_tools_defaults_empty(tmp_path, monkeypatch):
     model = ToolCapableFake(reply="ok")
     build_agent(cfg, model=model)
 
-    assert [t.name for t in captured.get("tools", [])] == ["get_system_context"]
+    assert captured.get("tools") == []
+
+
+def test_build_agent_registers_skill_sources(tmp_path, monkeypatch):
+    """skills= 应含用户全局层。"""
+    import src.agent as agent_mod
+    from dataclasses import replace
+    from src.agent import create_deep_agent
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
+    from src.project_paths import ensure_user_home
+
+    ensure_user_home()
+    project = tmp_path / "proj"
+    skills_root = project / "skills"
+    skills_root.mkdir(parents=True)
+    cfg = replace(make_fake_config(project), skills=(skills_root,))
+    captured = {}
+
+    def spy(**kwargs):
+        captured.update(kwargs)
+        return create_deep_agent(**kwargs)
+
+    monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+    build_agent(cfg, model=ToolCapableFake(reply="ok"))
+    assert USER_SKILLS_VPATH in captured.get("skills", [])
+    assert "/workspace/skills/" in captured.get("skills", [])
 
 
 def test_build_agent_loads_memory_md_files(tmp_path, monkeypatch):
@@ -161,6 +190,7 @@ def test_build_agent_loads_memory_md_files(tmp_path, monkeypatch):
     import src.agent as agent_mod
     from src.agent import create_deep_agent
 
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
     cfg = make_fake_config(tmp_path)
     (cfg.memory_dir).mkdir(parents=True, exist_ok=True)
     (cfg.memory_dir / "README.md").write_text("# 说明\n", encoding="utf-8")
@@ -186,6 +216,7 @@ def test_build_agent_registers_researcher_and_knowledge_keeper(tmp_path, monkeyp
     import src.agent as agent_mod
     from src.agent import create_deep_agent
 
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
     cfg = make_fake_config(tmp_path)
     captured = {}
 
@@ -208,10 +239,10 @@ def test_build_agent_wires_deny_middleware_and_shared_state(tmp_path, monkeypatc
     from src.agent import create_deep_agent
     from src.permissions import (
         PermissionDenyMiddleware,
-        build_permission_deny_middleware,
         build_permission_interrupts,
     )
 
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
     cfg = make_fake_config(tmp_path)
     captured = {}
 
@@ -246,8 +277,9 @@ def test_build_knowledge_keeper_shape():
     assert "只新增" in kk["system_prompt"]  # type: ignore[operator]
 
 
-def test_stream_events_v3_does_not_throw_and_produces_text(tmp_path):
+def test_stream_events_v3_does_not_throw_and_produces_text(tmp_path, monkeypatch):
     """票 11：stream_events(version='v3') 用 fake 模型不抛错，且能产出最终文本。"""
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
     cfg = make_fake_config(tmp_path)
     model = ToolCapableFake(reply="流式回答")
     agent = build_agent(cfg, model=model)

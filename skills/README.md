@@ -1,6 +1,16 @@
 # skills/
 
-已安装 skill 目录。deepagents `skills=["skills/"]` 扫描此目录，加载每个子目录里的 `SKILL.md`。
+已安装 skill 目录（**安装包默认层**）。运行时还会扫描：
+
+| 层 | 磁盘路径 | 虚拟路径 |
+|---|---|---|
+| 安装包默认 | `{install_root}/skills/` | `/builtin-skills/` |
+| 用户全局 | `~/.javis/skills/`（`JARVIS_HOME` 可改） | `/skills/` |
+| 项目 | `{project_root}/skills/`（`javis.json` 的 `skills` 段） | `/workspace/skills/` |
+
+同名 skill：**项目 > 用户全局 > 安装默认**。不拷贝，启动时合并扫描。
+
+deepagents 扫描各层子目录里的 `SKILL.md`。
 本文件是 **skill 编写指南**（基于 Claude Code 的 skill-creator 方法论，结合本项目约定本地化）。
 
 ---

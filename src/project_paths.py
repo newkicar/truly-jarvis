@@ -6,6 +6,8 @@ from pathlib import Path
 
 JAVIS_JSON = "javis.json"
 ENV_PROJECT_ROOT = "JARVIS_PROJECT_ROOT"
+ENV_JARVIS_HOME = "JARVIS_HOME"
+DEFAULT_USER_HOME = ".javis"
 
 
 def install_root() -> Path:
@@ -64,3 +66,24 @@ def resolve_env_file(project_root: Path | None = None) -> Path:
         if candidate.is_file():
             return candidate
     return root / ".env"
+
+
+def user_home() -> Path:
+    """用户全局目录（默认 ~/.javis，可用 JARVIS_HOME 覆盖）。"""
+    override = os.environ.get(ENV_JARVIS_HOME, "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    return (Path.home() / DEFAULT_USER_HOME).resolve()
+
+
+def ensure_user_home() -> Path:
+    """确保用户全局目录存在（skills/ 等可写内容）。"""
+    home = user_home()
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "skills").mkdir(parents=True, exist_ok=True)
+    return home
+
+
+def resolve_user_javis_json() -> Path:
+    """用户全局 javis.json 路径（~/.javis/javis.json）。"""
+    return user_home() / JAVIS_JSON

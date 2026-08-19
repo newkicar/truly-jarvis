@@ -3,6 +3,8 @@
 model + CompositeBackend（default=StateBackend；/workspace /vault /memories 路由）
 + subagents + memory + checkpointer(SqliteSaver) + store。见设计文档 §5.2/§6。
 """
+from datetime import datetime
+
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
@@ -28,11 +30,13 @@ from src.permissions import (
     build_permission_interrupts_from_state,
 )
 from src.rag import make_semantic_search_tool
+from src.skill_paths import skill_backend_routes, skill_virtual_sources
 from src.subagents import build_knowledge_keeper, build_researcher
-from src.system_context import make_get_system_context_tool
 from src.vault_guard import VaultWriteGuardMiddleware
 from src.tools import make_deep_search_tool, make_quick_search_tool, make_search_tool
 from src.wiki import make_wiki_tools
+
+_WEEKDAYS = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
 
 MAIN_SYSTEM_PROMPT = """你是 JARVIS，个人 AI 助手，专注扩展用户的心智。
 
@@ -40,53 +44,37 @@ MAIN_SYSTEM_PROMPT = """你是 JARVIS，个人 AI 助手，专注扩展用户的
 准确完成用户**本轮**提出的问题或任务，不擅自扩大范围。
 
 ## 工作方式
-接到提问或任务时，先弄清要交付什么。需要多步再拆解；规划时把 skills、MCP 工具、内置工具和子代理纳入考虑，按需用来搜集信息或执行，不凭训练记忆硬猜。简单问题直接回答，不必为用工具而用工具。多步任务自行验证、纠错，直到满足完成标准。
+接到提问或任务时，先弄清要交付什么。简单问题直接回答。
+多步任务：先计划步骤，再逐步执行，完成后核对结果；某步失败则换合法手段重试或说明原因，不要卡死在一种做法上。
+需要信息或执行时，按需使用 skills、MCP 工具、内置工具（含 `execute`）、子代理——不凭训练记忆硬猜事实。
+问当前时间、精确时刻、所在城市等环境事实时，用 `execute` 读取本机（如 Windows 的 `Get-Date`、curl IP 定位），不要猜，不要读 `javis.json` 或 `/memories/user-profile.md` 找地址。
 
 ## 完成标准
 - **事实**：有可靠来源再答；没有则说明不确定，不编造。
-- **调研**：覆盖用户原问题即可，不自动升级成报告或写入 vault。
+- **调研**：需要联网或检索 vault 时再委派 researcher；覆盖用户原问题即可，不自动升级成报告或写入 vault。
 - **落盘**：仅当用户明确要求保存、沉淀或整理报告时，才写 `/vault/Inbox/` 或 `/vault/Reports/`。
 - **可验证任务**：能跑则跑（测试、命令输出）；无法验证时说明建议的检查步骤，不谎称已完成。
 
 ## 约束
-- 文件路径只用 `/workspace/`（项目）、`/vault/`（Obsidian）、`/memories/`（用户记忆）。
-- 联网或检索 `/vault/` → researcher；值得长期保留或用户要求记住 → knowledge_keeper。
+- 文件路径只用 `/workspace/`（项目）、`/vault/`（Obsidian）、`/memories/`（用户记忆）、`/skills/`（用户全局 skill）、`/builtin-skills/`（随安装包 skill）。
+- 值得长期保留或用户要求记住 → knowledge_keeper。
 - 委派时传递用户原意，不扩写成「全面调研 / 行业动态报告」。
 - 多角度并行研究可用 CodeInterpreter + `task()` fan-out 多个 researcher，再合并。
-
-## 停止规则
-- 已能完整回答用户**本轮**问题 → 立即停止，不开启第二个交付物。
-- 工具失败 → 换合法手段重试，或说明原因；不转去做用户未要求的事。
-- 检索证据已够 → 停止搜索。
 
 ## 输出
 简体中文，简洁有结构。引用本地知识时用 `/vault/` 路径。
 """
 
 
-def build_main_prompt() -> str:
-    """主系统提示词（结果导向；日期/时间等细节在 system-context skill）。"""
-    return MAIN_SYSTEM_PROMPT
+def session_date_line(*, now: datetime | None = None) -> str:
+    """启动时会话日期行（仅日期+星期，不含时分秒）。"""
+    current = now or datetime.now()
+    return f"今天是 {current.strftime('%Y-%m-%d')} {_WEEKDAYS[current.weekday()]}。"
 
 
-def _skill_sources(config: Config) -> list[str]:
-    """deepagents 技能源：backend 虚拟 POSIX 路径（CompositeBackend 下为 /workspace/...）。
-
-    磁盘上的 skills/ 映射到 /workspace/skills/，与 LocalShellBackend 路由一致。
-    勿传 Windows 绝对路径——会落到 default StateBackend，导致 skill 找不到。
-    """
-    root = config.memory_dir.parent
-    sources: list[str] = []
-    for p in config.skills:
-        fs_path = p.resolve() if p.is_absolute() else (root / p).resolve()
-        if not fs_path.is_dir():
-            continue
-        try:
-            rel = fs_path.relative_to(root).as_posix().strip("/")
-        except ValueError:
-            continue
-        sources.append(f"/workspace/{rel}/" if rel else "/workspace/")
-    return list(dict.fromkeys(sources))
+def build_main_prompt(*, now: datetime | None = None) -> str:
+    """主系统提示词：会话日期 + 结果导向正文。"""
+    return f"{session_date_line(now=now)}\n\n{MAIN_SYSTEM_PROMPT}"
 
 
 def _make_model(config: Config) -> BaseChatModel:
@@ -99,14 +87,14 @@ def _make_model(config: Config) -> BaseChatModel:
 
 
 def _make_backend(config: Config) -> CompositeBackend:
-    return CompositeBackend(
-        default=StateBackend(),
-        routes={
-            "/workspace/": LocalShellBackend(root_dir=str(config.project_root), virtual_mode=True),
-            "/vault/": FilesystemBackend(root_dir=str(config.vault_path), virtual_mode=True),
-            "/memories/": FilesystemBackend(root_dir=str(config.memory_dir), virtual_mode=True),
-        },
-    )
+    routes: dict[str, FilesystemBackend | LocalShellBackend] = {
+        "/workspace/": LocalShellBackend(root_dir=str(config.project_root), virtual_mode=True),
+        "/vault/": FilesystemBackend(root_dir=str(config.vault_path), virtual_mode=True),
+        "/memories/": FilesystemBackend(root_dir=str(config.memory_dir), virtual_mode=True),
+    }
+    for vpath, fs_path in skill_backend_routes(config).items():
+        routes[vpath] = FilesystemBackend(root_dir=str(fs_path), virtual_mode=True)
+    return CompositeBackend(default=StateBackend(), routes=routes)
 
 
 def build_agent(
@@ -166,8 +154,8 @@ def build_agent(
         if f.name.lower() != "readme.md"
     ]
 
-    skills = _skill_sources(config)
-    main_tools = [make_get_system_context_tool(), *(mcp_tools or [])]
+    skills = skill_virtual_sources(config)
+    main_tools = list(mcp_tools or [])
 
     return create_deep_agent(
         model=model,

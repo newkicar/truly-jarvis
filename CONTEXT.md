@@ -40,8 +40,8 @@ CompositeBackend 路由 `/workspace/`，根目录 = 项目根。承载代码、�
 _Avoid_: 与 vault 混称（workspace = 当前做的事，vault = 可选笔记库）
 
 **系统上下文**：
-本机日期、时间与 IP 推算城市等「随环境变化」的信息。JARVIS **不在启动时**写进主 system prompt，也不把地址写死在 `javis.json` 或 profile；需要时通过 `get_system_context` 与 `system-context` skill 按需读取。时间来自本机时钟；城市来自公网 IP 地理定位（ISP 级，非 GPS）。
-_Avoid_: 在 javis.json 里配 location、读 user-profile 找所在地、启动时注入「现在是…」
+本机日期、时间与 IP 推算城市等「随环境变化」的信息。**会话启动时**仅把**当天日期 + 星期**写入 system prompt（不含时分秒）。问精确时间、所在城市时用主代理 `execute` 读本机，**不**写死 `javis.json` 或 profile，**不**读 user-profile 找所在地。
+_Avoid_: 在 javis.json 里配 location、读 user-profile 找所在地、为问时间单独做专项 skill/工具
 
 ## 文档
 

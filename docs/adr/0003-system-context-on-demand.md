@@ -1,39 +1,36 @@
-# ADR-0003: 系统上下文按需读取（日期 / 时间 / 位置）
+# ADR-0003: 系统上下文（日期 / 时间 / 位置）
 
-**状态:** 已接受（2026-08-19）
+**状态:** 已修订（2026-08-20，原 2026-08-19 决策部分 supersede）
 
 ## 背景
 
-启动时把「当前日期时间」或「用户所在地」写进主代理 `system_prompt` 会立刻过期，且污染常驻上下文。
+启动时把「完整 datetime」或「用户所在地」写进主代理 `system_prompt` 会秒级过期，且污染常驻上下文。
 把地址写进 `javis.json` 也不合适：用户可能在不同地点，不能写死单一坐标。
 
 此前代理在简单问答（如「现在几点、我在哪」）上曾出现：混用宿主机绝对路径与虚拟路径、误读
 `javis.json` 找 location、委派 researcher 跑本地脚本、以及把问题扩成写 `/vault/Reports/` 的报告任务。
 
-## 决策
+中间版本曾用 `get_system_context` 工具 + `system-context` skill 作为唯一合法路径，导致与 OpenCode/Cline 等
+成熟代理相比「问时间也要走专项能力」，模型反而更窄、更易拒绝回答。
 
-1. **主 system prompt 结果导向**：目标 → 工作方式 → 完成标准 → 约束 → 停止规则 → 输出（见 `src/agent.py` 的 `MAIN_SYSTEM_PROMPT`）。
-2. **日期 / 时间 / 星期按需读取**：
-   - 主代理工具 `get_system_context`（`src/system_context.py`），返回本机 JSON（含 `date`/`time`/`weekday`/`city`/`location` 等）；
-   - skill `skills/system-context/` 按需加载（Gotchas + 完成标准）；
-   - **不**在启动时注入静态时间，**不**写入 `javis.json`。
-3. **用户所在地（城市级）**：
-   - 由 `get_system_context` 调用 IP 地理定位 API（`ip-api.com`）**按需推算**，不写进 `javis.json`，不读 `user-profile.md`；
-   - ISP 级精度，非 GPS；VPN/代理可能不准，失败时如实说明；
-   - **禁止**在 profile 预填固定「所在地」作为默认答案。
-4. **Skills 虚拟路径**：`skills/` 映射为 `/workspace/skills/` 传入 deepagents，禁止模型使用 `E:/...` 探路。
-5. **简单事实问答的停止规则**：能回答用户本轮问题即停，禁止顺带调研、写 Reports 或委派 researcher。
+## 决策（2026-08-20 修订）
+
+1. **主 system prompt 结果导向 + 适度放松流程**：目标 → 工作方式 → 完成标准 → 约束 → 输出（见 `src/agent.py` 的 `MAIN_SYSTEM_PROMPT`）。多步任务允许计划→执行→核对→失败换手段；护栏聚焦**落盘**与 **HITL**，不再用「能答立刻停」「必须派 researcher」作总开关。
+2. **会话日期注入**：启动时在 system prompt **仅注入当天日期 + 星期**（不含时分秒，避免秒级过期）。见 `build_main_prompt()` / `session_date_line()`。
+3. **精确时间与城市**：主代理用通用 `execute` 读取本机（如 `Get-Date`、curl IP 定位），**不**提供专用 `get_system_context` 工具，**不**维护 `system-context` skill。
+4. **禁止行为（仍有效）**：不写 `javis.json` location；不读 `/memories/user-profile.md` 找所在地；简单事实问答不自动写 Reports / 不委派 researcher。
+5. **Skills 虚拟路径**（见 ADR-0004 扩展）：`/workspace/skills/`（项目）、`/skills/`（`~/.javis/skills/` 用户全局）、`/builtin-skills/`（安装目录默认）；禁止模型使用 `E:/...` 探路。
 
 ## 被否决的选项
 
-- **启动时注入 datetime 到 system prompt**：秒级过期，且占常驻 token。
+- **启动时注入完整 datetime 到 system prompt**：秒级过期。
 - **`javis.json` 的 `location` 字段**：把移动用户写死在机器配置里。
-- **在 profile 预填默认地址**：用户移动时地址会变；应用 IP 按需推算，不用静态 profile。
-- **读 user-profile 找所在地**：城市应由 IP 按需推算，profile 仅承载用户偏好等非位置信息。
-- **委派 researcher 执行本地时间脚本**：子代理无 `get_system_context`，且易触发无关检索/报告。
+- **在 profile 预填默认地址**：用户移动时地址会变。
+- **专用 `get_system_context` + system-context skill 作为唯一路径**（2026-08-19，已 supersede）：过度特殊化，模型反而不走 `execute`。
+- **委派 researcher 执行本地时间脚本**：易触发无关检索/报告。
 
 ## 影响
 
-- 新增 / 维护：`src/system_context.py`、`skills/system-context/`、`get_system_context` 主代理工具。
+- 删除：`src/system_context.py`、`skills/system-context/`。
+- 新增/维护：`session_date_line()`、`~/.javis` 用户全局目录（见 `project_paths.user_home()`）。
 - `Config` 与 `javis.json` **无** `location` 字段。
-- 术语见仓库根 `CONTEXT.md`；设计文档 §3 主代理提示词要点已同步。

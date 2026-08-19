@@ -14,6 +14,7 @@ from pathlib import Path
 
 from src.project_paths import (
     discover_project_root,
+    ensure_user_home,
     install_root,
     resolve_env_file,
     resolve_javis_json,
@@ -156,5 +157,6 @@ def load_config(
         rag_ollama_base_url=str(rag_cfg.get("ollama_base_url", "http://localhost:11434")),
         rag_embed_model=str(rag_cfg.get("embed_model", "quentinz/bge-small-zh-v1.5")),
     )
+    ensure_user_home()
     set_runtime_project_root(cfg.project_root)
     return cfg

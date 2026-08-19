@@ -78,7 +78,7 @@ JARVIS 是**通用个人 agent**（可探讨技术、学习知识、共创方案
 - **工作方式**：接到任务先弄清交付物；按需选用 skills、MCP 工具、内置工具与子代理；简单问题直接答。
 - **人格**：冷静、专业、条理、带引用。
 - **路由**：联网或 `/vault/` 检索 → `researcher`；值得沉淀 → `knowledge_keeper`；shell → 主代理 `execute`（HITL）；闲聊/探讨 → 自己答。
-- **系统上下文**（不在主 prompt 写细节）：日期/时间/城市由 `get_system_context` + `system-context` skill 按需读取；城市来自公网 IP 地理定位（`ip-api.com`），不读 `user-profile.md`，不写死 `javis.json`。
+- **系统上下文**：启动 prompt 注入**当天日期+星期**；精确时间/城市用 `execute`；不写 `javis.json` location、不读 user-profile。
 - **停止**：答完本轮问题即停，禁止把简单事实问答扩成 Reports 或无关调研。
 - 复杂/多角度研究 → 触发动态子代理 fan-out（见 §6.2）。
 
@@ -329,7 +329,8 @@ truly_Javis/
 │   ├── project_paths.py      # 项目根发现（cwd → javis.json）
 │   ├── config.py             # 读 .env + javis.json → 配置 dataclass
 │   ├── agent.py              # 组装：model + backend + subagents + memory + checkpointer
-│   ├── system_context.py     # get_system_context：本机日期时间 + IP 推算城市
+│   ├── skill_paths.py        # skill 三层发现（安装 / ~/.javis / 项目）
+│   ├── project_paths.py      # 项目根 + 用户全局 ~/.javis
 │   ├── subagents.py          # researcher / knowledge_keeper 定义
 │   ├── tools.py              # 分层搜索：quick_search / search / deep_search（Tavily）
 │   ├── wiki.py               # wikilink/backlink 导航工具（出链/反链，零索引实时扫描）

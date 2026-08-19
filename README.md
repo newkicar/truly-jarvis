@@ -69,7 +69,7 @@ python -m src.main -n
 
 **写边界**：JARVIS 只能写 `/vault/Inbox/` 与 `/vault/Reports/`；Vault 其它路径只读。详见 [`docs/adr/0002-inbox-only-write-and-snapshots.md`](docs/adr/0002-inbox-only-write-and-snapshots.md)。
 
-**系统上下文**（日期 / 时间 / 城市）：不在启动时写进 system prompt，也不把地址写死在 `javis.json` 或 profile。需要时调用 `get_system_context` 或加载 `system-context` skill；城市由公网 IP 地理定位推算（ISP 级）。详见 [`docs/adr/0003-system-context-on-demand.md`](docs/adr/0003-system-context-on-demand.md)。
+**系统上下文**（日期 / 时间 / 城市）：启动时 system prompt 仅含**当天日期 + 星期**；问精确时间或城市时用 `execute` 读本机，不写死 `javis.json` 或 profile。详见 [`docs/adr/0003-system-context-on-demand.md`](docs/adr/0003-system-context-on-demand.md)。
 
 ---
 
@@ -120,11 +120,13 @@ src/
   vault_guard.py   Inbox 写边界
   inbox_snapshots.py  Inbox 快照与 rollback 还原
   rag.py / wiki.py / tools.py  知识检索与搜索
-  system_context.py  本机日期时间（get_system_context 工具）
+  agent.py           主代理组装（含 session 日期注入）
+  skill_paths.py     skill 三层发现（安装 / ~/.javis / 项目）
+  project_paths.py   项目根 + 用户全局 ~/.javis
 tests/             pytest
 memory/            长期记忆（*.md，注入 system prompt；不含固定所在地）
 schedules/         定时任务（每任务一 JSON）
-skills/            Agent skills（含 system-context）
+skills/            随安装包默认 skill（用户 skill 放 ~/.javis/skills/）
 docs/specs/        权威设计文档
 docs/adr/          架构决策记录
 ```
@@ -141,7 +143,7 @@ docs/adr/          架构决策记录
 | [`CONTEXT.md`](CONTEXT.md) | 领域术语表 |
 | [`docs/adr/0001-jarvis-tui.md`](docs/adr/0001-jarvis-tui.md) | TUI 选型与交互决策 |
 | [`docs/adr/0002-inbox-only-write-and-snapshots.md`](docs/adr/0002-inbox-only-write-and-snapshots.md) | Inbox 写边界与快照回退 |
-| [`docs/adr/0003-system-context-on-demand.md`](docs/adr/0003-system-context-on-demand.md) | 日期/时间 + IP 推算城市；结果导向主提示词 |
+| [`docs/adr/0003-system-context-on-demand.md`](docs/adr/0003-system-context-on-demand.md) | 会话日期注入 + execute 读时间/位置；结果导向主提示词 |
 | [`.scratch/javis-roadmap/map.md`](.scratch/javis-roadmap/map.md) | 后续路线（01–11）决策摘要 |
 
 ---
