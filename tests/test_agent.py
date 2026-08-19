@@ -45,11 +45,12 @@ def test_build_agent_assembles(tmp_path, monkeypatch):
 
 
 def test_build_main_prompt_injects_session_date():
-    """会话日期写入 system prompt；不含时分秒与专项工具名。"""
+    """会话日期写入 system prompt；问几号应直接用首行，勿读 skill。"""
     prompt = build_main_prompt(now=datetime(2026, 8, 20, 12, 0, 0))
     assert "今天是 2026-08-20 星期四。" in prompt
+    assert "勿读 skill" in prompt
+    assert "system-context" in prompt
     assert "12:00" not in prompt
-    assert "get_system_context" not in prompt
     assert "目标" in prompt
     assert "工作方式" in prompt
     assert "完成标准" in prompt

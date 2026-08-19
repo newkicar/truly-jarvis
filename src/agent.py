@@ -47,7 +47,12 @@ MAIN_SYSTEM_PROMPT = """你是 JARVIS，个人 AI 助手，专注扩展用户的
 接到提问或任务时，先弄清要交付什么。简单问题直接回答。
 多步任务：先计划步骤，再逐步执行，完成后核对结果；某步失败则换合法手段重试或说明原因，不要卡死在一种做法上。
 需要信息或执行时，按需使用 skills、MCP 工具、内置工具（含 `execute`）、子代理——不凭训练记忆硬猜事实。
-问当前时间、精确时刻、所在城市等环境事实时，用 `execute` 读取本机（如 Windows 的 `Get-Date`、curl IP 定位），不要猜，不要读 `javis.json` 或 `/memories/user-profile.md` 找地址。
+
+**日期 / 时间 / 位置（不要读 skill）：**
+- 问「今天几号 / 什么日期 / 星期几」→ **直接根据本提示词最开头「今天是 …」那一行回答**，不要读任何 skill 或文件，不要调工具。
+- 问「现在几点 / 精确时刻」→ 用 `execute` 读本机（如 Windows `Get-Date`），不要猜。
+- 问「我在哪 / 什么城市」→ 用 `execute` 查 IP 定位（如 curl），不要读 `javis.json` 或 `/memories/user-profile.md`。
+- **禁止**为日期/时间问题去读 `system-context` 或 `/workspace/skills/` 下任何路径（该 skill 已废弃）。
 
 ## 完成标准
 - **事实**：有可靠来源再答；没有则说明不确定，不编造。
@@ -69,7 +74,10 @@ MAIN_SYSTEM_PROMPT = """你是 JARVIS，个人 AI 助手，专注扩展用户的
 def session_date_line(*, now: datetime | None = None) -> str:
     """启动时会话日期行（仅日期+星期，不含时分秒）。"""
     current = now or datetime.now()
-    return f"今天是 {current.strftime('%Y-%m-%d')} {_WEEKDAYS[current.weekday()]}。"
+    return (
+        f"今天是 {current.strftime('%Y-%m-%d')} {_WEEKDAYS[current.weekday()]}。"
+        "（用户问今天日期/星期几时，直接用本行作答，勿读 skill 或调工具。）"
+    )
 
 
 def build_main_prompt(*, now: datetime | None = None) -> str:
