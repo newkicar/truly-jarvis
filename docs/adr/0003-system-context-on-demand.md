@@ -12,16 +12,15 @@
 
 ## 决策
 
-1. **主 system prompt 结果导向**：写目标、完成标准、约束、停止规则；不写逐步操作流程。
-   细节见 `src/agent.py` 的 `MAIN_SYSTEM_PROMPT`。
+1. **主 system prompt 结果导向**：目标 → 工作方式 → 完成标准 → 约束 → 停止规则 → 输出（见 `src/agent.py` 的 `MAIN_SYSTEM_PROMPT`）。
 2. **日期 / 时间 / 星期按需读取**：
-   - 主代理工具 `get_system_context`（`src/system_context.py`），返回本机 JSON；
+   - 主代理工具 `get_system_context`（`src/system_context.py`），返回本机 JSON（含 `date`/`time`/`weekday`/`city`/`location` 等）；
    - skill `skills/system-context/` 按需加载（Gotchas + 完成标准）；
    - **不**在启动时注入静态时间，**不**写入 `javis.json`。
-3. **用户所在地**：
-   - JARVIS **无 GPS**，不在 `javis.json` 或 `memory/user-profile.md` 预置固定「所在地」；
-   - 用户问了位置时，说明无法自动定位，仅依据**当轮对话**中用户的说明作答；
-   - 用户若希望长期记住常用地点，可自行编辑 `memory/*.md`，但非必填、非默认行为。
+3. **用户所在地（城市级）**：
+   - 由 `get_system_context` 调用 IP 地理定位 API（`ip-api.com`）**按需推算**，不写进 `javis.json`，不读 `user-profile.md`；
+   - ISP 级精度，非 GPS；VPN/代理可能不准，失败时如实说明；
+   - **禁止**在 profile 预填固定「所在地」作为默认答案。
 4. **Skills 虚拟路径**：`skills/` 映射为 `/workspace/skills/` 传入 deepagents，禁止模型使用 `E:/...` 探路。
 5. **简单事实问答的停止规则**：能回答用户本轮问题即停，禁止顺带调研、写 Reports 或委派 researcher。
 
@@ -29,7 +28,8 @@
 
 - **启动时注入 datetime 到 system prompt**：秒级过期，且占常驻 token。
 - **`javis.json` 的 `location` 字段**：把移动用户写死在机器配置里。
-- **在 profile 预填默认地址**：用户不一定在同一地点，不能假设。
+- **在 profile 预填默认地址**：用户移动时地址会变；应用 IP 按需推算，不用静态 profile。
+- **读 user-profile 找所在地**：城市应由 IP 按需推算，profile 仅承载用户偏好等非位置信息。
 - **委派 researcher 执行本地时间脚本**：子代理无 `get_system_context`，且易触发无关检索/报告。
 
 ## 影响

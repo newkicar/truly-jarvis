@@ -41,17 +41,18 @@ def test_build_agent_assembles(tmp_path):
 
 
 def test_build_main_prompt_is_static_without_datetime():
-    """日期/时间/地点不写入 system prompt；采用结果导向结构。"""
+    """日期/时间/地点不写入 system prompt；采用结果导向 + 工作方式结构。"""
     prompt = build_main_prompt()
     assert "现在是" not in prompt
     assert "2026-" not in prompt
     assert "加载 **system-context**" not in prompt
-    assert "system-context skill" in prompt
+    assert "get_system_context" not in prompt
     assert "目标" in prompt
+    assert "工作方式" in prompt
     assert "完成标准" in prompt
     assert "停止规则" in prompt
-    assert "get_system_context" in prompt
-    assert "无法自动定位" in prompt or "GPS" in prompt
+    assert "skills" in prompt and "MCP" in prompt
+    assert "简单问题直接回答" in prompt
     assert "Reports" in prompt
 
 
@@ -72,7 +73,7 @@ def test_build_agent_uses_build_main_prompt(tmp_path, monkeypatch):
     build_agent(cfg, model=model)
 
     assert captured.get("system_prompt") == build_main_prompt()
-    assert "get_system_context" in captured.get("system_prompt", "")
+    assert "工作方式" in captured.get("system_prompt", "")
     tool_names = [getattr(t, "name", None) for t in captured.get("tools", [])]
     assert "get_system_context" in tool_names
 

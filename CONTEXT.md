@@ -32,8 +32,8 @@ _Avoid_: 归档、写入知识库（太宽，会让人以为能写任意文件�
 _Avoid_: 沉淀、移动、promote
 
 **系统上下文**：
-本机日期、时间与用户所在位置等「随环境变化」的信息。JARVIS **不在启动时**把它们写进主 system prompt，也不把地址写死在 `javis.json` 或 profile；需要时通过 `get_system_context` 工具与 `system-context` skill 按需读取。时间来自本机时钟；位置无 GPS，用户问了才依据当轮说明作答。
-_Avoid_: 在 javis.json 里配 location、在 profile 预填默认地址、启动时注入「现在是…」
+本机日期、时间与 IP 推算城市等「随环境变化」的信息。JARVIS **不在启动时**写进主 system prompt，也不把地址写死在 `javis.json` 或 profile；需要时通过 `get_system_context` 与 `system-context` skill 按需读取。时间来自本机时钟；城市来自公网 IP 地理定位（ISP 级，非 GPS）。
+_Avoid_: 在 javis.json 里配 location、读 user-profile 找所在地、启动时注入「现在是…」
 
 ## 文档
 

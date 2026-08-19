@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 ## 项目状态
-- **一期 + 二期 + 三期 + TUI + 后续路线已实现**（Inbox 边界 / TUI 体验 / 测试质量，2026-08-19 收尾），代码在 `src/`，测试在 `tests/`（186 个单测全绿）。权威设计文档：`docs/specs/2026-08-15-javis-design.md`；路线 spec：`.scratch/javis-roadmap/spec.md`。
+- **一期 + 二期 + 三期 + TUI + 后续路线已实现**（Inbox 边界 / TUI 体验 / 测试质量，2026-08-19 收尾），代码在 `src/`，测试在 `tests/`（189 个单测全绿）。权威设计文档：`docs/specs/2026-08-15-javis-design.md`；路线 spec：`.scratch/javis-roadmap/spec.md`。
 - 交付：`config.py`(.env 兼容解析+javis.json→Config)、`tools.py`(分层搜索)、`wiki.py`(wikilink/backlink)、`rag.py`(增量 RAG)、`subagents.py`(researcher + knowledge_keeper)、`agent.py`、`system_context.py`(get_system_context 工具)、`scheduler.py`、`time_travel.py`、`permissions.py`(HITL)、`vault_guard.py`+`inbox_snapshots.py`+`inbox_snapshot_middleware.py`(Inbox 写边界+快照)、`mcps.py`、`commands.py`(CLI+TUI 共用)、`streaming.py`(流式+HITL 决策+replay 快路径)、`tui_format.py`+`tui.py`(Textual TUI：流式 Markdown+权限 diff+`@`补全+侧边栏)、`path_completion.py`、`startup.py`、`main.py`(`--cli` 回退)、`smoke_test.py`(手动冒烟，`--tui` / `--tui-hitl` HITL 用例，不进 CI)、`tests/_manual/fanout_probe.py`；`skills/system-context/` 按需读取本机日期时间。
 - 实现状态跟踪：`.scratch/javis-implementation/`、`.scratch/javis-tui/`、`.scratch/javis-roadmap/`（01–11 已关票）。
 
@@ -18,7 +18,7 @@
 - 记忆分离：知识 → Obsidian vault；信息记忆（偏好/行业）→ 项目 `memory/`。
   - 长期记忆用 FilesystemBackend 指向 `memory/`（文件持久、用户可看可编辑），**不用 StoreBackend**；`memory=` 注入所有 `*.md`（除 README）。
 - 全局配置用 `javis.json`（模拟 opencode）；可变项放这里，不写死（含 `checkpoint_db`、`schedules_dir`）。**不含**用户所在地（用户可能在任意地点）。定时任务**外置**到 `schedules/*.json`（每任务一 JSON：时间/任务/保存路径/要求），增删 = 加删文件。
-- **系统上下文**（ADR-0003）：日期/时间按需 `get_system_context` + `system-context` skill，**不**注入启动 system prompt；位置无 GPS，用户问了才依据当轮说明，不在 profile 预填固定地址。
+- **系统上下文**（ADR-0003）：日期/时间 + IP 推算城市，按需 `get_system_context` + `system-context` skill，**不**注入启动 system prompt；**不**读 user-profile 找所在地，**不**写死 `javis.json` location。
 - **复用 deepagents 原生工具**（ls/read_file/write_file/edit_file/glob/grep/execute/task），不重造轮子。
 - 架构：主代理 + 子代理（researcher / knowledge_keeper / executor）；研究类问题二期用动态子代理 fan-out。
 - Time travel 双层：会话回退 = checkpointer（thread_id + checkpoint_id）；文件回退 = git 快照（仅项目目录，vault 不纳入 git），**手动 `/snapshot` 触发**（不用自动每轮 commit）。

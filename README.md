@@ -66,7 +66,7 @@ python -m src.main -n
 
 **写边界**：JARVIS 只能写 `/vault/Inbox/` 与 `/vault/Reports/`；Vault 其它路径只读。详见 [`docs/adr/0002-inbox-only-write-and-snapshots.md`](docs/adr/0002-inbox-only-write-and-snapshots.md)。
 
-**系统上下文**（日期 / 时间 / 位置）：不在启动时写进 system prompt，也不把地址写死在 `javis.json`。需要时主代理调用 `get_system_context` 或加载 `system-context` skill；位置无 GPS，用户问了才依据当轮说明。详见 [`docs/adr/0003-system-context-on-demand.md`](docs/adr/0003-system-context-on-demand.md)。
+**系统上下文**（日期 / 时间 / 城市）：不在启动时写进 system prompt，也不把地址写死在 `javis.json` 或 profile。需要时调用 `get_system_context` 或加载 `system-context` skill；城市由公网 IP 地理定位推算（ISP 级）。详见 [`docs/adr/0003-system-context-on-demand.md`](docs/adr/0003-system-context-on-demand.md)。
 
 ---
 
@@ -90,7 +90,7 @@ python -m src.main -n
 ## 测试与冒烟
 
 ```bash
-# 单元测试（假 agent，可进 CI）——当前 165
+# 单元测试（假 agent，可进 CI）——当前 189
 pytest tests/ -q
 
 # CLI 真模型冒烟（手动，消耗额度，不进 CI）
@@ -138,7 +138,7 @@ docs/adr/          架构决策记录
 | [`CONTEXT.md`](CONTEXT.md) | 领域术语表 |
 | [`docs/adr/0001-jarvis-tui.md`](docs/adr/0001-jarvis-tui.md) | TUI 选型与交互决策 |
 | [`docs/adr/0002-inbox-only-write-and-snapshots.md`](docs/adr/0002-inbox-only-write-and-snapshots.md) | Inbox 写边界与快照回退 |
-| [`docs/adr/0003-system-context-on-demand.md`](docs/adr/0003-system-context-on-demand.md) | 日期/时间/位置按需读取；结果导向主提示词 |
+| [`docs/adr/0003-system-context-on-demand.md`](docs/adr/0003-system-context-on-demand.md) | 日期/时间 + IP 推算城市；结果导向主提示词 |
 | [`.scratch/javis-roadmap/map.md`](.scratch/javis-roadmap/map.md) | 后续路线（01–11）决策摘要 |
 
 ---

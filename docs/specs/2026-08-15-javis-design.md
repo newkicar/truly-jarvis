@@ -4,7 +4,7 @@
 > 核心理念：AI 时代 agent 的首要任务是**扩展人类心智**——过滤无用信息、总结有用信息，解决「注意力稀缺」。自动化只是副产品。
 
 日期：2026-08-15
-状态：**已实现**（一期–三期 + TUI + 后续路线，2026-08-19 收尾；165 单测绿）。初稿于 2026-08-15 依 deepagents 0.7.6 实测核验修订（§2/§5.2/§6/§8.2/§10.2/§12）。
+状态：**已实现**（一期–三期 + TUI + 后续路线，2026-08-19 收尾；189 单测绿）。初稿于 2026-08-15 依 deepagents 0.7.6 实测核验修订（§2/§5.2/§6/§8.2/§10.2/§12）。
 
 ---
 
@@ -74,10 +74,11 @@ AI 时代，agent 最重要的任务不是自动完成工作，而是扩展人�
 ```
 
 **主代理 system_prompt 要点**（2026-08-19 修订，见 ADR-0003）：
-- **结构**：目标 → 完成标准 → 约束 → 停止规则 → 输出（结果导向，不写逐步操作流程）。
+- **结构**：目标 → **工作方式** → 完成标准 → 约束 → 停止规则 → 输出（结果导向，不写逐步操作流程）。
+- **工作方式**：接到任务先弄清交付物；按需选用 skills、MCP 工具、内置工具与子代理；简单问题直接答。
 - **人格**：冷静、专业、条理、带引用。
 - **路由**：联网或 `/vault/` 检索 → `researcher`；值得沉淀 → `knowledge_keeper`；shell → 主代理 `execute`（HITL）；闲聊/探讨 → 自己答。
-- **系统上下文**：日期/时间用 `get_system_context` + `system-context` skill 按需读取；位置无 GPS、不写死配置，用户问了才依据当轮说明。
+- **系统上下文**（不在主 prompt 写细节）：日期/时间/城市由 `get_system_context` + `system-context` skill 按需读取；城市来自公网 IP 地理定位（`ip-api.com`），不读 `user-profile.md`，不写死 `javis.json`。
 - **停止**：答完本轮问题即停，禁止把简单事实问答扩成 Reports 或无关调研。
 - 复杂/多角度研究 → 触发动态子代理 fan-out（见 §6.2）。
 
@@ -325,6 +326,7 @@ truly_Javis/
 │   ├── path_completion.py    # @ 路径补全纯逻辑（vault Inbox 优先）
 │   ├── config.py             # 读 .env + javis.json → 配置 dataclass
 │   ├── agent.py              # 组装：model + backend + subagents + memory + checkpointer
+│   ├── system_context.py     # get_system_context：本机日期时间 + IP 推算城市
 │   ├── subagents.py          # researcher / knowledge_keeper 定义
 │   ├── tools.py              # 分层搜索：quick_search / search / deep_search（Tavily）
 │   ├── wiki.py               # wikilink/backlink 导航工具（出链/反链，零索引实时扫描）
@@ -337,12 +339,12 @@ truly_Javis/
 │   ├── time_travel.py        # /history /replay /fork /sessions + git 映射表
 │   ├── scheduler.py          # APScheduler 定时任务（二期）
 │   └── smoke_test.py         # 真模型手动冒烟（--tui / --tui-hitl，不进 CI）
-├── tests/                    # pytest（165，假 agent，可进 CI）
+├── tests/                    # pytest（189，假 agent，可进 CI）
 ├── docs/
 │   ├── specs/                # 本设计文档
-│   └── adr/                  # 架构决策（TUI、Inbox 边界等）
-├── memory/                   # 信息记忆（用户偏好等 markdown）
-└── skills/                   # 已安装 skill（SKILL.md）
+│   └── adr/                  # 架构决策（TUI、Inbox 边界、系统上下文等）
+├── memory/                   # 信息记忆（用户偏好等 markdown；不含固定所在地）
+└── skills/                   # 已安装 skill（含 system-context/）
 ```
 
 ---
@@ -355,7 +357,7 @@ truly_Javis/
 | **二期** | 动态子代理 fan-out（CodeInterpreterMiddleware，先实测 deepseek-v4-flash 写 JS）+ knowledge_keeper 回写 + APScheduler 定时检索 + 长期记忆（memory/ FilesystemBackend）+ git 文件回退（/rollback）+ **事件流式输出（event streaming）** | 定时自动检索并回写 Obsidian；偏好跨会话记忆（memory/*.md 注入）；多角度并行研究；文件可回退；CLI 实时可见子代理/工具/回答流式输出（见票 11） |
 | **三期** | executor + LocalShellBackend + skill/mcp 扩展接口（✅）+ 增量 RAG 增强（✅）+ vault 回退增强（可选） | 可执行任务；可安装外部 skill/mcp；语义检索增强 |
 | **TUI（四期）** | Textual 界面（✅ 2026-08-18）：`commands.py` 命令公共层 + 消息区流式输出 + 权限审批 Modal + `--tui`/`--cli` 双入口 | 终端下更优交互：流式输出、工具调用实时展示、HITL 审批不打断视线 |
-| **后续路线（五期）** | Inbox 写边界 + 项目内快照回退（ADR 0002）；TUI 体验（流式 Markdown、权限 diff、`@` 补全、会话侧边栏）；测试与手动冒烟（✅ 2026-08-19） | Vault 仅 Inbox 可写；`/rollback` 还原 Inbox；TUI 对标 opencode 扫读体验；165 pytest + `smoke_test --tui-hitl` |
+| **后续路线（五期）** | Inbox 写边界 + 项目内快照回退（ADR 0002）；TUI 体验（流式 Markdown、权限 diff、`@` 补全、会话侧边栏）；系统上下文按需读取（ADR 0003）；测试与手动冒烟（✅ 2026-08-19） | Vault 仅 Inbox/Reports 可写；`/rollback` 还原 Inbox；`get_system_context` + IP 城市；189 pytest + `smoke_test --tui-hitl` |
 
 ---
 
@@ -371,7 +373,7 @@ truly_Javis/
 | 权限 diff | `tui_format.permission_preview`：新建摘要 / unified diff（CLI 与 Modal 共用） |
 | `@` 路径补全 | `path_completion.py` + overlay 层 OptionList；Inbox 优先 |
 | 会话侧边栏 | `SessionSidebar`；checkpointer 拉 thread；`Ctrl+B` 折叠 |
-| 测试 | `tests/` 165 绿；`dispatch` / HITL e·a 假 agent 单测 |
+| 测试 | `tests/` 189 绿；`dispatch` / HITL / system_context / replay 快路径单测 |
 | 手动冒烟 | `python -m src.smoke_test --tui-hitl`（真模型、Permission Modal，**不进 CI**） |
 
 ---
