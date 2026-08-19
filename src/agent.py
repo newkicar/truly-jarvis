@@ -23,6 +23,7 @@ from deepagents.backends import (
 from langchain_quickjs import CodeInterpreterMiddleware
 
 from src.config import Config
+from src.deprecated_paths import DeprecatedPathMiddleware
 from src.inbox_snapshot_middleware import InboxSnapshotMiddleware
 from src.permissions import (
     build_permission_deny_middleware,
@@ -82,7 +83,8 @@ def session_date_line(*, now: datetime | None = None) -> str:
 
 def build_main_prompt(*, now: datetime | None = None) -> str:
     """主系统提示词：会话日期 + 结果导向正文。"""
-    return f"{session_date_line(now=now)}\n\n{MAIN_SYSTEM_PROMPT}"
+    date_line = session_date_line(now=now)
+    return f"## 当前会话\n{date_line}\n\n{MAIN_SYSTEM_PROMPT}"
 
 
 def _make_model(config: Config) -> BaseChatModel:
@@ -143,6 +145,7 @@ def build_agent(
     else:
         interrupt_on, permission_state = build_permission_interrupts(config.permissions)
     deny_middleware = build_permission_deny_middleware(permission_state)
+    deprecated_guard = DeprecatedPathMiddleware()
     vault_guard = VaultWriteGuardMiddleware()
     root = config.project_root
     inbox_snapshot = InboxSnapshotMiddleware(root, config.vault_path)
@@ -174,6 +177,7 @@ def build_agent(
         middleware=[
             CodeInterpreterMiddleware(subagents=True),
             deny_middleware,
+            deprecated_guard,
             vault_guard,
             inbox_snapshot,
         ],  # type: ignore[list-item]
