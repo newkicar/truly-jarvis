@@ -12,6 +12,14 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from src.project_paths import (
+    discover_project_root,
+    install_root,
+    resolve_env_file,
+    resolve_javis_json,
+    set_runtime_project_root,
+)
+
 REQUIRED_ENV_KEYS = ("BASE_URL", "API_KEY", "MODEL_ID", "TAVILY_KEY")
 
 
@@ -29,6 +37,7 @@ def ensure_utf8_stdout() -> None:
 class Config:
     """JARVIS 运行时配置。"""
 
+    project_root: Path
     base_url: str
     api_key: str
     model_id: str
@@ -73,14 +82,33 @@ def _load_json_file(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def load_config(env_file: Path | None = None, json_file: Path | None = None) -> Config:
+def load_config(
+    env_file: Path | None = None,
+    json_file: Path | None = None,
+    project_root: Path | None = None,
+) -> Config:
     """加载 .env + javis.json，产出 Config。
 
-    未显式传入路径时，默认取项目根目录下的 .env 与 javis.json。
+    未显式传入路径时：从 cwd 发现 project_root，再解析 javis.json / .env。
     """
-    root = Path(__file__).resolve().parent.parent
-    env_file = env_file or root / ".env"
-    json_file = json_file or root / "javis.json"
+    root = Path(project_root).resolve() if project_root else discover_project_root()
+    if json_file is None:
+        json_file = resolve_javis_json(root)
+        if json_file.is_file():
+            root = json_file.parent.resolve()
+    else:
+        json_file = Path(json_file).resolve()
+        root = json_file.parent.resolve()
+
+    if env_file is None:
+        env_file = resolve_env_file(root)
+    else:
+        env_file = Path(env_file).resolve()
+
+    if not env_file.is_file():
+        fallback = install_root() / ".env"
+        if fallback.is_file():
+            env_file = fallback
 
     env = parse_env_file(env_file)
 
@@ -112,7 +140,8 @@ def load_config(env_file: Path | None = None, json_file: Path | None = None) -> 
     if not isinstance(rag_cfg, dict):
         rag_cfg = {}
 
-    return Config(
+    cfg = Config(
+        project_root=root,
         base_url=base_url,
         api_key=api_key,
         model_id=model_id,
@@ -127,3 +156,5 @@ def load_config(env_file: Path | None = None, json_file: Path | None = None) -> 
         rag_ollama_base_url=str(rag_cfg.get("ollama_base_url", "http://localhost:11434")),
         rag_embed_model=str(rag_cfg.get("embed_model", "quentinz/bge-small-zh-v1.5")),
     )
+    set_runtime_project_root(cfg.project_root)
+    return cfg

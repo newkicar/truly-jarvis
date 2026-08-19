@@ -98,8 +98,8 @@ def resolve_save_path(config: Config, save_path: str) -> Path:
     if save_path.startswith("vault:"):
         return (config.vault_path / save_path[len("vault:"):]).resolve()
     if save_path.startswith("workspace:"):
-        return (config.memory_dir.parent / save_path[len("workspace:"):]).resolve()
-    return (config.memory_dir.parent / save_path).resolve()
+        return (config.project_root / save_path[len("workspace:"):]).resolve()
+    return (config.project_root / save_path).resolve()
 
 
 def _run_task(agent, config: Config, task: dict):

@@ -36,6 +36,8 @@ TAVILY_KEY=tvly-...
 
 2. 编辑 `javis.json`：vault 路径、`permissions`、`mcps.servers`、`schedules_dir` 等可变项均在此，不写死在代码里。
 
+**项目根**：在哪运行，哪就是 `/workspace/`。JARVIS 从 cwd 向上找 `javis.json` 确定项目根；也可设 `JARVIS_PROJECT_ROOT` 覆盖。在 `truly_Javis/` 内开发时行为与以前一致。
+
 ### 运行
 
 ```bash
@@ -59,7 +61,8 @@ python -m src.main -n
 | 折叠/展开会话侧边栏 | `Ctrl+B` |
 | 切换主题（写回 javis.json） | `Ctrl+T` |
 | 取消流式输出 | `Esc` |
-| 引用 vault/workspace 路径 | 输入 `@` 触发补全（Inbox 优先） |
+| 引用 workspace / vault / memories 路径 | 输入 `@` 触发补全（**workspace 优先**；`@vault/` 进知识库）；**Tab** 接受建议，**Enter** 发送 |
+| 命令建议 | 输入 `/` 或 `/his` 等前缀即弹出（无需先 `/help`） |
 | 退出 | `/exit` 或 `Ctrl+C` |
 
 **HITL 审批**（写文件 / 执行命令等）：Modal 四按钮——放行(a) / 永久放行(s) / 拒绝(d) / 编辑参数(e)。写 Inbox 时会展示 unified diff 预览。

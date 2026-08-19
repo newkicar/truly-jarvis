@@ -381,17 +381,18 @@ async def test_at_completion_shows_candidates_and_inserts_path(tmp_path):
         inp.focus()
         inp.value = "@"
         inp.cursor_position = 1
-        pilot.app._refresh_path_completion()
+        pilot.app._refresh_suggestions()
         await pilot.pause()
 
         overlay = pilot.app.query_one("#path_completion", PathCompletionOverlay)
-        assert overlay.visible_paths
+        assert overlay.visible_suggestions
         assert overlay.option_count >= 2
-        assert "/vault/Inbox/note.md" in [str(o.prompt) for o in overlay.options]
+        prompts = [str(o.id) for o in overlay.options]
+        assert "/vault/Inbox/note.md" in prompts
 
-        await pilot.press("enter")
+        await pilot.press("tab")
         await pilot.pause()
-        assert "/vault/Inbox/note.md" in inp.value
+        assert any(p in inp.value for p in prompts)
 
 
 @pytest.mark.asyncio
@@ -405,14 +406,14 @@ async def test_at_completion_escape_closes_overlay(tmp_path):
         inp = pilot.app.query_one(Input)
         inp.value = "@In"
         inp.cursor_position = 3
-        pilot.app._refresh_path_completion()
+        pilot.app._refresh_suggestions()
         await pilot.pause()
         overlay = pilot.app.query_one("#path_completion", PathCompletionOverlay)
-        assert overlay.visible_paths
+        assert overlay.visible_suggestions
 
         await pilot.press("escape")
         await pilot.pause()
-        assert not overlay.visible_paths
+        assert not overlay.visible_suggestions
         assert inp.value == "@In"
 
 

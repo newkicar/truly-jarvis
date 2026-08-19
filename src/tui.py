@@ -16,7 +16,7 @@ from textual.widgets.option_list import Option
 from textual.worker import Worker, get_current_worker
 
 from src import commands, streaming
-from src.path_completion import apply_completion, at_query, collect_completion_paths, filter_paths
+from src.tui_completion import OverlayState, apply_suggestion, resolve_overlay_state
 from src.tui_format import (
     DEFAULT_TUI_THEME,
     LEGACY_BAD_THEMES,
@@ -156,7 +156,7 @@ class EditParamsModal(ModalScreen):
 
 
 class PathCompletionOverlay(OptionList):
-    """@ 触发的路径补全列表（overlay 层，不参与主布局）。"""
+    """@ / 触发的建议列表（overlay，不抢输入焦点）。"""
 
     DEFAULT_CSS = """
     PathCompletionOverlay {
@@ -165,7 +165,7 @@ class PathCompletionOverlay(OptionList):
         dock: bottom;
         width: 1fr;
         height: auto;
-        max-height: 10;
+        max-height: 12;
         margin: 0 2 4 2;
         border: round $primary;
         background: $panel;
@@ -176,12 +176,15 @@ class PathCompletionOverlay(OptionList):
     }
     """
 
-    def show_paths(self, paths: list[str]) -> None:
+    def show_suggestions(self, items: list[tuple[str, str]]) -> None:
+        """items: (label, hint)"""
         self.clear_options()
-        if not paths:
+        if not items:
             self.remove_class("-visible")
             return
-        self.add_options(paths)
+        for label, hint in items:
+            text = f"{label}  [dim]{hint}[/dim]" if hint else label
+            self.add_option(Option(text, id=label))
         self.highlighted = 0
         self.add_class("-visible")
 
@@ -190,14 +193,16 @@ class PathCompletionOverlay(OptionList):
         self.clear_options()
 
     @property
-    def visible_paths(self) -> bool:
+    def visible_suggestions(self) -> bool:
         return self.has_class("-visible") and self.option_count > 0
 
-    def selected_path(self) -> str | None:
-        if not self.visible_paths:
+    def selected_insert(self) -> str | None:
+        if not self.visible_suggestions:
             return None
         option = self.get_option_at_index(self.highlighted)
-        return str(option.prompt) if option is not None else None
+        if option is None:
+            return None
+        return str(option.id) if option.id else str(option.prompt)
 
 
 class SessionSidebar(OptionList):
@@ -247,6 +252,7 @@ class JarvisApp(App):
         Binding("ctrl+n", "new_session", "新会话"),
         Binding("ctrl+b", "toggle_sidebar", "侧边栏"),
         Binding("ctrl+t", "change_theme", "切换主题"),
+        Binding("tab", "accept_suggestion", "接受建议", show=False),
         Binding("escape", "cancel", "取消", show=False),
         Binding("ctrl+c", "quit", "退出", priority=True),
     ]
@@ -372,13 +378,15 @@ class JarvisApp(App):
         self._startup_prompt = startup_prompt
         self._worker: Worker | None = None
         self._completion_active = False
-        self._completion_session_paths: list[str] | None = None
+        self._overlay_state = OverlayState(kind="none", at_index=0, items=())
         self._sidebar_visible = True
         self.title = "JARVIS"
         self._restore_theme()
         self._update_sub_title()
 
     def _config_path(self) -> Path:
+        if self.config and getattr(self.config, "project_root", None):
+            return self.config.project_root / "javis.json"
         return commands.project_root() / "javis.json"
 
     def _restore_theme(self) -> None:
@@ -417,6 +425,8 @@ class JarvisApp(App):
         parts = [self.thread_id]
         if self._mcp_tool_count:
             parts.append(f"MCP:{self._mcp_tool_count}")
+        if self.config and getattr(self.config, "project_root", None):
+            parts.append(str(self.config.project_root.name))
         if self.sched is not None:
             try:
                 n = len(self.sched.get_jobs())
@@ -431,7 +441,7 @@ class JarvisApp(App):
     def _workspace_root(self) -> Path | None:
         if not self.config:
             return None
-        return getattr(self.config, "memory_dir", Path(".")).parent
+        return getattr(self.config, "project_root", None)
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -478,7 +488,7 @@ class JarvisApp(App):
 
     def on_mount(self) -> None:
         log = self.query_one("#messages", RichLog)
-        self._write_system(log, "JARVIS 就绪。输入 /help 查看命令，/exit 退出。")
+        self._write_system(log, "JARVIS 就绪。@ 引用路径，/ 命令；Tab 接受建议，Enter 发送。")
         for line in self._startup_lines:
             self._write_system(log, line)
         self._refresh_session_sidebar()
@@ -578,51 +588,55 @@ class JarvisApp(App):
         else:
             sidebar.add_class("-collapsed")
 
+    def _memories_root(self) -> Path | None:
+        if not self.config:
+            return None
+        return getattr(self.config, "memory_dir", None)
+
     def _path_completion_overlay(self) -> PathCompletionOverlay:
         return self.query_one("#path_completion", PathCompletionOverlay)
 
-    def _begin_completion_session(self) -> list[str]:
-        if self._completion_session_paths is None:
-            self._completion_session_paths = collect_completion_paths(
-                self._vault_path(),
-                self._workspace_root(),
-                include_workspace=True,
-            )
-        return self._completion_session_paths
-
-    def _refresh_path_completion(self) -> None:
+    def _refresh_suggestions(self) -> None:
         inp = self.query_one("#input", Input)
         overlay = self._path_completion_overlay()
-        ctx = at_query(inp.value, inp.cursor_position)
-        if ctx is None:
-            self._completion_session_paths = None
+        state = resolve_overlay_state(
+            inp.value,
+            inp.cursor_position,
+            vault_path=self._vault_path(),
+            workspace_root=self._workspace_root(),
+            memories_root=self._memories_root(),
+        )
+        self._overlay_state = state
+        if not state.active:
             self._completion_active = False
             overlay.hide()
             return
-        _at_index, query = ctx
-        paths = filter_paths(self._begin_completion_session(), query)
-        overlay.show_paths(paths)
-        self._completion_active = overlay.visible_paths
+        display = [(item.label, item.hint) for item in state.items]
+        overlay.show_suggestions(display)
+        self._completion_active = overlay.visible_suggestions
 
-    def _apply_path_completion(self) -> None:
+    def action_accept_suggestion(self) -> None:
+        if not self._completion_active:
+            return
         inp = self.query_one("#input", Input)
         overlay = self._path_completion_overlay()
-        selected = overlay.selected_path()
-        ctx = at_query(inp.value, inp.cursor_position)
-        if not selected or ctx is None:
+        selected = overlay.selected_insert()
+        if not selected or not self._overlay_state.active:
             return
-        at_index, _query = ctx
-        new_value, new_cursor = apply_completion(inp.value, at_index, inp.cursor_position, selected)
+        new_value, new_cursor = apply_suggestion(
+            inp.value,
+            self._overlay_state.at_index,
+            inp.cursor_position,
+            selected,
+        )
         inp.value = new_value
         inp.cursor_position = new_cursor
-        self._completion_session_paths = None
-        self._completion_active = False
-        overlay.hide()
         inp.focus()
+        self._refresh_suggestions()
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "input":
-            self._refresh_path_completion()
+            self._refresh_suggestions()
 
     def on_key(self, event: events.Key) -> None:
         if not self._completion_active:
@@ -636,20 +650,22 @@ class JarvisApp(App):
             overlay.action_cursor_up()
             event.prevent_default()
             event.stop()
-        elif event.key == "enter":
-            self._apply_path_completion()
-            event.prevent_default()
-            event.stop()
         elif event.key == "escape":
             overlay.hide()
             self._completion_active = False
+            self._overlay_state = OverlayState(kind="none", at_index=0, items=())
+            event.prevent_default()
+            event.stop()
+        elif event.key == "tab":
+            self.action_accept_suggestion()
             event.prevent_default()
             event.stop()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        if self._completion_active:
-            self._apply_path_completion()
-            return
+        overlay = self._path_completion_overlay()
+        overlay.hide()
+        self._completion_active = False
+        self._overlay_state = OverlayState(kind="none", at_index=0, items=())
         self._handle_user_message(event.value)
 
     def _stream_agent(

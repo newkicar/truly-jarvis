@@ -20,7 +20,6 @@ from deepagents.backends import (
 )
 from langchain_quickjs import CodeInterpreterMiddleware
 
-from src.commands import project_root
 from src.config import Config
 from src.inbox_snapshot_middleware import InboxSnapshotMiddleware
 from src.permissions import (
@@ -100,11 +99,10 @@ def _make_model(config: Config) -> BaseChatModel:
 
 
 def _make_backend(config: Config) -> CompositeBackend:
-    project_root = config.memory_dir.parent
     return CompositeBackend(
         default=StateBackend(),
         routes={
-            "/workspace/": LocalShellBackend(root_dir=str(project_root), virtual_mode=True),
+            "/workspace/": LocalShellBackend(root_dir=str(config.project_root), virtual_mode=True),
             "/vault/": FilesystemBackend(root_dir=str(config.vault_path), virtual_mode=True),
             "/memories/": FilesystemBackend(root_dir=str(config.memory_dir), virtual_mode=True),
         },
@@ -150,7 +148,7 @@ def build_agent(
         interrupt_on, permission_state = build_permission_interrupts(config.permissions)
     deny_middleware = build_permission_deny_middleware(permission_state)
     vault_guard = VaultWriteGuardMiddleware()
-    root = project_root()
+    root = config.project_root
     inbox_snapshot = InboxSnapshotMiddleware(root, config.vault_path)
     researcher = build_researcher(
         search_tools=search_tools, wiki_tools=wiki_tools, rag_tool=rag_tool,

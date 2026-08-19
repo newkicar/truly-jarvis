@@ -75,7 +75,7 @@ def _stream_replay(agent, thread_id: str, checkpoint_id: str, permission_state: 
     """从 checkpoint 用 stream_events(v3) 重跑，实时打印子代理/工具/最终回答。"""
     print()
     vault_path = getattr(config, "vault_path", None) if config else None
-    workspace_root = config.memory_dir.parent if config else None
+    workspace_root = config.project_root if config else None
 
     def on_always_approve(name: str) -> None:
         print(f"    已设置 {name} = allow（已写入 javis.json，以后自动放行）")
@@ -113,7 +113,7 @@ def _stream_turn(agent, thread_id: str, user_input: str, permission_state: dict 
     """用 event streaming(v3) 跑一轮对话，实时打印子代理/工具/最终回答。"""
     print()
     vault_path = getattr(config, "vault_path", None) if config else None
-    workspace_root = config.memory_dir.parent if config else None
+    workspace_root = config.project_root if config else None
 
     def on_always_approve(name: str) -> None:
         print(f"    已设置 {name} = allow（已写入 javis.json，以后自动放行）")

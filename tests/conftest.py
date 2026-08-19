@@ -9,6 +9,7 @@ from src.config import Config
 def make_fake_config(tmp_path) -> Config:
     """构造指向 tmp_path 的假 Config（不触网、不碰真 vault）。"""
     return Config(
+        project_root=tmp_path,
         base_url="https://fake/v1",
         api_key="sk",
         model_id="m",

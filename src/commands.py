@@ -54,8 +54,11 @@ class ToolInvocation:
         return cls(name=name, path=path, args=args)
 
 
+from src.project_paths import get_project_root
+
+
 def project_root() -> Path:
-    return Path(__file__).resolve().parent.parent
+    return get_project_root()
 
 
 def content_to_text(content) -> str:

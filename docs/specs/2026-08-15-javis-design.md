@@ -4,14 +4,14 @@
 > 核心理念：AI 时代 agent 的首要任务是**扩展人类心智**——过滤无用信息、总结有用信息，解决「注意力稀缺」。自动化只是副产品。
 
 日期：2026-08-15
-状态：**已实现**（一期–三期 + TUI + 后续路线，2026-08-19 收尾；189 单测绿）。初稿于 2026-08-15 依 deepagents 0.7.6 实测核验修订（§2/§5.2/§6/§8.2/§10.2/§12）。
+状态：**已实现**（一期–三期 + TUI + 后续路线 + 泛化，2026-08-20 收尾；202 单测绿）。初稿于 2026-08-15 依 deepagents 0.7.6 实测核验修订（§2/§5.2/§6/§8.2/§10.2/§12）。
 
 ---
 
 ## 1. 目标与设计原则
 
 ### 1.1 使命
-AI 时代，agent 最重要的任务不是自动完成工作，而是扩展人类的心智。通过「搜索互联网 + 本地知识库」，过滤无用信息、保留并总结有用信息，帮助用户快速掌握最新资讯、技术动态、行业知识。
+JARVIS 是**通用个人 agent**（可探讨技术、学习知识、共创方案、执行任务）。Obsidian vault 是可选知识后端之一，不是产品定位中心。核心仍是通过「搜索互联网 + 本地知识库」过滤无用信息、保留并总结有用信息，扩展人类心智。
 
 ### 1.2 四个可交付能力
 1. **可探讨技术** —— 对话式技术讨论
@@ -131,7 +131,7 @@ from deepagents.backends import CompositeBackend, StateBackend, FilesystemBacken
 backend = CompositeBackend(
     default=StateBackend(),   # 内部数据（/large_tool_results/ 等）走临时 state，不落盘
     routes={
-        "/workspace/": LocalShellBackend(root_dir=r"<项目绝对路径>", virtual_mode=True),  # 含 execute
+        "/workspace/": LocalShellBackend(root_dir=r"<项目根绝对路径>", virtual_mode=True),  # 含 execute；项目根 = discover_project_root()
         "/vault/":     FilesystemBackend(root_dir=config.obsidian_vault, virtual_mode=True),
         "/memories/":  FilesystemBackend(root_dir=config.memory_dir, virtual_mode=True),
     },
@@ -323,7 +323,10 @@ truly_Javis/
 │   ├── startup.py            # 启动横幅（MCP/定时任务/thread_id）
 │   ├── tui.py                # Textual TUI（流式 Markdown + 权限 Modal + 侧边栏 + @ 补全）
 │   ├── tui_format.py         # TUI 消息样式、权限 diff 预览、Markdown 渲染
-│   ├── path_completion.py    # @ 路径补全纯逻辑（vault Inbox 优先）
+│   ├── path_completion.py    # @ 路径补全（workspace 优先，vault 可选）
+│   ├── slash_completion.py   # / 命令建议注册表
+│   ├── tui_completion.py     # TUI @ / 补全状态机
+│   ├── project_paths.py      # 项目根发现（cwd → javis.json）
 │   ├── config.py             # 读 .env + javis.json → 配置 dataclass
 │   ├── agent.py              # 组装：model + backend + subagents + memory + checkpointer
 │   ├── system_context.py     # get_system_context：本机日期时间 + IP 推算城市
@@ -375,6 +378,21 @@ truly_Javis/
 | 会话侧边栏 | `SessionSidebar`；checkpointer 拉 thread；`Ctrl+B` 折叠 |
 | 测试 | `tests/` 189 绿；`dispatch` / HITL / system_context / replay 快路径单测 |
 | 手动冒烟 | `python -m src.smoke_test --tui-hitl`（真模型、Permission Modal，**不进 CI**） |
+
+---
+
+## 16. 泛化实现摘要（2026-08-20）
+
+详见 `.scratch/javis-generalization/spec.md` 与 `docs/adr/0004-project-root-and-general-agent.md`。
+
+| 能力 | 实现 |
+|---|---|
+| 项目根发现 | `project_paths.discover_project_root()`；`Config.project_root`；`JARVIS_PROJECT_ROOT` 覆盖 |
+| workspace 路由 | `/workspace/` = 项目根（非安装目录）；agent/scheduler/TUI 全链路接入 |
+| `@` 补全泛化 | workspace 优先、多后缀；`@vault/` 显式进知识库 |
+| `/` 命令建议 | `slash_completion.py` + `tui_completion.py` |
+| 非阻塞交互 | Tab 接受建议；Enter 发送；Esc 关 overlay |
+| 测试 | `tests/` 202 绿 |
 
 ---
 

@@ -1,6 +1,6 @@
 # JARVIS
 
-个人知识代理：在 Obsidian vault 上检索与沉淀，项目目录承载记忆与工具，Inbox 是它对 vault 的唯一写入口。
+通用个人 agent：在哪运行，哪就是当前项目（`/workspace/`）；Obsidian vault 是可选知识后端（`/vault/`），Inbox 是它对 vault 的主要写入口。
 
 ## Language
 
@@ -31,6 +31,14 @@ _Avoid_: 归档、写入知识库（太宽，会让人以为能写任意文件�
 人在 Obsidian 里把 Inbox 笔记挪到 Vault 其它文件夹。这不是 JARVIS 的动作。
 _Avoid_: 沉淀、移动、promote
 
+**项目根（project root）**：
+用户运行 JARVIS 时的工作目录上下文。从 cwd 向上找 `javis.json` 确定；`/workspace/` 虚拟路径映射到此目录。安装目录（引擎代码）≠ 项目根。
+_Avoid_: 把 `truly_Javis/` 安装路径当作唯一 workspace、写死绝对路径进 prompt
+
+**Workspace**：
+CompositeBackend 路由 `/workspace/`，根目录 = 项目根。承载代码、脚本、配置与内置 `skills/` 虚拟路径；主代理在此具备 `execute`。
+_Avoid_: 与 vault 混称（workspace = 当前做的事，vault = 可选笔记库）
+
 **系统上下文**：
 本机日期、时间与 IP 推算城市等「随环境变化」的信息。JARVIS **不在启动时**写进主 system prompt，也不把地址写死在 `javis.json` 或 profile；需要时通过 `get_system_context` 与 `system-context` skill 按需读取。时间来自本机时钟；城市来自公网 IP 地理定位（ISP 级，非 GPS）。
 _Avoid_: 在 javis.json 里配 location、读 user-profile 找所在地、启动时注入「现在是…」
@@ -39,4 +47,4 @@ _Avoid_: 在 javis.json 里配 location、读 user-profile 找所在地、启动
 
 - 使用与命令：[`README.md`](README.md)
 - 完整设计：[`docs/specs/2026-08-15-javis-design.md`](docs/specs/2026-08-15-javis-design.md)
-- ADR：[`docs/adr/`](docs/adr/)（TUI、Inbox 边界等）
+- ADR：[`docs/adr/`](docs/adr/)（TUI、Inbox 边界、项目根等）

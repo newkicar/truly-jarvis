@@ -81,6 +81,7 @@ def test_load_config_builds_dataclass(tmp_path: Path):
     )
     cfg = load_config(env_file=env_file, json_file=json_file)
     assert isinstance(cfg, Config)
+    assert cfg.project_root == tmp_path.resolve()
     assert cfg.base_url == "https://opencode.ai/zen/go/v1"
     assert cfg.api_key == "sk-test"
     assert cfg.model_id == "deepseek-v4-flash"

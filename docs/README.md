@@ -16,6 +16,7 @@
 | [0001-jarvis-tui.md](adr/0001-jarvis-tui.md) | Textual TUI 选型、流式、审批 Modal；含 2026-08-19 体验增强 |
 | [0002-inbox-only-write-and-snapshots.md](adr/0002-inbox-only-write-and-snapshots.md) | Vault 仅 Inbox 可写；项目内快照；会话 rollback |
 | [0003-system-context-on-demand.md](adr/0003-system-context-on-demand.md) | 日期/时间 + IP 推算城市；结果导向主提示词；不写死 location |
+| [0004-project-root-and-general-agent.md](adr/0004-project-root-and-general-agent.md) | 项目根发现；三盘 workspace/vault/memories；TUI 非阻塞补全 |
 
 ## 实现跟踪（本地）
 
@@ -24,6 +25,7 @@
 | `.scratch/javis-implementation/` | 一期–三期实现票 |
 | `.scratch/javis-tui/` | TUI 专项票 |
 | `.scratch/javis-roadmap/` | 后续路线（Inbox → TUI 体验 → 测试），**已关票** |
+| `.scratch/javis-generalization/` | 泛化（项目根 + workspace-first @ + / 建议），**已关票** |
 
 路线决策摘要： [`.scratch/javis-roadmap/map.md`](../.scratch/javis-roadmap/map.md)
 

@@ -3,10 +3,12 @@
 from pathlib import Path
 
 from src.path_completion import (
+    PathSuggestion,
     apply_completion,
     at_query,
     collect_completion_paths,
-    filter_paths,
+    filter_path_suggestions,
+    sort_path_suggestions,
     sort_paths_inbox_first,
 )
 
@@ -22,33 +24,55 @@ def _make_vault(tmp_path: Path) -> Path:
     return vault
 
 
-def test_collect_paths_inbox_first_and_skips_hidden_dirs(tmp_path):
+def test_collect_paths_workspace_before_vault(tmp_path):
     vault = _make_vault(tmp_path)
     ws = tmp_path / "ws"
-    (ws / "memory").mkdir(parents=True)
-    (ws / "memory" / "prefs.md").write_text("# prefs", encoding="utf-8")
+    (ws / "src").mkdir(parents=True)
+    (ws / "src" / "main.py").write_text("print('hi')", encoding="utf-8")
+    mem = ws / "memory"
+    mem.mkdir()
+    (mem / "prefs.md").write_text("# prefs", encoding="utf-8")
 
-    paths = collect_completion_paths(vault, ws, include_workspace=True)
+    items = collect_completion_paths(vault, ws, mem)
+    paths = [i.path for i in items]
+    assert "/workspace/src/main.py" in paths
+    assert "/memories/prefs.md" in paths
     assert "/vault/Inbox/inbox-note.md" in paths
-    assert "/vault/topics/other.md" in paths
-    assert "/workspace/memory/prefs.md" in paths
+    assert paths.index("/workspace/src/main.py") < paths.index("/vault/topics/other.md")
     assert not any(".obsidian" in p for p in paths)
-    assert paths.index("/vault/Inbox/inbox-note.md") < paths.index("/vault/topics/other.md")
 
 
-def test_sort_paths_inbox_first():
+def test_collect_paths_vault_scope_prefix(tmp_path):
+    vault = _make_vault(tmp_path)
+    ws = tmp_path / "ws"
+    (ws / "src").mkdir(parents=True)
+    (ws / "src" / "main.py").write_text("x", encoding="utf-8")
+
+    items = collect_completion_paths(vault, ws, query="vault/Inbox")
+    paths = [i.path for i in items]
+    assert all(p.startswith("/vault/") for p in paths)
+    assert "/workspace/src/main.py" not in paths
+
+
+def test_sort_path_suggestions_workspace_first():
+    items = [
+        PathSuggestion("/vault/topics/z.md", "知识库"),
+        PathSuggestion("/workspace/a.py", "项目"),
+        PathSuggestion("/vault/Inbox/a.md", "Inbox"),
+    ]
+    ordered = sort_path_suggestions(items)
+    assert ordered[0].path.startswith("/workspace/")
+    assert ordered[1].path.startswith("/vault/Inbox/")
+
+
+def test_sort_paths_inbox_first_compat():
     paths = [
         "/workspace/a.md",
         "/vault/topics/z.md",
-        "/vault/Reports/r.md",
         "/vault/Inbox/a.md",
-        "/vault/Inbox/b.md",
     ]
     ordered = sort_paths_inbox_first(paths)
-    assert ordered[:2] == ["/vault/Inbox/a.md", "/vault/Inbox/b.md"]
-    assert ordered[2] == "/vault/Reports/r.md"
-    assert ordered[3] == "/vault/topics/z.md"
-    assert ordered[4] == "/workspace/a.md"
+    assert ordered[0].startswith("/workspace/")
 
 
 def test_at_query_detects_prefix_and_rejects_mid_word():
@@ -58,10 +82,12 @@ def test_at_query_detects_prefix_and_rejects_mid_word():
     assert at_query("@a b", 4) is None
 
 
-def test_filter_paths_case_insensitive():
-    paths = ["/vault/Inbox/A.md", "/vault/other/B.md"]
-    assert filter_paths(paths, "inbox") == ["/vault/Inbox/A.md"]
-    assert filter_paths(paths, "") == paths
+def test_filter_path_suggestions_case_insensitive():
+    items = [
+        PathSuggestion("/workspace/src/Main.py", "项目"),
+        PathSuggestion("/vault/other/B.md", "知识库"),
+    ]
+    assert filter_path_suggestions(items, "main") == [items[0]]
 
 
 def test_apply_completion_replaces_at_segment():
