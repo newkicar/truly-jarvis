@@ -312,6 +312,23 @@ async def test_toggle_sidebar_collapses():
 
 
 @pytest.mark.asyncio
+async def test_startup_prompt_auto_submits_message():
+    app = JarvisApp(
+        None,
+        FakeAgent(reply="收到"),
+        {"default": "ask", "tools": {}},
+        startup_prompt="自动冒烟问题",
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await asyncio.sleep(0.35)
+        await pilot.pause()
+        log = pilot.app.query_one(RichLog)
+        joined = "".join(l.text for l in log.lines)
+        assert "自动冒烟问题" in joined
+
+
+@pytest.mark.asyncio
 async def test_at_completion_shows_candidates_and_inserts_path(tmp_path):
     vault = tmp_path / "vault"
     (vault / "Inbox").mkdir(parents=True)

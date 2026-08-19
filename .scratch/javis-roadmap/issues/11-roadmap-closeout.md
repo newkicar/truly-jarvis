@@ -4,9 +4,9 @@
 
 **Blocked by:** 10 — TUI 真模型冒烟场景（手动）
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `javis-roadmap/spec.md` → `Status: done`
-- [ ] 各 issue 01–10 验收项勾选或 Status 更新
-- [ ] `AGENTS.md` 测试数、交付模块列表与最终实现一致
-- [ ] 全量 pytest 最终绿
+- [x] `javis-roadmap/spec.md` → `Status: done`
+- [x] 各 issue 01–10 验收项勾选或 Status 更新
+- [x] `AGENTS.md` 测试数、交付模块列表与最终实现一致
+- [x] 全量 pytest 最终绿

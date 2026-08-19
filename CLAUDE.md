@@ -1,9 +1,9 @@
 # CLAUDE.md
 
 ## 项目状态
-- **一期 + 二期 + 三期 + TUI 已实现**（2026-08-15 起，三期 skill/MCP 于 2026-08-18 完成，TUI 同日完成），代码在 `src/`，测试在 `tests/`（115 个单测全绿）。权威设计文档：`docs/specs/2026-08-15-javis-design.md`。
-- 交付：`config.py`(.env 兼容解析+javis.json→Config)、`tools.py`(分层搜索：quick_search/search/deep_search，LLM 按问题复杂度选档，不用自研抓全文)、`wiki.py`(wikilink/backlink 导航工具：出链/反链，零索引实时扫描)、`rag.py`(增量 RAG 语义增强：Ollama bge-small-zh + chromadb，hash 增量索引)、`subagents.py`(researcher + knowledge_keeper)、`agent.py`(build_agent)、`scheduler.py`(APScheduler 定时检索)、`time_travel.py`(git 快照回退)、`permissions.py`(HITL 审批，对标 opencode permission)、`vault_guard.py`+`inbox_snapshots.py`(Inbox 唯一写入口 + 写入前快照 + 会话 rollback 还原 Inbox)、`mcps.py`(MCP 工具加载，OpenCode 风格 `mcps.servers` 配置)、`commands.py`(命令分发/会话管理纯逻辑，CLI+TUI 共用)、`tui.py`(Textual TUI，对标 opencode：消息区粗竖线+流式输出+审批 Modal)、`main.py`(默认进 TUI，`--cli` 回退 input 交互；命令 + 审批 y/n/e/a)、`smoke_test.py`(真模型冒烟，手动，支持 `--tui`)、`tests/_manual/fanout_probe.py`(fan-out 实测探针)。
-- 实现状态跟踪：本地 issue tracker `.scratch/javis-implementation/`（spec + 票 01-15）与 `.scratch/javis-tui/`（spec + 票 01-06）。
+- **一期 + 二期 + 三期 + TUI + 后续路线已实现**（Inbox 边界 / TUI 体验 / 测试质量，2026-08-19 收尾），代码在 `src/`，测试在 `tests/`（165 个单测全绿）。权威设计文档：`docs/specs/2026-08-15-javis-design.md`；路线 spec：`.scratch/javis-roadmap/spec.md`。
+- 交付：`config.py`(.env 兼容解析+javis.json→Config)、`tools.py`(分层搜索)、`wiki.py`(wikilink/backlink)、`rag.py`(增量 RAG)、`subagents.py`(researcher + knowledge_keeper)、`agent.py`、`scheduler.py`、`time_travel.py`、`permissions.py`(HITL)、`vault_guard.py`+`inbox_snapshots.py`+`inbox_snapshot_middleware.py`(Inbox 写边界+快照)、`mcps.py`、`commands.py`(CLI+TUI 共用)、`streaming.py`(流式+HITL 决策)、`tui_format.py`+`tui.py`(Textual TUI：流式 Markdown+权限 diff+`@`补全+侧边栏)、`path_completion.py`、`startup.py`、`main.py`(`--cli` 回退)、`smoke_test.py`(手动冒烟，`--tui` / `--tui-hitl` HITL 用例，不进 CI)、`tests/_manual/fanout_probe.py`。
+- 实现状态跟踪：`.scratch/javis-implementation/`、`.scratch/javis-tui/`、`.scratch/javis-roadmap/`（01–11 已关票）。
 
 ## 强制要求（README 约定，缺一不可）
 1. 动手实现前，先到 GitHub 搜索优秀开源项目参考。
@@ -34,7 +34,8 @@
 - ✅ 一期（已完成）：主代理 + researcher（指定检索）+ WIKI 导航知识库 + SqliteSaver 短期记忆 + 会话回退 + javis.json + Tavily。
 - ✅ 二期（已完成）：动态子代理 fan-out（CodeInterpreterMiddleware，实测通过）+ 定时检索（schedules/ 目录配置 + APScheduler + /reload-schedules 热重载）+ knowledge_keeper 知识沉淀 + git 文件回退（手动 /snapshot）+ 事件流式输出（stream_events v3）。单测 41 绿。
 - 三期：executor（✅ 主代理直接 execute + HITL 审批）+ skill/mcp 接口（✅ skill 编写指南 + MCP 即插即拔 + 增量 RAG 增强（✅））。
-- ✅ TUI（已完成，2026-08-18）：Textual 界面（commands.py 公共层 + 流式 + 权限 Modal + --tui/--cli 入口）。单测 115 绿。
+- ✅ TUI（已完成，2026-08-18）：Textual 界面（commands.py 公共层 + 流式 + 权限 Modal + --tui/--cli 入口）。单测 165 绿。
+- ✅ 后续路线（2026-08-19）：Inbox 边界 + 快照回退、TUI 体验（Markdown/diff/@/侧边栏）、测试与手动冒烟（`smoke_test --tui-hitl`）。
 
 ## Agent skills
 

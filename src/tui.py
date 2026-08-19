@@ -359,6 +359,7 @@ class JarvisApp(App):
         thread_id: str = "default",
         mcp_tool_count: int = 0,
         startup_lines: list[str] | None = None,
+        startup_prompt: str | None = None,
     ):
         super().__init__()
         self.config = config
@@ -368,6 +369,7 @@ class JarvisApp(App):
         self.thread_id = thread_id
         self._mcp_tool_count = mcp_tool_count
         self._startup_lines = startup_lines or []
+        self._startup_prompt = startup_prompt
         self._worker: Worker | None = None
         self._completion_active = False
         self._completion_session_paths: list[str] | None = None
@@ -479,6 +481,33 @@ class JarvisApp(App):
             self._write_system(log, line)
         self._refresh_session_sidebar()
         self.query_one("#input", Input).focus()
+        if self._startup_prompt:
+            self.call_after_refresh(self._submit_startup_prompt)
+
+    def _submit_startup_prompt(self) -> None:
+        prompt = (self._startup_prompt or "").strip()
+        self._startup_prompt = None
+        if prompt:
+            self._handle_user_message(prompt)
+
+    def _handle_user_message(self, raw: str) -> None:
+        text = raw.strip()
+        if not text:
+            return
+        input_widget = self.query_one("#input", Input)
+        input_widget.value = ""
+        log = self.query_one("#messages", RichLog)
+        log.write(user_message_markup(text))
+        if text == "/exit":
+            self.exit()
+            return
+        if text == "/help":
+            log.write(commands.TUI_HELP)
+            return
+        if text.startswith("/"):
+            self._run_command(text)
+            return
+        self._worker = self.run_worker(partial(self._stream_turn, text), thread=True)
 
     def _session_sidebar(self) -> SessionSidebar:
         return self.query_one("#session_sidebar", SessionSidebar)
@@ -583,23 +612,7 @@ class JarvisApp(App):
         if self._completion_active:
             self._apply_path_completion()
             return
-        text = event.value.strip()
-        if not text:
-            return
-        input_widget = self.query_one("#input", Input)
-        input_widget.value = ""
-        log = self.query_one("#messages", RichLog)
-        log.write(user_message_markup(text))
-        if text == "/exit":
-            self.exit()
-            return
-        if text == "/help":
-            log.write(commands.TUI_HELP)
-            return
-        if text.startswith("/"):
-            self._run_command(text)
-            return
-        self._worker = self.run_worker(partial(self._stream_turn, text), thread=True)
+        self._handle_user_message(event.value)
 
     def _run_command(self, text: str) -> None:
         log = self.query_one("#messages", RichLog)

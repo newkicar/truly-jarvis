@@ -1,6 +1,6 @@
 # Spec: JARVIS 后续路线（Inbox 边界 → TUI 体验 → 测试质量）
 
-`Status: open`
+`Status: done`
 
 > 来源：`/grill-with-docs` 会话（2026-08-18）。领域术语见仓库根 `CONTEXT.md`。
 
