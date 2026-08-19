@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from src.vault_guard import VAULT_WRITE_TOOLS, is_inbox_path, normalize_vault_path
+from src.vault_guard import VAULT_WRITE_TOOLS, is_writable_vault_path, normalize_vault_path
 
 DB_NAME = "inbox_snapshots.sqlite"
 
@@ -172,4 +172,4 @@ def restore_inbox_for_rollback(
 
 
 def is_inbox_write_tool(tool: str, path: str) -> bool:
-    return tool in VAULT_WRITE_TOOLS and is_inbox_path(path)
+    return tool in VAULT_WRITE_TOOLS and is_writable_vault_path(path)

@@ -333,7 +333,7 @@ def test_dispatch_rollback_includes_inbox_listing(monkeypatch, tmp_path):
         agent, "session-1", f"/rollback {cid[:13]}", vault_path=vault
     )
     assert "已回退项目文件" in text
-    assert "Inbox 还原:" in text
+    assert "Inbox/Reports 还原:" in text
     assert "/vault/Inbox/note.md" in text
     assert "删除 /vault/Inbox/new.md" in text
     assert "/replay" in text
@@ -361,4 +361,4 @@ def test_dispatch_rollback_reports_empty_inbox(monkeypatch, tmp_path):
         agent, "session-1", f"/rollback {cid[:13]}", vault_path=vault
     )
     assert "未找到 checkpoint" in text or "跳过项目文件回退" in text
-    assert "Inbox：该会话无需要还原的文件" in text
+    assert "Inbox/Reports：该会话无需要还原的文件" in text

@@ -30,9 +30,11 @@ def sort_paths_inbox_first(paths: list[str]) -> list[str]:
     def _key(path: str) -> tuple[int, str]:
         if path.startswith("/vault/Inbox/"):
             return (0, path.casefold())
-        if path.startswith("/vault/"):
+        if path.startswith("/vault/Reports/"):
             return (1, path.casefold())
-        return (2, path.casefold())
+        if path.startswith("/vault/"):
+            return (2, path.casefold())
+        return (3, path.casefold())
 
     return sorted(paths, key=_key)
 

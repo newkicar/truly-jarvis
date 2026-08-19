@@ -40,13 +40,15 @@ def test_sort_paths_inbox_first():
     paths = [
         "/workspace/a.md",
         "/vault/topics/z.md",
+        "/vault/Reports/r.md",
         "/vault/Inbox/a.md",
         "/vault/Inbox/b.md",
     ]
     ordered = sort_paths_inbox_first(paths)
     assert ordered[:2] == ["/vault/Inbox/a.md", "/vault/Inbox/b.md"]
-    assert ordered[2] == "/vault/topics/z.md"
-    assert ordered[3] == "/workspace/a.md"
+    assert ordered[2] == "/vault/Reports/r.md"
+    assert ordered[3] == "/vault/topics/z.md"
+    assert ordered[4] == "/workspace/a.md"
 
 
 def test_at_query_detects_prefix_and_rejects_mid_word():

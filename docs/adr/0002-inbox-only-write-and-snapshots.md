@@ -11,8 +11,8 @@ vault commit 会污染用户笔记历史，且与 JARVIS 项目内的会话回�
 ## 决策
 
 1. **写边界**：对 `/vault/` 的 `write_file` / `edit_file` / `delete` 仅允许
-   `/vault/Inbox/` 内路径；Vault 其它文件夹只读。Inbox 外路径即使 HITL 审批通过也
-   由 `VaultWriteGuardMiddleware` 拒绝。定时任务 `save_path` 仅允许 `vault:Inbox/`。
+   `/vault/Inbox/` 与 `/vault/Reports/` 内路径；Vault 其它文件夹只读。Inbox 外路径即使 HITL 审批通过也
+   由 `VaultWriteGuardMiddleware` 拒绝。定时任务 `save_path` 仍仅允许 `vault:Inbox/`。
 2. **Inbox 不进 vault git**：vault 根 `.gitignore` 排除 `Inbox/`；版本与回退由
    JARVIS 项目负责。
 3. **Inbox 快照在项目内**：每次成功写入 Inbox 前，在项目目录

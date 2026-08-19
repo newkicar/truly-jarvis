@@ -282,11 +282,11 @@ def rollback(agent, thread_id: str, checkpoint_id: str, vault_path: Path | None 
             project_root(), vault_path, agent, thread_id, full_id
         )
         if actions:
-            lines.append("Inbox 还原:")
+            lines.append("Inbox/Reports 还原:")
             for vp, action in actions:
                 lines.append(f"  - {action} {vp}")
         else:
-            lines.append("Inbox：该会话无需要还原的文件")
+            lines.append("Inbox/Reports：该会话无需要还原的文件")
 
     lines.append("注意：可用 /replay 对齐会话状态。")
     return "\n".join(lines)

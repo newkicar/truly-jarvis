@@ -1,4 +1,4 @@
-"""Vault 写边界：仅 Inbox 可写。"""
+"""Vault 写边界：仅 Inbox / Reports 等指定目录可写。"""
 from __future__ import annotations
 
 from langchain.agents.middleware.types import AgentMiddleware
@@ -7,6 +7,9 @@ from src.permissions import _tool_arg_value
 
 VAULT_PREFIX = "/vault/"
 INBOX_PREFIX = "/vault/Inbox/"
+REPORTS_PREFIX = "/vault/Reports/"
+# 允许 write/edit/delete 的 vault 顶层目录（不含子路径以外的任意文件夹）
+VAULT_WRITABLE_TOP_DIRS = frozenset({"Inbox", "Reports"})
 VAULT_WRITE_TOOLS = frozenset({"write_file", "edit_file", "delete"})
 
 
@@ -27,25 +30,50 @@ def is_inbox_path(path: str) -> bool:
     return rest == "Inbox" or rest.startswith("Inbox/")
 
 
+def is_reports_path(path: str) -> bool:
+    norm = normalize_vault_path(path)
+    if not is_vault_path(norm):
+        return False
+    rest = norm[len("/vault") :].lstrip("/")
+    return rest == "Reports" or rest.startswith("Reports/")
+
+
+def is_writable_vault_path(path: str) -> bool:
+    """路径是否在允许 JARVIS 写入的 vault 目录内（Inbox、Reports 等）。"""
+    norm = normalize_vault_path(path)
+    if not is_vault_path(norm):
+        return False
+    rest = norm[len("/vault") :].lstrip("/")
+    if not rest:
+        return False
+    top = rest.split("/")[0]
+    return top in VAULT_WRITABLE_TOP_DIRS
+
+
+def writable_vault_prefixes() -> tuple[str, ...]:
+    return tuple(f"/vault/{name}/" for name in sorted(VAULT_WRITABLE_TOP_DIRS))
+
+
 def vault_write_blocked(tool: str, path: str) -> bool:
-    """Vault 外路径的 write/edit/delete 应被拦截。"""
+    """Vault 非可写区路径的 write/edit/delete 应被拦截。"""
     if tool not in VAULT_WRITE_TOOLS:
         return False
     if not is_vault_path(path):
         return False
-    return not is_inbox_path(path)
+    return not is_writable_vault_path(path)
 
 
 def blocked_vault_write_message(tool: str, path: str, *, actor: str = "JARVIS") -> str:
     shown = path or "（未指定路径）"
+    allowed = "、".join(writable_vault_prefixes())
     return (
-        f"Permission denied: {actor} 只能写入 Vault 的 Inbox（{INBOX_PREFIX}），"
+        f"Permission denied: {actor} 只能写入 Vault 的 {allowed}，"
         f"不能对 {shown} 执行 {tool}。Vault 其它文件夹只读。"
     )
 
 
 class VaultWriteGuardMiddleware(AgentMiddleware):
-    """拦截对 Vault 非 Inbox 路径的 write_file / edit_file / delete。"""
+    """拦截对 Vault 非可写区路径的 write_file / edit_file / delete。"""
 
     def __init__(self, *, actor: str = "JARVIS"):
         super().__init__()
