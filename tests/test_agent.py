@@ -40,14 +40,19 @@ def test_build_agent_assembles(tmp_path):
     assert callable(getattr(agent, "invoke", None))
 
 
-def test_build_main_prompt_injects_today_date():
-    """build_main_prompt() 应动态注入今天日期，而非硬编码。"""
-    from datetime import date
-
-    today = date.today().isoformat()
+def test_build_main_prompt_is_static_without_datetime():
+    """日期/时间/地点不写入 system prompt；采用结果导向结构。"""
     prompt = build_main_prompt()
-    assert f"今天是 {today}" in prompt
-    assert "委派 researcher" in prompt
+    assert "现在是" not in prompt
+    assert "2026-" not in prompt
+    assert "加载 **system-context**" not in prompt
+    assert "system-context skill" in prompt
+    assert "目标" in prompt
+    assert "完成标准" in prompt
+    assert "停止规则" in prompt
+    assert "get_system_context" in prompt
+    assert "无法自动定位" in prompt or "GPS" in prompt
+    assert "Reports" in prompt
 
 
 def test_build_agent_uses_build_main_prompt(tmp_path, monkeypatch):
@@ -67,7 +72,9 @@ def test_build_agent_uses_build_main_prompt(tmp_path, monkeypatch):
     build_agent(cfg, model=model)
 
     assert captured.get("system_prompt") == build_main_prompt()
-    assert "今天是" in captured.get("system_prompt", "")
+    assert "get_system_context" in captured.get("system_prompt", "")
+    tool_names = [getattr(t, "name", None) for t in captured.get("tools", [])]
+    assert "get_system_context" in tool_names
 
 
 def test_build_agent_invoke_returns_message(tmp_path):
@@ -123,11 +130,14 @@ def test_build_agent_injects_mcp_tools(tmp_path, monkeypatch):
     ]
     build_agent(cfg, model=model, mcp_tools=fake_tools)
 
-    assert [t.name for t in captured.get("tools", [])] == ["git_status"]
+    assert [t.name for t in captured.get("tools", [])] == [
+        "get_system_context",
+        "git_status",
+    ]
 
 
 def test_build_agent_no_mcp_tools_defaults_empty(tmp_path, monkeypatch):
-    """未传 mcp_tools 时 tools 应为空列表，不影响组装。"""
+    """未传 mcp_tools 时仍注入 get_system_context。"""
     import src.agent as agent_mod
     from src.agent import create_deep_agent
 
@@ -142,7 +152,7 @@ def test_build_agent_no_mcp_tools_defaults_empty(tmp_path, monkeypatch):
     model = ToolCapableFake(reply="ok")
     build_agent(cfg, model=model)
 
-    assert captured.get("tools") == []
+    assert [t.name for t in captured.get("tools", [])] == ["get_system_context"]
 
 
 def test_build_agent_loads_memory_md_files(tmp_path, monkeypatch):

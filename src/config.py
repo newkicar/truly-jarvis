@@ -40,6 +40,8 @@ class Config:
     skills: tuple[Path, ...]
     mcps: dict[str, object]
     permissions: dict[str, object]
+    rag_ollama_base_url: str
+    rag_embed_model: str
 
 
 def parse_env_text(text: str) -> dict[str, str]:
@@ -101,10 +103,14 @@ def load_config(env_file: Path | None = None, json_file: Path | None = None) -> 
     memory = (root / data.get("memory_dir", "memory")).resolve()
     checkpoint_db = (root / data.get("checkpoint_db", "checkpoints.sqlite")).resolve()
     schedules_dir = (root / data.get("schedules_dir", "schedules")).resolve()
-    skills = tuple(Path(s).resolve() for s in data.get("skills", []))
+    skills = tuple((root / s).resolve() for s in data.get("skills", []))
     mcps = data.get("mcps", {})
     if not isinstance(mcps, dict):
         mcps = {}
+
+    rag_cfg = data.get("rag", {})
+    if not isinstance(rag_cfg, dict):
+        rag_cfg = {}
 
     return Config(
         base_url=base_url,
@@ -118,4 +124,6 @@ def load_config(env_file: Path | None = None, json_file: Path | None = None) -> 
         skills=skills,
         mcps=mcps,
         permissions=data.get("permissions", {}),
+        rag_ollama_base_url=str(rag_cfg.get("ollama_base_url", "http://localhost:11434")),
+        rag_embed_model=str(rag_cfg.get("embed_model", "quentinz/bge-small-zh-v1.5")),
     )

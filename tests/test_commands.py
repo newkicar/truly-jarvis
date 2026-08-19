@@ -22,6 +22,10 @@ def _human(text):
     return type("H", (), {"type": "human", "content": text})()
 
 
+def _ai(text):
+    return type("A", (), {"type": "ai", "content": text})()
+
+
 class FakeAgent:
     def __init__(self, states):
         self._states = states  # 从旧到新
@@ -144,26 +148,30 @@ class FakeDispatchAgent:
 
 
 def test_dispatch_unknown_command():
-    text, new_thread = commands.dispatch_command(FakeDispatchAgent(), "t", "/bogus")
+    text, new_thread, replay_cid = commands.dispatch_command(FakeDispatchAgent(), "t", "/bogus")
     assert "未知命令" in text
     assert new_thread is None
+    assert replay_cid is None
 
 
 def test_dispatch_history_command():
-    text, new_thread = commands.dispatch_command(FakeDispatchAgent(), "t", "/history")
+    text, new_thread, replay_cid = commands.dispatch_command(FakeDispatchAgent(), "t", "/history")
     assert "暂无历史" in text
     assert new_thread is None
+    assert replay_cid is None
 
 
 def test_dispatch_sessions_command():
-    text, new_thread = commands.dispatch_command(FakeDispatchAgent(), "t", "/sessions")
+    text, new_thread, replay_cid = commands.dispatch_command(FakeDispatchAgent(), "t", "/sessions")
     assert new_thread is None
+    assert replay_cid is None
 
 
 def test_dispatch_reload_without_scheduler():
-    text, new_thread = commands.dispatch_command(FakeDispatchAgent(), "t", "/reload-schedules")
+    text, new_thread, replay_cid = commands.dispatch_command(FakeDispatchAgent(), "t", "/reload-schedules")
     assert "调度器未启动" in text
     assert new_thread is None
+    assert replay_cid is None
 
 
 def test_current_permissions_omits_defaults():
@@ -245,18 +253,69 @@ def test_render_ignores_tool_call_only_content():
 
 
 class FakeReplayAgent:
-    def __init__(self, states, reply="重跑回答"):
+    def __init__(self, states):
         self._states = states
-        self._reply = reply
-        self.invoked_with = None
 
     def get_state_history(self, config=None):
         return iter(reversed(self._states))
 
-    def invoke(self, payload, config=None):
-        self.invoked_with = config
-        ai = type("A", (), {"type": "ai", "content": self._reply})()
-        return {"messages": [ai]}
+
+def test_prepare_replay_resolves_checkpoint():
+    cid = "cid-0000000-aaaa"
+    agent = FakeReplayAgent([FakeState(cid, "input", -1, [_human("q")])])
+    err, full_id = commands.prepare_replay(agent, "t", cid[:13])
+    assert err is None
+    assert full_id == cid
+
+
+def test_prepare_replay_unknown_checkpoint():
+    err, full_id = commands.prepare_replay(FakeReplayAgent([]), "t", "missing-id")
+    assert "重跑失败" in err
+    assert full_id is None
+
+
+def test_dispatch_replay_command():
+    cid = "cid-0000000-aaaa"
+    agent = FakeReplayAgent([FakeState(cid, "input", -1, [_human("q")])])
+    text, new_thread, replay_cid = commands.dispatch_command(agent, "t", f"/replay {cid[:13]}")
+    assert text is None
+    assert replay_cid == cid
+    assert new_thread is None
+
+
+def test_dispatch_replay_unknown_checkpoint():
+    agent = FakeReplayAgent([])
+    text, new_thread, replay_cid = commands.dispatch_command(agent, "t", "/replay missing-id")
+    assert "重跑失败" in text
+    assert new_thread is None
+    assert replay_cid is None
+
+
+def test_completed_turn_checkpoint_returns_end_of_saved_turn():
+    input_cid = "cid-input-aaaaaa"
+    end_cid = "cid-end-bbbbbbbb"
+    next_input = "cid-input-cccccc"
+    states = [
+        FakeState(input_cid, "input", -1, [_human("你好")], next_=("model",)),
+        FakeState(end_cid, "loop", 1, [_human("你好"), _ai("saved-hello")], next_=()),
+        FakeState(
+            next_input,
+            "input",
+            2,
+            [_human("你好"), _ai("saved-hello"), _human("下一问")],
+            next_=("model",),
+        ),
+    ]
+    end = commands.completed_turn_checkpoint(FakeReplayAgent(states), "t", input_cid)
+    assert end is not None
+    assert end.config["configurable"]["checkpoint_id"] == end_cid
+    assert commands.render(end.values["messages"]) == "saved-hello"
+
+
+def test_completed_turn_checkpoint_pending_input_returns_none():
+    cid = "cid-input-aaaaaa"
+    agent = FakeReplayAgent([FakeState(cid, "input", -1, [_human("你好")], next_=("model",))])
+    assert commands.completed_turn_checkpoint(agent, "t", cid) is None
 
 
 class FakeForkAgent:
@@ -281,28 +340,11 @@ class FakeRollbackDispatchAgent:
         return iter(reversed(self._states))
 
 
-def test_dispatch_replay_command():
-    cid = "cid-0000000-aaaa"
-    agent = FakeReplayAgent([FakeState(cid, "input", -1, [_human("q")])])
-    text, new_thread = commands.dispatch_command(agent, "t", f"/replay {cid[:13]}")
-    assert "重跑结果" in text
-    assert "重跑回答" in text
-    assert agent.invoked_with == {"configurable": {"thread_id": "t", "checkpoint_id": cid}}
-    assert new_thread is None
-
-
-def test_dispatch_replay_unknown_checkpoint():
-    agent = FakeReplayAgent([])
-    text, new_thread = commands.dispatch_command(agent, "t", "/replay missing-id")
-    assert "重跑失败" in text
-    assert new_thread is None
-
-
 def test_dispatch_fork_returns_new_thread():
     cid = "cid-0000000-aaaa"
     target = FakeState(cid, "input", -1, [_human("q")], next_=("model",))
     agent = FakeForkAgent(target)
-    text, new_thread = commands.dispatch_command(agent, "default", f"/fork {cid[:13]}")
+    text, new_thread, replay_cid = commands.dispatch_command(agent, "default", f"/fork {cid[:13]}")
     assert "分叉" in text
     assert new_thread == "fork-session-1"
     assert agent.update_calls
@@ -329,7 +371,7 @@ def test_dispatch_rollback_includes_inbox_listing(monkeypatch, tmp_path):
         ],
     )
 
-    text, new_thread = commands.dispatch_command(
+    text, new_thread, replay_cid = commands.dispatch_command(
         agent, "session-1", f"/rollback {cid[:13]}", vault_path=vault
     )
     assert "已回退项目文件" in text
@@ -357,7 +399,7 @@ def test_dispatch_rollback_reports_empty_inbox(monkeypatch, tmp_path):
         lambda *args, **kwargs: [],
     )
 
-    text, _ = commands.dispatch_command(
+    text, _, replay_cid = commands.dispatch_command(
         agent, "session-1", f"/rollback {cid[:13]}", vault_path=vault
     )
     assert "未找到 checkpoint" in text or "跳过项目文件回退" in text

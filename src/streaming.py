@@ -219,8 +219,9 @@ def consume_stream_events(
 def run_agent_turn(
     agent,
     thread_id: str,
-    user_input: str,
+    user_input: str | None = None,
     *,
+    checkpoint_id: str | None = None,
     handle_interrupts: Callable[[Any], dict | None],
     callbacks: StreamCallbacks,
     is_cancelled: Callable[[], bool] = lambda: False,
@@ -228,19 +229,44 @@ def run_agent_turn(
     on_stream_start: Callable[[], None] | None = None,
     on_cancelled: Callable[[], None] | None = None,
 ) -> bool:
-    """跑一轮对话（含 HITL resume 循环）。返回 True=正常结束，False=放弃/取消。"""
+    """跑一轮对话或 checkpoint 重跑（含 HITL resume 循环）。返回 True=正常结束，False=放弃/取消。"""
     from langgraph.types import Command
 
-    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 30}
+    base_config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 30}
     resume = None
+    replay_pending = checkpoint_id is not None
+    if replay_pending:
+        saved = commands.completed_turn_checkpoint(agent, thread_id, checkpoint_id)
+        if saved is not None:
+            if on_stream_start:
+                on_stream_start()
+            text = commands.render((saved.values or {}).get("messages") or [])
+            if text:
+                if callbacks.get("on_message_end"):
+                    callbacks["on_message_delta"](text)
+                    callbacks["on_message_end"](text)
+                elif on_fallback_message:
+                    on_fallback_message(text)
+                else:
+                    callbacks["on_message_delta"](text)
+            return True
     while not is_cancelled():
         if on_stream_start:
             on_stream_start()
-        stream = agent.stream_events(
-            Command(resume=resume) if resume else {"messages": [{"role": "user", "content": user_input}]},
-            version="v3",
-            config=config,
-        )
+        if resume:
+            stream_input: Any = Command(resume=resume)
+            config = base_config
+        elif replay_pending:
+            stream_input = None
+            config = {
+                "configurable": {"thread_id": thread_id, "checkpoint_id": checkpoint_id},
+                "recursion_limit": 30,
+            }
+            replay_pending = False
+        else:
+            stream_input = {"messages": [{"role": "user", "content": user_input}]}
+            config = base_config
+        stream = agent.stream_events(stream_input, version="v3", config=config)
         consumed = consume_stream_events(
             stream, callbacks, is_cancelled=is_cancelled, on_cancelled=on_cancelled
         )

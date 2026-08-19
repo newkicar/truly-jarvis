@@ -47,8 +47,13 @@ def _run_session(agent, thread_id: str, sched=None, permission_state: dict | Non
             continue
 
         if user_input.startswith("/"):
-            text, new_thread = commands.dispatch_command(agent, thread_id, user_input, sched)
-            print(text)
+            text, new_thread, replay_cid = commands.dispatch_command(
+                agent, thread_id, user_input, sched
+            )
+            if replay_cid:
+                _stream_replay(agent, thread_id, replay_cid, permission_state, config)
+            elif text:
+                print(text)
             if new_thread:
                 thread_id = new_thread
                 print(f"已切换到会话 {thread_id}")
@@ -64,6 +69,44 @@ def _handle_interrupts(interrupts, permission_state: dict | None = None):
         lambda inv: streaming.cli_prompt_action(inv, permission_state=permission_state),
         permission_state=permission_state,
     )
+
+
+def _stream_replay(agent, thread_id: str, checkpoint_id: str, permission_state: dict | None = None, config=None):
+    """从 checkpoint 用 stream_events(v3) 重跑，实时打印子代理/工具/最终回答。"""
+    print()
+    vault_path = getattr(config, "vault_path", None) if config else None
+    workspace_root = config.memory_dir.parent if config else None
+
+    def on_always_approve(name: str) -> None:
+        print(f"    已设置 {name} = allow（已写入 javis.json，以后自动放行）")
+
+    streaming.run_agent_turn(
+        agent,
+        thread_id,
+        None,
+        checkpoint_id=checkpoint_id,
+        handle_interrupts=lambda interrupts: streaming.collect_interrupt_decisions(
+            interrupts,
+            lambda inv: streaming.cli_prompt_action(
+                inv,
+                permission_state=permission_state,
+                on_always_approve=on_always_approve,
+                vault_path=vault_path,
+                workspace_root=workspace_root,
+            ),
+            permission_state=permission_state,
+            on_always_approve=on_always_approve,
+        ),
+        callbacks={
+            "on_subagent": lambda name, status, depth=0: print(f"{'  ' * depth}  [{name}] {status}"),
+            "on_tool_call": lambda name, args, err, output=None, depth=0: _cli_tool_line(
+                name, args, err, output, depth
+            ),
+            "on_message_delta": lambda delta: print(delta, end="", flush=True),
+        },
+        on_fallback_message=lambda text: print(text),
+    )
+    print("\n")
 
 
 def _stream_turn(agent, thread_id: str, user_input: str, permission_state: dict | None = None, config=None):

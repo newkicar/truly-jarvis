@@ -44,7 +44,7 @@ class _FakeEmbed:
 def fake_embed(monkeypatch):
     fe = _FakeEmbed()
 
-    def _embed(texts, base_url=""):
+    def _embed(texts, **kwargs):
         return fe.embed(texts)
 
     monkeypatch.setattr("src.rag._embed_texts", _embed)

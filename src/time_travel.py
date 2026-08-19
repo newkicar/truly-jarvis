@@ -15,17 +15,7 @@ from typing import Iterator, Optional
 
 DB_NAME = "git_mapping.sqlite"
 
-# 不参与快照的目录/文件（快照自身 + 数据库 + 密钥）
-_SKIP = {
-    ".git",
-    "__pycache__",
-    DB_NAME,
-    "checkpoints.sqlite",
-    "checkpoints.sqlite-shm",
-    "checkpoints.sqlite-wal",
-    ".env",
-    ".pytest_cache",
-}
+# 快照排除项依赖 .gitignore（checkpoints.sqlite / .env / git_mapping.sqlite 等）。
 
 
 def _git(root: Path, *args: str) -> str:

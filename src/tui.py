@@ -507,16 +507,30 @@ class JarvisApp(App):
             log.write(commands.TUI_HELP)
             return
         if text.startswith("/"):
-            cmd = text.split()[0]
+            parts = text.split()
+            if parts[0] == "/replay":
+                if len(parts) != 2:
+                    log.write("用法: /replay <checkpoint_id>")
+                    return
+                err, full_id = commands.prepare_replay(self.agent, self.thread_id, parts[1])
+                if err:
+                    log.write(err)
+                    return
+                log.write(system_message_markup(f"正在重跑 checkpoint {parts[1]}…"))
+                self._worker = self.run_worker(
+                    partial(self._stream_agent, checkpoint_id=full_id), thread=True
+                )
+                return
+            cmd = parts[0]
             log.write(system_message_markup(f"正在执行 {cmd}…"))
             self._worker = self.run_worker(partial(self._run_command_worker, text), thread=True)
             return
-        self._worker = self.run_worker(partial(self._stream_turn, text), thread=True)
+        self._worker = self.run_worker(partial(self._stream_agent, user_input=text), thread=True)
 
     def _run_command_worker(self, text: str) -> None:
-        """后台线程执行可能阻塞的命令（如 /replay 的 agent.invoke）。"""
+        """后台线程执行可能阻塞的命令（/history、/fork 等）。"""
         try:
-            result, new_thread = commands.dispatch_command(
+            result, new_thread, _replay_cid = commands.dispatch_command(
                 self.agent, self.thread_id, text, self.sched
             )
         except Exception as exc:
@@ -638,7 +652,12 @@ class JarvisApp(App):
             return
         self._handle_user_message(event.value)
 
-    def _stream_turn(self, user_input: str) -> None:
+    def _stream_agent(
+        self,
+        user_input: str | None = None,
+        *,
+        checkpoint_id: str | None = None,
+    ) -> None:
         """后台线程消费 stream_events(v3)，逐字写入 RichLog。"""
         worker = get_current_worker()
         started = time()
@@ -724,6 +743,7 @@ class JarvisApp(App):
                 self.agent,
                 self.thread_id,
                 user_input,
+                checkpoint_id=checkpoint_id,
                 handle_interrupts=handle_interrupts,
                 callbacks={
                     "on_subagent": on_subagent,

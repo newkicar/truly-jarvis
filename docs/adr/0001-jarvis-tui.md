@@ -39,3 +39,14 @@ JARVIS 一期到三期的交互形态是纯 CLI（`input()` 循环）。三期�
 - `main.py` 默认进 TUI；`--cli` 保留全部原交互（命令 + y/n/e/a 审批），零回归。
 - 新增 `src/tui.py`、`src/commands.py`；`tests/test_tui.py`（骨架 + 流式 + Modal）。
 - 依赖新增 `textual>=0.40.0`。
+
+## 后续增强（2026-08-19，`.scratch/javis-roadmap/`）
+
+在 ADR-0001 基线上追加，不另开 ADR：
+
+1. **流式 Markdown**：回答过程中 `#ai_stream` live 渲染，段末写入 RichLog（`tui_format.py`）。
+2. **权限 diff**：`write_file` / `edit_file` 审批展示 unified diff（Modal 与 CLI 共用 `permission_preview`）。
+3. **`@` 路径补全**：`path_completion.py` + overlay 层 OptionList；vault Inbox 优先。
+4. **会话侧边栏**：`SessionSidebar` 从 checkpointer 列 thread；`Ctrl+B` 折叠；点击切换会话。
+5. **共享流式层**：HITL 决策抽到 `streaming.py`，TUI 与 CLI 共用 `collect_interrupt_decisions`。
+6. **手动冒烟**：`python -m src.smoke_test --tui-hitl` 自动发送写 Inbox 用例，验证 Modal + resume（不进 CI）。

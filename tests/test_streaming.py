@@ -90,3 +90,80 @@ def test_consume_stream_skips_tool_call_message_blocks():
 
     assert deltas == []
     assert segments == []
+
+
+def test_run_agent_turn_replay_uses_checkpoint_config():
+    class _Stream:
+        def __init__(self):
+            self.interrupted = False
+            self.interrupts = None
+            self.output = None
+
+        def interleave(self, *kinds):
+            if False:
+                yield
+
+    class FakeAgent:
+        def __init__(self):
+            self.calls = []
+
+        def stream_events(self, payload, *, version, config):
+            self.calls.append((payload, version, config))
+            return _Stream()
+
+    agent = FakeAgent()
+    streaming.run_agent_turn(
+        agent,
+        "t",
+        None,
+        checkpoint_id="cid-0000000-aaaa",
+        handle_interrupts=lambda _: None,
+        callbacks={
+            "on_subagent": lambda *a: None,
+            "on_tool_call": lambda *a: None,
+            "on_message_delta": lambda d: None,
+        },
+    )
+    assert len(agent.calls) == 1
+    payload, version, config = agent.calls[0]
+    assert payload is None
+    assert version == "v3"
+    assert config["configurable"] == {"thread_id": "t", "checkpoint_id": "cid-0000000-aaaa"}
+
+
+def test_run_agent_turn_replay_emits_saved_turn_without_stream():
+    class FakeState:
+        def __init__(self):
+            self.config = {"configurable": {"checkpoint_id": "cid-input"}}
+            self.metadata = {"source": "input"}
+            self.values = {"messages": [type("A", (), {"type": "ai", "content": "saved-hello"})()]}
+            self.next = ()
+
+    class FakeAgent:
+        def __init__(self):
+            self.stream_calls = []
+
+        def get_state_history(self, config=None):
+            return iter([FakeState()])
+
+        def stream_events(self, payload, *, version, config):
+            self.stream_calls.append((payload, version, config))
+            raise AssertionError("completed replay must not re-run stream_events")
+
+    agent = FakeAgent()
+    ends = []
+    streaming.run_agent_turn(
+        agent,
+        "t",
+        None,
+        checkpoint_id="cid-input",
+        handle_interrupts=lambda _: None,
+        callbacks={
+            "on_subagent": lambda *a: None,
+            "on_tool_call": lambda *a: None,
+            "on_message_delta": lambda d: None,
+            "on_message_end": lambda t: ends.append(t),
+        },
+    )
+    assert agent.stream_calls == []
+    assert ends == ["saved-hello"]

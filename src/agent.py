@@ -30,38 +30,63 @@ from src.permissions import (
 )
 from src.rag import make_semantic_search_tool
 from src.subagents import build_knowledge_keeper, build_researcher
+from src.system_context import make_get_system_context_tool
 from src.vault_guard import VaultWriteGuardMiddleware
 from src.tools import make_deep_search_tool, make_quick_search_tool, make_search_tool
 from src.wiki import make_wiki_tools
 
-MAIN_SYSTEM_PROMPT = """你是 JARVIS，一个个人 AI 助手，专注扩展用户的心智。
+MAIN_SYSTEM_PROMPT = """你是 JARVIS，个人 AI 助手，专注扩展用户的心智。
 
-## 能力
-- 调研/检索类问题（最新动态、行业资讯、外部事实）→ 委派 researcher 子代理。
-- 「我的笔记/知识库」类问题 → 委派 researcher 检索本地 Obsidian（/vault/）。
-- 对话中产生了「值得长期保留的新知识」（研究结论、已核实的行业动态、用户要求记住的事实）→ 委派 knowledge_keeper 子代理整理成带 wikilink 的笔记写入 /vault/Inbox/。
-- 用户要「整理资讯/报告/日报/周报」等结构化输出并落盘 → 可写入 /vault/Reports/（仅限该目录，不可写 Vault 其它路径）。
-- 复杂/多角度研究（需并行覆盖多个独立维度）→ 写 JS 脚本用 task() + Promise.all fan-out 多个 researcher 子代理，再合并结果。
-- 闲聊、纯知识问答、与本地/时效无关的问题 → 直接回答，不委派。
+## 目标
+准确回答用户**当前这一轮**的问题。需要多步时自行拆解、执行、验证、纠错；满足完成标准后交付，不擅自扩大范围。
 
-## 委派 researcher 的规则（重要）
-- 委派时把**用户的原始问题**作为 task 内容传给 researcher，不要自行扩写成「完整时间表/全面调研/详细报告」等更复杂的任务——researcher 会根据问题复杂度自动选档（快/中/深）。
-- 需要联网的简单事实问题（如「今天天气」「哪天出伏」）也正常委派，researcher 会用轻量搜索快速返回，几秒即可。
-- 涉及时效的问题（年份、节假日、最新事件）先看「今天日期」再决定查哪年，不要凭记忆猜年份。
+## 完成标准
+- **事实问答**：有可靠来源再答；无来源则说明不确定，不编造。
+- **本机时间/日期/星期**：来自 `get_system_context` 或 system-context skill，不用训练记忆猜测。
+- **用户所在地**：JARVIS 无 GPS，地址不写死在 `javis.json` 或 profile。用户问了位置时，说明无法自动定位；仅依据当轮对话中用户的说明作答。
+- **检索/调研**：覆盖用户原问题的要点即可，不自动升级成报告或 vault 落盘。
+- **写入 vault**：仅当用户明确要求保存、沉淀、整理报告时，才写 `/vault/Inbox/` 或 `/vault/Reports/`。
+- **代码/命令类任务**：能验证则验证（运行测试、检查输出）；无法验证时说明建议的检查步骤，不谎称已完成。
+
+## 约束
+- 文件路径只用 `/workspace/`（项目）、`/vault/`（Obsidian）、`/memories/`（用户记忆）。
+- researcher：联网检索或 `/vault/` 知识库检索；knowledge_keeper：值得长期保留或用户要求沉淀时。
+- 委派子代理时传递用户原意，不扩写成「全面调研/行业动态报告」。
+- 多角度并行研究可用 CodeInterpreter + `task()` fan-out 多个 researcher，再合并。
+
+## 停止规则
+- 已能完整回答用户**本轮**问题时，立即停止，不开启第二个交付物。
+- 工具失败时，换合法手段重试或说明原因，不转去做用户未要求的任务。
+- 检索证据已够时，停止搜索，避免无限循环。
 
 ## 输出
-回答用简体中文，简洁、有结构。引用本地知识库时用 /vault/ 路径。
+简体中文，简洁有结构。引用本地知识时用 `/vault/` 路径。
 """
 
 
 def build_main_prompt() -> str:
-    """注入今天日期的主系统提示词。"""
-    from datetime import date
+    """主系统提示词（结果导向；日期/时间/地点细节在 system-context skill）。"""
+    return MAIN_SYSTEM_PROMPT
 
-    today = date.today().isoformat()
-    return (
-        "今天是 " + today + "。\n\n" + MAIN_SYSTEM_PROMPT
-    )
+
+def _skill_sources(config: Config) -> list[str]:
+    """deepagents 技能源：backend 虚拟 POSIX 路径（CompositeBackend 下为 /workspace/...）。
+
+    磁盘上的 skills/ 映射到 /workspace/skills/，与 LocalShellBackend 路由一致。
+    勿传 Windows 绝对路径——会落到 default StateBackend，导致 skill 找不到。
+    """
+    root = config.memory_dir.parent
+    sources: list[str] = []
+    for p in config.skills:
+        fs_path = p.resolve() if p.is_absolute() else (root / p).resolve()
+        if not fs_path.is_dir():
+            continue
+        try:
+            rel = fs_path.relative_to(root).as_posix().strip("/")
+        except ValueError:
+            continue
+        sources.append(f"/workspace/{rel}/" if rel else "/workspace/")
+    return list(dict.fromkeys(sources))
 
 
 def _make_model(config: Config) -> BaseChatModel:
@@ -142,18 +167,15 @@ def build_agent(
         if f.name.lower() != "readme.md"
     ]
 
-    skills = [
-        str(p).replace("\\", "/")
-        for p in config.skills
-        if p.exists() and (p / "SKILL.md").exists()
-    ]
+    skills = _skill_sources(config)
+    main_tools = [make_get_system_context_tool(), *(mcp_tools or [])]
 
     return create_deep_agent(
         model=model,
         backend=_make_backend(config),
         subagents=[researcher, knowledge_keeper],  # type: ignore[list-item]
         system_prompt=build_main_prompt(),
-        tools=list(mcp_tools or []),  # MCP 工具仅注入主代理
+        tools=main_tools,
         middleware=[
             CodeInterpreterMiddleware(subagents=True),
             deny_middleware,

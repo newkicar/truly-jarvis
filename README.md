@@ -66,6 +66,8 @@ python -m src.main -n
 
 **写边界**：JARVIS 只能写 `/vault/Inbox/` 与 `/vault/Reports/`；Vault 其它路径只读。详见 [`docs/adr/0002-inbox-only-write-and-snapshots.md`](docs/adr/0002-inbox-only-write-and-snapshots.md)。
 
+**系统上下文**（日期 / 时间 / 位置）：不在启动时写进 system prompt，也不把地址写死在 `javis.json`。需要时主代理调用 `get_system_context` 或加载 `system-context` skill；位置无 GPS，用户问了才依据当轮说明。详见 [`docs/adr/0003-system-context-on-demand.md`](docs/adr/0003-system-context-on-demand.md)。
+
 ---
 
 ## 会话命令
@@ -115,10 +117,11 @@ src/
   vault_guard.py   Inbox 写边界
   inbox_snapshots.py  Inbox 快照与 rollback 还原
   rag.py / wiki.py / tools.py  知识检索与搜索
+  system_context.py  本机日期时间（get_system_context 工具）
 tests/             pytest
-memory/            长期记忆（*.md，注入 system prompt）
+memory/            长期记忆（*.md，注入 system prompt；不含固定所在地）
 schedules/         定时任务（每任务一 JSON）
-skills/            Agent skills（SKILL.md）
+skills/            Agent skills（含 system-context）
 docs/specs/        权威设计文档
 docs/adr/          架构决策记录
 ```
@@ -135,6 +138,7 @@ docs/adr/          架构决策记录
 | [`CONTEXT.md`](CONTEXT.md) | 领域术语表 |
 | [`docs/adr/0001-jarvis-tui.md`](docs/adr/0001-jarvis-tui.md) | TUI 选型与交互决策 |
 | [`docs/adr/0002-inbox-only-write-and-snapshots.md`](docs/adr/0002-inbox-only-write-and-snapshots.md) | Inbox 写边界与快照回退 |
+| [`docs/adr/0003-system-context-on-demand.md`](docs/adr/0003-system-context-on-demand.md) | 日期/时间/位置按需读取；结果导向主提示词 |
 | [`.scratch/javis-roadmap/map.md`](.scratch/javis-roadmap/map.md) | 后续路线（01–11）决策摘要 |
 
 ---

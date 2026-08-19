@@ -30,11 +30,16 @@ def _content_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _embed_texts(texts: list[str], base_url: str = OLLAMA_BASE_URL) -> list[list[float]]:
+def _embed_texts(
+    texts: list[str],
+    *,
+    base_url: str = OLLAMA_BASE_URL,
+    embed_model: str = OLLAMA_EMBED_MODEL,
+) -> list[list[float]]:
     """调用 Ollama /api/embed 批量 embedding。"""
     resp = httpx.post(
         f"{base_url.rstrip('/')}/api/embed",
-        json={"model": OLLAMA_EMBED_MODEL, "input": texts},
+        json={"model": embed_model, "input": texts},
         timeout=60,
     )
     resp.raise_for_status()
@@ -60,11 +65,18 @@ def _hash_for_chunks(chunks: list[str]) -> str:
 class RagIndex:
     """增量向量索引：管理 chromadb 持久化 + 内容 hash 缓存。"""
 
-    def __init__(self, rag_dir: Path, vault_root: Path, base_url: str = OLLAMA_BASE_URL):
+    def __init__(
+        self,
+        rag_dir: Path,
+        vault_root: Path,
+        base_url: str = OLLAMA_BASE_URL,
+        embed_model: str = OLLAMA_EMBED_MODEL,
+    ):
         self.rag_dir = Path(rag_dir)
         self.rag_dir.mkdir(parents=True, exist_ok=True)
         self.vault_root = Path(vault_root)
         self.base_url = base_url
+        self.embed_model = embed_model
         self._hash_cache = self._load_hashes()
 
         import chromadb
@@ -149,7 +161,7 @@ class RagIndex:
         for start in range(0, len(all_ids), batch):
             slice_ids = all_ids[start : start + batch]
             slice_docs = all_docs[start : start + batch]
-            embs = _embed_texts(slice_docs, self.base_url)
+            embs = _embed_texts(slice_docs, base_url=self.base_url, embed_model=self.embed_model)
             self.collection.upsert(
                 ids=slice_ids,
                 embeddings=embs,
@@ -174,7 +186,7 @@ class RagIndex:
         if not query.strip():
             return []
         try:
-            [emb] = _embed_texts([query], self.base_url)
+            [emb] = _embed_texts([query], base_url=self.base_url, embed_model=self.embed_model)
         except (httpx.HTTPError, KeyError, IndexError):
             return []
         if self.collection.count() == 0:
@@ -210,7 +222,13 @@ def _vault_path(root: Path, abs_path: str) -> str:
         return abs_path
 
 
-def make_semantic_search_tool(vault_root: Path, rag_dir: Path):
+def make_semantic_search_tool(
+    vault_root: Path,
+    rag_dir: Path,
+    *,
+    base_url: str = OLLAMA_BASE_URL,
+    embed_model: str = OLLAMA_EMBED_MODEL,
+):
     """构造绑定 vault 的语义检索工具（langchain tool 形态）。"""
     root = Path(vault_root)
 
@@ -220,7 +238,7 @@ def make_semantic_search_tool(vault_root: Path, rag_dir: Path):
         与 grep（关键词）互补：grep 找得到精确词，本工具找得到「语义相关但用词不同」的笔记。
         结果含 /vault/ 路径，供 read_file 进一步读取。
         """
-        index = RagIndex(rag_dir, root)
+        index = RagIndex(rag_dir, root, base_url=base_url, embed_model=embed_model)
         try:
             stats = index.refresh()
         except Exception:

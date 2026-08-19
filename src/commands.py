@@ -187,16 +187,42 @@ def list_history(agent, thread_id: str) -> str:
     return "\n".join(lines)
 
 
-def replay(agent, thread_id: str, checkpoint_id: str) -> str:
+def prepare_replay(agent, thread_id: str, checkpoint_id: str) -> tuple[str | None, str | None]:
+    """解析 /replay 目标 checkpoint。返回 (error_message, full_checkpoint_id)。"""
     full_id = resolve_checkpoint_id(agent, thread_id, checkpoint_id)
     if full_id is None:
-        return f"重跑失败: 找不到 checkpoint {checkpoint_id}"
-    prior = {"configurable": {"thread_id": thread_id, "checkpoint_id": full_id}}
+        return f"重跑失败: 找不到 checkpoint {checkpoint_id}", None
+    return None, full_id
+
+
+def completed_turn_checkpoint(agent, thread_id: str, checkpoint_id: str):
+    """同一轮里最新的 checkpoint；仅当该轮已结束（无 next）时返回，否则 None。
+
+    /history 列出的是 input 边界（提问瞬间，next 通常仍指向模型）。
+    从该点 stream_events(None) 会再执行 LLM。已完成的轮次应直接读保存的回答。
+    """
     try:
-        result = agent.invoke(None, config=prior)
+        newest_first = list(
+            agent.get_state_history(config={"configurable": {"thread_id": thread_id}})
+        )
     except Exception:
-        return f"重跑失败: checkpoint {full_id}"
-    return "重跑结果:\n" + render(result["messages"])
+        return None
+    in_turn = False
+    end = None
+    for s in reversed(newest_first):
+        cid = (s.config or {}).get("configurable", {}).get("checkpoint_id")
+        src = (s.metadata or {}).get("source")
+        if not in_turn:
+            if cid == checkpoint_id:
+                in_turn = True
+                end = s
+            continue
+        if src == "input":
+            break
+        end = s
+    if end is None or getattr(end, "next", None):
+        return None
+    return end
 
 
 def fork(agent, thread_id: str, checkpoint_id: str):
@@ -331,22 +357,31 @@ def always_approve(permission_state: dict, tool: str) -> bool:
 
 
 def dispatch_command(agent, thread_id: str, command: str, sched=None, vault_path: Path | None = None):
-    """处理会话命令，返回 (结果文本, 新 thread_id 或 None)。fork 可能切换会话。"""
+    """处理会话命令，返回 (结果文本, 新 thread_id, replay_checkpoint_id)。
+
+    replay_checkpoint_id 非空时 text 为 None，调用方应走 stream_events 重跑。
+    """
     parts = command.split()
     cmd = parts[0]
 
     if cmd == "/sessions":
-        return list_sessions(agent), None
+        return list_sessions(agent), None, None
     if cmd == "/history":
-        return list_history(agent, thread_id), None
-    if cmd == "/replay" and len(parts) == 2:
-        return replay(agent, thread_id, parts[1]), None
+        return list_history(agent, thread_id), None, None
+    if cmd == "/replay":
+        if len(parts) != 2:
+            return "用法: /replay <checkpoint_id>", None, None
+        err, full_id = prepare_replay(agent, thread_id, parts[1])
+        if err:
+            return err, None, None
+        return None, None, full_id
     if cmd == "/fork" and len(parts) == 2:
-        return fork(agent, thread_id, parts[1])
+        text, new_thread = fork(agent, thread_id, parts[1])
+        return text, new_thread, None
     if cmd == "/snapshot":
-        return snapshot(agent, thread_id), None
+        return snapshot(agent, thread_id), None, None
     if cmd == "/snapshots":
-        return list_snapshots(), None
+        return list_snapshots(), None, None
     if cmd == "/rollback" and len(parts) == 2:
         vp = vault_path
         if vp is None:
@@ -356,12 +391,12 @@ def dispatch_command(agent, thread_id: str, command: str, sched=None, vault_path
                 vp = load_config().vault_path
             except Exception:
                 vp = None
-        return rollback(agent, thread_id, parts[1], vp), None
+        return rollback(agent, thread_id, parts[1], vp), None, None
     if cmd == "/reload-schedules":
         if sched is None:
-            return "调度器未启动，无法重载", None
+            return "调度器未启动，无法重载", None, None
         from src import scheduler
         from src.config import load_config
 
-        return scheduler.reload_schedules(sched, agent, load_config()), None
-    return f"未知命令: {cmd}（/help 查看帮助）", None
+        return scheduler.reload_schedules(sched, agent, load_config()), None, None
+    return f"未知命令: {cmd}（/help 查看帮助）", None, None
