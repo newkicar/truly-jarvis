@@ -4,8 +4,8 @@
 
 **Blocked by:** 08 — TUI 侧边栏会话列表
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `tests/test_commands.py` 补 `/replay`、`/fork`、`/rollback`（含 Inbox 清单输出断言）
-- [ ] `tests/test_hitl.py` 或等价：CLI `e` 返回 edited_action、`a` 更新 permission_state 且写回 javis.json（tmp path）
-- [ ] 全量 pytest 绿；不新增 CI 真模型依赖
+- [x] `tests/test_commands.py` 补 `/replay`、`/fork`、`/rollback`（含 Inbox 清单输出断言）
+- [x] `tests/test_hitl.py` 或等价：CLI `e` 返回 edited_action、`a` 更新 permission_state 且写回 javis.json（tmp path）
+- [x] 全量 pytest 绿；不新增 CI 真模型依赖

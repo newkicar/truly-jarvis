@@ -8,6 +8,7 @@
 import warnings
 
 import pytest
+from dataclasses import replace
 
 warnings.filterwarnings("ignore")
 
@@ -15,8 +16,8 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
+from conftest import make_fake_config
 from src.agent import build_agent
-from src.config import Config
 
 
 class ToolCallingFake(BaseChatModel):
@@ -56,20 +57,11 @@ class ToolCallingFake(BaseChatModel):
         return "tool-calling-fake"
 
 
-def _fake_config(tmp_path) -> Config:
-    return Config(
-        base_url="https://fake/v1",
-        api_key="sk",
-        model_id="m",
-        tavily_key="tvly",
-        vault_path=tmp_path / "vault",
-        memory_dir=tmp_path / "memory",
-        checkpoint_db=tmp_path / "cp.sqlite",
-        schedules_dir=tmp_path / "schedules",
-        skills=(),
-        mcps=(),
-        permissions={"execute": "ask"},
-    )
+from conftest import make_fake_config
+
+
+def _fake_config(tmp_path):
+    return replace(make_fake_config(tmp_path), permissions={"execute": "ask"})
 
 
 def test_hitl_interrupt_triggers_and_resumes(tmp_path, monkeypatch):
@@ -137,3 +129,78 @@ def test_hitl_reject_returns_rejection(tmp_path, monkeypatch):
     resume = main._handle_interrupts(stream.interrupts, None)
     assert resume["decisions"][0]["type"] == "reject"
     assert "拒绝" in resume["decisions"][0]["message"]
+
+
+def _fake_interrupt(tool="execute", args=None):
+    return type(
+        "Interrupt",
+        (),
+        {"value": {"action_requests": [{"name": tool, "args": args or {"command": "ls"}}]}},
+    )()
+
+
+def test_handle_interrupts_edit_returns_edited_action(monkeypatch):
+    """CLI e：编辑参数 → resume 带 edited_action。"""
+    import src.main as main
+    from src import streaming
+
+    interrupts = [_fake_interrupt("execute", {"command": "rm -rf /"})]
+    inputs = iter(["e", "echo safe"])
+    real_cli = streaming.cli_prompt_action
+
+    def inject_input_cli(inv, **kwargs):
+        return real_cli(
+            inv,
+            permission_state=kwargs.get("permission_state"),
+            input_fn=lambda _: next(inputs),
+        )
+
+    monkeypatch.setattr(streaming, "cli_prompt_action", inject_input_cli)
+    resume = main._handle_interrupts(interrupts, {"default": "ask", "tools": {}})
+    assert resume is not None
+    decision = resume["decisions"][0]
+    assert decision["type"] == "edit"
+    assert decision["edited_action"]["name"] == "execute"
+    assert decision["edited_action"]["args"]["command"] == "echo safe"
+
+
+def test_handle_interrupts_always_approve_updates_state_and_json(monkeypatch, tmp_path):
+    """CLI a：always approve → permission_state 更新并写 javis.json。"""
+    import src.main as main
+    from src import streaming
+
+    interrupts = [_fake_interrupt("execute", {"command": "git status"})]
+    state = {"default": "ask", "tools": {"execute": "ask", "write_file": "ask"}}
+    written = {}
+
+    import src.commands as cmds
+    import src.permissions as perms
+
+    def fake_dump(permissions, json_path):
+        written["permissions"] = permissions
+        written["path"] = json_path
+
+    def fake_apply(st, tool, action, value="*"):
+        st["tools"][tool] = action
+
+    monkeypatch.setattr(cmds, "project_root", lambda: tmp_path)
+    monkeypatch.setattr(perms, "dump_permissions_json", fake_dump)
+    monkeypatch.setattr(perms, "apply_permission_override", fake_apply)
+
+    real_cli = streaming.cli_prompt_action
+
+    def inject_input_cli(inv, **kwargs):
+        return real_cli(
+            inv,
+            permission_state=kwargs.get("permission_state"),
+            input_fn=lambda _: "a",
+            on_always_approve=kwargs.get("on_always_approve"),
+        )
+
+    monkeypatch.setattr(streaming, "cli_prompt_action", inject_input_cli)
+    resume = main._handle_interrupts(interrupts, state)
+    assert resume is not None
+    assert resume["decisions"][0]["type"] == "approve"
+    assert state["tools"]["execute"] == "allow"
+    assert written["permissions"] == {"execute": "allow"}
+    assert written["path"] == tmp_path / "javis.json"

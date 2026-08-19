@@ -228,3 +228,123 @@ def test_tool_invocation_from_action_write_file():
     inv = commands.ToolInvocation.from_action({"name": "write_file", "args": {"file_path": "/tmp/x.py"}})
     assert inv.name == "write_file"
     assert inv.path == "/tmp/x.py"
+
+
+class FakeReplayAgent:
+    def __init__(self, states, reply="重跑回答"):
+        self._states = states
+        self._reply = reply
+        self.invoked_with = None
+
+    def get_state_history(self, config=None):
+        return iter(reversed(self._states))
+
+    def invoke(self, payload, config=None):
+        self.invoked_with = config
+        ai = type("A", (), {"type": "ai", "content": self._reply})()
+        return {"messages": [ai]}
+
+
+class FakeForkAgent:
+    def __init__(self, target_state, new_thread="fork-session-1"):
+        self._target = target_state
+        self._new_thread = new_thread
+        self.update_calls = []
+
+    def get_state_history(self, config=None):
+        return iter([self._target])
+
+    def update_state(self, config, values, as_node):
+        self.update_calls.append((config, values, as_node))
+        return {"configurable": {"thread_id": self._new_thread, "checkpoint_id": "new-cp"}}
+
+
+class FakeRollbackDispatchAgent:
+    def __init__(self, states):
+        self._states = states
+
+    def get_state_history(self, config=None):
+        return iter(reversed(self._states))
+
+
+def test_dispatch_replay_command():
+    cid = "cid-0000000-aaaa"
+    agent = FakeReplayAgent([FakeState(cid, "input", -1, [_human("q")])])
+    text, new_thread = commands.dispatch_command(agent, "t", f"/replay {cid[:13]}")
+    assert "重跑结果" in text
+    assert "重跑回答" in text
+    assert agent.invoked_with == {"configurable": {"thread_id": "t", "checkpoint_id": cid}}
+    assert new_thread is None
+
+
+def test_dispatch_replay_unknown_checkpoint():
+    agent = FakeReplayAgent([])
+    text, new_thread = commands.dispatch_command(agent, "t", "/replay missing-id")
+    assert "重跑失败" in text
+    assert new_thread is None
+
+
+def test_dispatch_fork_returns_new_thread():
+    cid = "cid-0000000-aaaa"
+    target = FakeState(cid, "input", -1, [_human("q")], next_=("model",))
+    agent = FakeForkAgent(target)
+    text, new_thread = commands.dispatch_command(agent, "default", f"/fork {cid[:13]}")
+    assert "分叉" in text
+    assert new_thread == "fork-session-1"
+    assert agent.update_calls
+
+
+def test_dispatch_rollback_includes_inbox_listing(monkeypatch, tmp_path):
+    cid = "cid-0000000-aaaa"
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    agent = FakeRollbackDispatchAgent([FakeState(cid, "input", -1)])
+
+    import src.inbox_snapshots as inbox_snapshots
+    import src.time_travel as tt
+
+    monkeypatch.setattr(commands, "project_root", lambda: tmp_path)
+    monkeypatch.setattr(tt, "resolve_commit", lambda root, full_id: "abc1234567")
+    monkeypatch.setattr(tt, "rollback_commit", lambda root, commit: None)
+    monkeypatch.setattr(
+        inbox_snapshots,
+        "restore_inbox_for_rollback",
+        lambda root, vp, ag, tid, full_id: [
+            ("/vault/Inbox/note.md", "还原"),
+            ("/vault/Inbox/new.md", "删除"),
+        ],
+    )
+
+    text, new_thread = commands.dispatch_command(
+        agent, "session-1", f"/rollback {cid[:13]}", vault_path=vault
+    )
+    assert "已回退项目文件" in text
+    assert "Inbox 还原:" in text
+    assert "/vault/Inbox/note.md" in text
+    assert "删除 /vault/Inbox/new.md" in text
+    assert "/replay" in text
+    assert new_thread is None
+
+
+def test_dispatch_rollback_reports_empty_inbox(monkeypatch, tmp_path):
+    cid = "cid-0000000-bbbb"
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    agent = FakeRollbackDispatchAgent([FakeState(cid, "input", -1)])
+
+    import src.inbox_snapshots as inbox_snapshots
+    import src.time_travel as tt
+
+    monkeypatch.setattr(commands, "project_root", lambda: tmp_path)
+    monkeypatch.setattr(tt, "resolve_commit", lambda root, full_id: None)
+    monkeypatch.setattr(
+        inbox_snapshots,
+        "restore_inbox_for_rollback",
+        lambda *args, **kwargs: [],
+    )
+
+    text, _ = commands.dispatch_command(
+        agent, "session-1", f"/rollback {cid[:13]}", vault_path=vault
+    )
+    assert "未找到 checkpoint" in text or "跳过项目文件回退" in text
+    assert "Inbox：该会话无需要还原的文件" in text
