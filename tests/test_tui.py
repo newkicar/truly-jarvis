@@ -84,13 +84,40 @@ async def test_app_starts_and_quits():
 
 
 @pytest.mark.asyncio
+async def test_slash_command_runs_in_background_worker():
+    """/history 等命令不得在 UI 线程阻塞（/replay 等同理）。"""
+
+    class SlowHistoryAgent(FakeAgent):
+        checkpointer = None
+
+        def get_state_history(self, config=None):
+            time.sleep(0.4)
+            return iter([])
+
+    app = JarvisApp(None, SlowHistoryAgent(), {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "/history")
+        await pilot.pause()
+        assert app._worker is not None
+        await asyncio.sleep(0.55)
+        await pilot.pause()
+        log = pilot.app.query_one(RichLog)
+        joined = "".join(l.text for l in log.lines)
+        assert "暂无历史" in joined
+        assert "正在执行 /history" in joined
+
+
+@pytest.mark.asyncio
 async def test_history_command_shows_result():
     app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
     async with app.run_test() as pilot:
         await _type_and_enter(pilot, "/history")
         await pilot.pause()
+        await asyncio.sleep(0.15)
+        await pilot.pause()
         log = pilot.app.query_one(RichLog)
-        assert "暂无历史" in log.lines[-1].text
+        joined = "".join(l.text for l in log.lines)
+        assert "暂无历史" in joined
 
 
 @pytest.mark.asyncio
@@ -99,8 +126,11 @@ async def test_unknown_command_routes_to_dispatch():
     async with app.run_test() as pilot:
         await _type_and_enter(pilot, "/bogus")
         await pilot.pause()
+        await asyncio.sleep(0.15)
+        await pilot.pause()
         log = pilot.app.query_one(RichLog)
-        assert "未知命令" in log.lines[-1].text
+        joined = "".join(l.text for l in log.lines)
+        assert "未知命令" in joined
 
 
 @pytest.mark.asyncio

@@ -507,9 +507,31 @@ class JarvisApp(App):
             log.write(commands.TUI_HELP)
             return
         if text.startswith("/"):
-            self._run_command(text)
+            cmd = text.split()[0]
+            log.write(system_message_markup(f"正在执行 {cmd}…"))
+            self._worker = self.run_worker(partial(self._run_command_worker, text), thread=True)
             return
         self._worker = self.run_worker(partial(self._stream_turn, text), thread=True)
+
+    def _run_command_worker(self, text: str) -> None:
+        """后台线程执行可能阻塞的命令（如 /replay 的 agent.invoke）。"""
+        try:
+            result, new_thread = commands.dispatch_command(
+                self.agent, self.thread_id, text, self.sched
+            )
+        except Exception as exc:
+            result, new_thread = f"命令失败: {exc}", None
+        self.call_from_thread(self._apply_command_result, result, new_thread)
+
+    def _apply_command_result(self, result: str, new_thread: str | None) -> None:
+        log = self.query_one("#messages", RichLog)
+        log.write(result)
+        if new_thread:
+            self.thread_id = new_thread
+            self._update_sub_title()
+            self._refresh_session_sidebar()
+            log.write(f"[b]已切换到会话 {new_thread}[/b]")
+        self.query_one("#input", Input).focus()
 
     def _session_sidebar(self) -> SessionSidebar:
         return self.query_one("#session_sidebar", SessionSidebar)
@@ -615,16 +637,6 @@ class JarvisApp(App):
             self._apply_path_completion()
             return
         self._handle_user_message(event.value)
-
-    def _run_command(self, text: str) -> None:
-        log = self.query_one("#messages", RichLog)
-        result, new_thread = commands.dispatch_command(self.agent, self.thread_id, text, self.sched)
-        log.write(result)
-        if new_thread:
-            self.thread_id = new_thread
-            self._update_sub_title()
-            self._refresh_session_sidebar()
-            log.write(f"[b]已切换到会话 {new_thread}[/b]")
 
     def _stream_turn(self, user_input: str) -> None:
         """后台线程消费 stream_events(v3)，逐字写入 RichLog。"""
