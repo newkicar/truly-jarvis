@@ -100,6 +100,14 @@ def list_snapshots(root: Path) -> list[tuple[str, str, str, str]]:
         ).fetchall()
 
 
+def delete_snapshots_for_thread(root: Path, thread_id: str) -> int:
+    """删除某会话在映射表中的文件快照记录（不改动 git 历史）。"""
+    with _db(root) as conn:
+        cur = conn.execute("DELETE FROM snapshots WHERE thread_id = ?", (thread_id,))
+        conn.commit()
+        return cur.rowcount
+
+
 def resolve_commit(root: Path, raw: str) -> Optional[str]:
     """把用户输入（完整 checkpoint_id 或短 id 前缀）解析成 commit_hash。
 

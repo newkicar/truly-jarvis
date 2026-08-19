@@ -109,6 +109,14 @@ def list_writes(project_root: Path, thread_id: str | None = None) -> list[dict]:
     ]
 
 
+def delete_writes_for_thread(project_root: Path, thread_id: str) -> int:
+    """删除某会话的 Inbox 写入快照记录（不改动 vault 文件）。"""
+    with _db(project_root) as conn:
+        cur = conn.execute("DELETE FROM inbox_writes WHERE thread_id = ?", (thread_id,))
+        conn.commit()
+        return cur.rowcount
+
+
 def _checkpoints_newer_than(agent, thread_id: str, target_checkpoint_id: str) -> set[str] | None:
     """返回严格新于 target 的 checkpoint_id 集合；target 不存在则 None。"""
     newer: set[str] = set()

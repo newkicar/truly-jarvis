@@ -5,9 +5,10 @@ import time
 
 import pytest
 
-from textual.widgets import Input, RichLog, Static
+from textual.widgets import Input, Static
 
 from src.tui import EditParamsModal, JarvisApp, PathCompletionOverlay, PermissionModal, SessionSidebar
+from src.tui_log import CopyableRichLog
 from src import commands
 
 
@@ -78,7 +79,7 @@ async def _type_and_enter(pilot, text):
 async def test_app_starts_and_quits():
     app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
     async with app.run_test() as pilot:
-        assert isinstance(pilot.app.query_one("#messages"), RichLog)
+        assert isinstance(pilot.app.query_one("#messages"), CopyableRichLog)
         assert isinstance(pilot.app.query_one(Input), Input)
         await pilot.pause()
 
@@ -101,7 +102,7 @@ async def test_slash_command_runs_in_background_worker():
         assert app._worker is not None
         await asyncio.sleep(0.55)
         await pilot.pause()
-        log = pilot.app.query_one(RichLog)
+        log = pilot.app.query_one(CopyableRichLog)
         joined = "".join(l.text for l in log.lines)
         assert "暂无历史" in joined
         assert "正在执行 /history" in joined
@@ -115,7 +116,7 @@ async def test_history_command_shows_result():
         await pilot.pause()
         await asyncio.sleep(0.15)
         await pilot.pause()
-        log = pilot.app.query_one(RichLog)
+        log = pilot.app.query_one(CopyableRichLog)
         joined = "".join(l.text for l in log.lines)
         assert "暂无历史" in joined
 
@@ -128,7 +129,7 @@ async def test_unknown_command_routes_to_dispatch():
         await pilot.pause()
         await asyncio.sleep(0.15)
         await pilot.pause()
-        log = pilot.app.query_one(RichLog)
+        log = pilot.app.query_one(CopyableRichLog)
         joined = "".join(l.text for l in log.lines)
         assert "未知命令" in joined
 
@@ -145,7 +146,7 @@ async def test_streaming_renders_markdown_not_typing_placeholder():
         await pilot.pause()
         await asyncio.sleep(0.35)
         await pilot.pause()
-        log = pilot.app.query_one(RichLog)
+        log = pilot.app.query_one(CopyableRichLog)
         joined = "".join(l.text for l in log.lines)
         assert "正在思考" not in joined
         assert "JARVIS" in joined
@@ -162,7 +163,7 @@ async def test_plain_text_streams_reply():
         await pilot.pause()
         await asyncio.sleep(0.3)
         await pilot.pause()
-        log = pilot.app.query_one(RichLog)
+        log = pilot.app.query_one(CopyableRichLog)
         joined = "".join(l.text for l in log.lines)
         assert "你好" in joined
         assert "JARVIS" in joined
@@ -209,7 +210,7 @@ async def test_escape_cancels_streaming():
         await pilot.pause()
         await asyncio.sleep(0.4)
         await pilot.pause()
-        log = pilot.app.query_one(RichLog)
+        log = pilot.app.query_one(CopyableRichLog)
         joined = "".join(l.text for l in log.lines)
         assert "已取消" in joined
 
@@ -233,7 +234,7 @@ async def test_interrupt_pops_permission_modal_and_approves():
         await pilot.pause()
         await asyncio.sleep(0.2)
         await pilot.pause()
-        log = pilot.app.query_one(RichLog)
+        log = pilot.app.query_one(CopyableRichLog)
         assert "model" in "".join(l.text for l in log.lines)
 
 
@@ -255,7 +256,7 @@ async def test_interrupt_reject_shows_message():
         await pilot.pause()
         await asyncio.sleep(0.2)
         await pilot.pause()
-        log = pilot.app.query_one(RichLog)
+        log = pilot.app.query_one(CopyableRichLog)
         assert "已放弃" not in "".join(l.text for l in log.lines)
 
 
@@ -323,7 +324,7 @@ async def test_session_sidebar_lists_and_switches_thread():
 
         assert app.thread_id == "session-old"
         assert "session-old" in app.sub_title
-        log = pilot.app.query_one(RichLog)
+        log = pilot.app.query_one(CopyableRichLog)
         assert "已切换到会话 session-old" in "".join(l.text for l in log.lines)
 
 
@@ -353,7 +354,7 @@ async def test_startup_prompt_auto_submits_message():
         await pilot.pause()
         await asyncio.sleep(0.35)
         await pilot.pause()
-        log = pilot.app.query_one(RichLog)
+        log = pilot.app.query_one(CopyableRichLog)
         joined = "".join(l.text for l in log.lines)
         assert "自动冒烟问题" in joined
 

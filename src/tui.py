@@ -17,6 +17,7 @@ from textual.worker import Worker, get_current_worker
 
 from src import commands, streaming
 from src.tui_completion import OverlayState, apply_suggestion, resolve_overlay_state
+from src.tui_log import CopyableRichLog
 from src.tui_format import (
     DEFAULT_TUI_THEME,
     LEGACY_BAD_THEMES,
@@ -206,7 +207,9 @@ class PathCompletionOverlay(OptionList):
 
 
 class SessionSidebar(OptionList):
-    """可折叠会话列表侧边栏。"""
+    """可折叠会话列表侧边栏。聚焦后 Y 复制 ID、D 删除（由 JarvisApp 处理）。"""
+
+    can_focus = True
 
     DEFAULT_CSS = """
     SessionSidebar {
@@ -246,14 +249,21 @@ class SessionSidebar(OptionList):
 
 
 class JarvisApp(App):
-    """JARVIS TUI。BINDINGS: ctrl+c 退出、Tab 切换焦点、ctrl+n 新会话。"""
+    """JARVIS TUI。侧边栏 Y/Ctrl+Insert 复制会话 ID；Ctrl+C/Q 退出。"""
+
+    ALLOW_SELECT = True
 
     BINDINGS = [
         Binding("ctrl+n", "new_session", "新会话"),
         Binding("ctrl+b", "toggle_sidebar", "侧边栏"),
         Binding("ctrl+t", "change_theme", "切换主题"),
+        Binding("y", "copy_session_or_selection", "复制ID", show=False),
+        Binding("d", "delete_highlighted_session", "删会话", show=False),
+        Binding("ctrl+insert", "copy_session_or_selection", "复制", priority=True),
+        Binding("ctrl+shift+c", "copy_session_or_selection", "复制", priority=True),
         Binding("tab", "accept_suggestion", "接受建议", show=False),
         Binding("escape", "cancel", "取消", show=False),
+        Binding("ctrl+q", "quit", "退出"),
         Binding("ctrl+c", "quit", "退出", priority=True),
     ]
 
@@ -450,7 +460,7 @@ class JarvisApp(App):
             with Vertical(id="content_column"):
                 with Container(id="chat_frame"):
                     with Vertical(id="chat_stack"):
-                        yield RichLog(id="messages", wrap=True, markup=True, auto_scroll=True)
+                        yield CopyableRichLog(id="messages", wrap=True, markup=True, auto_scroll=True)
                         yield Static("", id="ai_stream")
                 with Horizontal(id="editor_frame"):
                     yield Static("›", id="prompt")
@@ -489,6 +499,11 @@ class JarvisApp(App):
     def on_mount(self) -> None:
         log = self.query_one("#messages", RichLog)
         self._write_system(log, "JARVIS 就绪。@ 引用路径，/ 命令；Tab 接受建议，Enter 发送。")
+        self._write_system(
+            log,
+            "会话：Ctrl+B 开侧边栏 → 点选 → Y 复制 ID / D 删除；或 /delete-session 2 按序号。"
+            " 复制：/copy-session 或 Ctrl+Insert。退出：/exit 或 Ctrl+Q。",
+        )
         for line in self._startup_lines:
             self._write_system(log, line)
         self._refresh_session_sidebar()
@@ -553,8 +568,8 @@ class JarvisApp(App):
         if new_thread:
             self.thread_id = new_thread
             self._update_sub_title()
-            self._refresh_session_sidebar()
             log.write(f"[b]已切换到会话 {new_thread}[/b]")
+        self._refresh_session_sidebar()
         self.query_one("#input", Input).focus()
 
     def _session_sidebar(self) -> SessionSidebar:
@@ -808,9 +823,57 @@ class JarvisApp(App):
         value = result_holder.get("value")
         return value if isinstance(value, dict) else None
 
+    def _highlighted_session_id(self) -> str | None:
+        sidebar = self._session_sidebar()
+        if sidebar.option_count == 0:
+            return None
+        option = sidebar.get_option_at_index(sidebar.highlighted)
+        if option is None or option.id is None:
+            return None
+        return str(option.id)
+
+    def _copy_to_clipboard(self, text: str, message: str) -> None:
+        from src.tui_log import copy_text_to_system_clipboard
+
+        self.copy_to_clipboard(text)
+        copy_text_to_system_clipboard(text)
+        self.notify(message, timeout=2)
+
+    def action_copy_session_or_selection(self) -> None:
+        """复制：侧边栏高亮会话 ID > 日志区拖选 > 提示用法。"""
+        sidebar = self._session_sidebar()
+        if sidebar.has_focus:
+            session_id = self._highlighted_session_id()
+            if session_id:
+                self._copy_to_clipboard(session_id, f"已复制: {session_id}")
+                return
+        selected = self.screen.get_selected_text()
+        if selected and selected.strip():
+            self._copy_to_clipboard(selected.strip(), "已复制选中文本")
+            return
+        if self.thread_id:
+            self._copy_to_clipboard(self.thread_id, f"已复制当前会话: {self.thread_id}")
+            return
+        self.notify("Ctrl+B 打开侧边栏，选中会话后按 Y", timeout=3)
+
+    def action_delete_highlighted_session(self) -> None:
+        """侧边栏聚焦时删除高亮会话。"""
+        sidebar = self._session_sidebar()
+        if not sidebar.has_focus:
+            self.notify("请先 Ctrl+B 打开侧边栏并选中会话", timeout=2)
+            return
+        session_id = self._highlighted_session_id()
+        if not session_id:
+            return
+        text, new_thread = commands.delete_session(self.agent, session_id, self.thread_id)
+        self._apply_command_result(text, new_thread)
+
+    def action_copy_selection(self) -> None:
+        self.action_copy_session_or_selection()
+
     def action_cancel(self) -> None:
         if self._worker is not None:
-            log = self.query_one("#messages", RichLog)
+            log = self.query_one("#messages", CopyableRichLog)
             self._hide_ai_stream()
             log.write("[i][dim]（已取消）[/dim][/i]")
             self._worker.cancel()
@@ -821,5 +884,5 @@ class JarvisApp(App):
         self.thread_id = f"session-{uuid.uuid4().hex[:8]}"
         self._update_sub_title()
         self._refresh_session_sidebar()
-        log = self.query_one("#messages", RichLog)
+        log = self.query_one("#messages", CopyableRichLog)
         log.write(f"[b]已开启新会话 {self.thread_id}[/b]")

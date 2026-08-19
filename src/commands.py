@@ -12,6 +12,8 @@ _HELP_COMMANDS = """\
 命令：
   /exit           退出
   /sessions       列出历史会话
+  /delete-session [thread_id]  删除历史会话（可写序号；省略 id 则删当前）
+  /copy-session   复制当前会话 ID 到剪贴板
   /history        查看当前会话时间线（每轮提问/分叉，短 id 可用于回退）
   /replay <id>    从指定 checkpoint 重跑（支持短 id）
   /fork <id>      从指定 checkpoint 分叉出新分支（支持短 id）
@@ -30,6 +32,9 @@ CLI_HELP = (
 
 TUI_HELP = (
     _HELP_COMMANDS
+    + "会话：侧边栏点选后 Y 复制 ID、D 删除；或 /delete-session 2 按序号删。\n"
+    + "复制：Ctrl+Insert / Y（侧边栏会话）；Cursor 终端里 Ctrl+Shift+C 可能被系统截获。\n"
+    + "退出：Ctrl+C 或 Ctrl+Q；集成终端若 Ctrl+C 直接杀进程，请用 /exit。\n"
     + "HITL 审批时: 点击按钮选择（放行/永久放行/拒绝/编辑参数），Esc 放弃。\n"
 )
 
@@ -163,7 +168,91 @@ def list_sessions(agent) -> str:
         return "（无 checkpointer，无法列出会话）"
     if not threads:
         return "（暂无历史会话）"
-    return "历史会话:\n" + "\n".join(f"  - {t}" for t in threads)
+    lines = ["历史会话:"]
+    for i, t in enumerate(threads, 1):
+        lines.append(f"  {i}. {t}")
+    lines.append(
+        "删除: /delete-session <序号或 thread_id>（省略 id 删当前；序号见上表）"
+    )
+    lines.append("复制当前会话 ID: /copy-session")
+    return "\n".join(lines)
+
+
+def resolve_session_target(agent, raw: str) -> str | None:
+    """解析会话目标：序号（/sessions 列表）或 thread_id 前缀。"""
+    raw = raw.strip()
+    if not raw:
+        return None
+    threads = session_thread_ids(agent)
+    if raw.isdigit():
+        idx = int(raw)
+        if 1 <= idx <= len(threads):
+            return threads[idx - 1]
+        return None
+    return resolve_thread_id(agent, raw)
+
+
+def copy_session_id_text(thread_id: str) -> str:
+    """复制 thread_id 到系统剪贴板（Windows），并返回提示文本。"""
+    from src.tui_log import copy_text_to_system_clipboard
+
+    copy_text_to_system_clipboard(thread_id)
+    return f"已复制会话 ID: {thread_id}"
+
+
+def resolve_thread_id(agent, raw: str) -> str | None:
+    """把用户输入解析成 thread_id（完整 id 或前缀唯一匹配）。"""
+    raw = raw.strip()
+    if not raw:
+        return None
+    threads = session_thread_ids(agent)
+    if raw in threads:
+        return raw
+    matches = [t for t in threads if t.startswith(raw)]
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+def delete_session(agent, target: str, current_thread_id: str) -> tuple[str, str | None]:
+    """删除指定会话 checkpoint；若删的是当前会话则返回新 thread_id。"""
+    if target.startswith("sched-"):
+        return "不能删除定时任务会话 sched-*", None
+
+    resolved = resolve_session_target(agent, target)
+    if resolved is None:
+        threads = session_thread_ids(agent)
+        if target.isdigit():
+            return f"删除失败: 无效序号「{target}」（当前共 {len(threads)} 个会话）", None
+        matches = [t for t in threads if t.startswith(target)]
+        if len(matches) > 1:
+            return f"删除失败: thread_id「{target}」歧义，匹配: {', '.join(matches)}", None
+        return f"删除失败: 找不到会话「{target}」", None
+
+    checkpointer = getattr(agent, "checkpointer", None)
+    if checkpointer is None or not hasattr(checkpointer, "delete_thread"):
+        return "（无 checkpointer，无法删除会话）", None
+
+    checkpointer.delete_thread(resolved)
+
+    from src import inbox_snapshots
+
+    root = project_root()
+    inbox_count = inbox_snapshots.delete_writes_for_thread(root, resolved)
+    snap_count = time_travel.delete_snapshots_for_thread(root, resolved)
+    extras: list[str] = []
+    if inbox_count:
+        extras.append(f"Inbox 快照 {inbox_count} 条")
+    if snap_count:
+        extras.append(f"文件快照映射 {snap_count} 条")
+    extra_msg = f"（一并清理: {', '.join(extras)}）" if extras else ""
+
+    if resolved == current_thread_id:
+        import uuid
+
+        new_thread = f"session-{uuid.uuid4().hex[:8]}"
+        return f"已删除当前会话 {resolved}，并切换到新会话 {new_thread}{extra_msg}", new_thread
+    return f"已删除会话 {resolved}{extra_msg}", None
 
 
 def list_history(agent, thread_id: str) -> str:
@@ -369,6 +458,14 @@ def dispatch_command(agent, thread_id: str, command: str, sched=None, vault_path
 
     if cmd == "/sessions":
         return list_sessions(agent), None, None
+    if cmd == "/delete-session":
+        if len(parts) > 2:
+            return "用法: /delete-session [thread_id]", None, None
+        target = parts[1] if len(parts) == 2 else thread_id
+        text, new_thread = delete_session(agent, target, thread_id)
+        return text, new_thread, None
+    if cmd == "/copy-session":
+        return copy_session_id_text(thread_id), None, None
     if cmd == "/history":
         return list_history(agent, thread_id), None, None
     if cmd == "/replay":

@@ -97,7 +97,152 @@ def test_list_sessions_filters_sched_threads():
     text = commands.list_sessions(FakeAgent2())
     assert "default" in text
     assert "session-abc" in text
+    assert "1." in text
+    assert "/copy-session" in text
     assert "sched-tech-daily" not in text
+    assert "/delete-session" in text
+
+
+def test_resolve_session_target_by_index():
+    class FakeConn:
+        def execute(self, sql):
+            return self
+
+        def fetchall(self):
+            return [("default",), ("session-abc",), ("session-xyz",)]
+
+    class FakeCp:
+        conn = FakeConn()
+
+    class FakeAgent:
+        checkpointer = FakeCp()
+
+    assert commands.resolve_session_target(FakeAgent(), "2") == "session-abc"
+    assert commands.resolve_session_target(FakeAgent(), "9") is None
+
+
+def test_dispatch_copy_session_command():
+    text, new_thread, replay = commands.dispatch_command(object(), "session-1", "/copy-session")
+    assert "已复制会话 ID: session-1" in text
+    assert new_thread is None
+
+
+def test_resolve_thread_id_prefix():
+    class FakeConn:
+        def execute(self, sql):
+            return self
+
+        def fetchall(self):
+            return [("default",), ("session-abc123",), ("session-xyz",)]
+
+    class FakeCp:
+        conn = FakeConn()
+
+    class FakeAgent:
+        checkpointer = FakeCp()
+
+    assert commands.resolve_thread_id(FakeAgent(), "session-abc123") == "session-abc123"
+    assert commands.resolve_thread_id(FakeAgent(), "session-abc") == "session-abc123"
+    assert commands.resolve_thread_id(FakeAgent(), "session-") is None  # 歧义
+
+
+def test_delete_session_removes_thread(monkeypatch, tmp_path):
+    deleted: list[str] = []
+
+    class FakeConn:
+        def execute(self, sql):
+            return self
+
+        def fetchall(self):
+            return [("session-old",), ("default",)]
+
+    class FakeCp:
+        conn = FakeConn()
+
+        def delete_thread(self, thread_id):
+            deleted.append(thread_id)
+
+    class FakeAgent:
+        checkpointer = FakeCp()
+
+    monkeypatch.setattr(commands, "project_root", lambda: tmp_path)
+
+    import src.inbox_snapshots as inbox_snapshots
+    import src.time_travel as tt
+
+    monkeypatch.setattr(inbox_snapshots, "delete_writes_for_thread", lambda root, tid: 2)
+    monkeypatch.setattr(tt, "delete_snapshots_for_thread", lambda root, tid: 1)
+
+    text, new_thread = commands.delete_session(FakeAgent(), "session-old", "default")
+    assert deleted == ["session-old"]
+    assert "已删除会话 session-old" in text
+    assert new_thread is None
+
+
+def test_delete_session_current_switches_thread(monkeypatch, tmp_path):
+    deleted: list[str] = []
+
+    class FakeConn:
+        def execute(self, sql):
+            return self
+
+        def fetchall(self):
+            return [("session-old",)]
+
+    class FakeCp:
+        conn = FakeConn()
+
+        def delete_thread(self, thread_id):
+            deleted.append(thread_id)
+
+    class FakeAgent:
+        checkpointer = FakeCp()
+
+    monkeypatch.setattr(commands, "project_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        "src.inbox_snapshots.delete_writes_for_thread", lambda root, tid: 0
+    )
+    monkeypatch.setattr(
+        "src.time_travel.delete_snapshots_for_thread", lambda root, tid: 0
+    )
+
+    text, new_thread = commands.delete_session(FakeAgent(), "session-old", "session-old")
+    assert deleted == ["session-old"]
+    assert new_thread and new_thread.startswith("session-")
+    assert "已删除当前会话" in text
+
+
+def test_delete_session_rejects_sched():
+    class FakeCp:
+        def delete_thread(self, thread_id):
+            raise AssertionError("should not delete")
+
+    class FakeAgent:
+        checkpointer = FakeCp()
+
+    text, new_thread = commands.delete_session(
+        FakeAgent(), "sched-tech-daily", "default"
+    )
+    assert "不能删除" in text
+    assert new_thread is None
+
+
+def test_dispatch_delete_session_command(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        commands,
+        "delete_session",
+        lambda agent, target, current: (f"deleted {target}", None),
+    )
+
+    text, new_thread, replay = commands.dispatch_command(
+        object(), "default", "/delete-session session-abc"
+    )
+    assert text == "deleted session-abc"
+    assert new_thread is None
+    assert replay is None
+
+    text2, new_thread2, _ = commands.dispatch_command(object(), "default", "/delete-session")
+    assert text2 == "deleted default"
 
 
 def test_session_thread_ids_filters_sched_threads():
@@ -220,6 +365,8 @@ def test_always_approve_persists_gated_tool(monkeypatch, tmp_path):
 def test_cli_help_and_tui_help_share_commands():
     assert "/exit" in commands.CLI_HELP
     assert "/exit" in commands.TUI_HELP
+    assert "/delete-session" in commands.CLI_HELP
+    assert "Ctrl+Insert" in commands.TUI_HELP
     assert "[y]本次放行" in commands.CLI_HELP
     assert "按钮" in commands.TUI_HELP
     assert "[y]本次放行" not in commands.TUI_HELP

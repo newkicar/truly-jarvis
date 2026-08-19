@@ -1,7 +1,7 @@
 """JARVIS 入口。
 
 默认启动 Textual TUI；`--cli` 参数回退到标准库 input 交互循环。
-CLI 支持 /exit、/sessions、/history、/replay、/fork、/snapshot、/rollback 等命令。
+CLI 支持 /exit、/sessions、/delete-session、/history、/replay、/fork、/snapshot、/rollback 等命令。
 """
 import sys
 

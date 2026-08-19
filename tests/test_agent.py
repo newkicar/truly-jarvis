@@ -57,6 +57,10 @@ def test_build_main_prompt_injects_session_date():
     assert "停止规则" not in prompt
     assert "skills" in prompt and "MCP" in prompt
     assert "execute" in prompt
+    assert "JARVIS" in prompt
+    assert "muse-spark" not in prompt.lower() or "不要" in prompt
+    assert "CodeInterpreter" in prompt
+    assert "禁止" in prompt
     assert "Reports" in prompt
 
 
