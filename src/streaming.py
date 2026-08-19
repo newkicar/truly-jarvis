@@ -14,6 +14,24 @@ _SUBAGENT_ACTIVE = frozenset({"started", "running", "start"})
 _SUBAGENT_DONE = frozenset({"completed", "failed", "done", "error"})
 
 
+def iter_text_deltas(chunks) -> list[str]:
+    """从 stream_events message.text 提取字符串 delta，跳过 tool_call blocks。"""
+    out: list[str] = []
+    for chunk in chunks:
+        if isinstance(chunk, str):
+            if chunk:
+                out.append(chunk)
+        elif isinstance(chunk, dict):
+            if chunk.get("type") == "text":
+                text = chunk.get("text", "")
+                if text:
+                    out.append(str(text))
+            continue
+        elif isinstance(chunk, list):
+            out.extend(iter_text_deltas(chunk))
+    return out
+
+
 def _tool_output(item) -> str | None:
     """从 stream tool_calls 项提取输出文本。"""
     if getattr(item, "error", None):
@@ -184,8 +202,8 @@ def consume_stream_events(
                 subagent_depth,
             )
         else:
-            segment = []
-            for delta in item.text:
+            segment: list[str] = []
+            for delta in iter_text_deltas(item.text):
                 if is_cancelled():
                     if on_cancelled:
                         on_cancelled()

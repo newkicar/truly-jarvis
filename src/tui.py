@@ -471,6 +471,8 @@ class JarvisApp(App):
 
     def _finalize_ai_stream(self, log: RichLog, text: str) -> None:
         self._hide_ai_stream()
+        if not isinstance(text, str):
+            text = commands.content_to_text(text)
         if text.strip():
             self._write_ai(log, text)
 
@@ -658,6 +660,8 @@ class JarvisApp(App):
                 self.call_from_thread(self._update_ai_stream, throttler.buffer)
 
         def on_message_end(segment: str) -> None:
+            if not isinstance(segment, str):
+                segment = commands.content_to_text(segment)
             if cancelled() or not segment.strip():
                 return
             refresh_stream(force=True)
@@ -671,6 +675,8 @@ class JarvisApp(App):
             if cancelled():
                 if not cancel_notified:
                     on_cancelled()
+                return
+            if not isinstance(delta, str):
                 return
             throttler.append(delta)
             refresh_stream()

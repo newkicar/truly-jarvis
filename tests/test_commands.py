@@ -230,6 +230,20 @@ def test_tool_invocation_from_action_write_file():
     assert inv.path == "/tmp/x.py"
 
 
+def test_content_to_text_skips_tool_call_blocks():
+    blocks = [
+        {"type": "tool_call", "id": "c1", "name": "task", "args": {"subagent_type": "researcher"}},
+        {"type": "text", "text": "正在委派"},
+    ]
+    assert commands.content_to_text(blocks) == "正在委派"
+    assert commands.content_to_text([{"type": "tool_call", "name": "task"}]) == ""
+
+
+def test_render_ignores_tool_call_only_content():
+    ai = type("A", (), {"type": "ai", "content": [{"type": "tool_call", "name": "task", "args": {}}]})()
+    assert commands.render([ai]) == ""
+
+
 class FakeReplayAgent:
     def __init__(self, states, reply="重跑回答"):
         self._states = states

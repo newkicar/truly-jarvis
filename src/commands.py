@@ -58,11 +58,31 @@ def project_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def content_to_text(content) -> str:
+    """把 AI message content（str 或 content blocks 列表）转为可展示纯文本。"""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                block_type = block.get("type")
+                if block_type == "text":
+                    parts.append(str(block.get("text", "")))
+                # tool_call / tool_use 等由 tool_calls 通道展示，跳过
+        return "".join(parts)
+    return str(content)
+
+
 def render(messages) -> str:
-    """取最后一条 AI 消息内容。"""
+    """取最后一条 AI 消息的可展示文本（忽略 tool_call blocks）。"""
     for msg in reversed(messages):
         if msg.type == "ai":
-            return msg.content
+            return content_to_text(getattr(msg, "content", ""))
     return ""
 
 
