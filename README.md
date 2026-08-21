@@ -145,7 +145,7 @@ python -m src.smoke_test --tui-hitl
 
 **LangSmith 401 警告**：未配置 LangSmith API key 时会有 tracing 报错，不影响对话；本地可设 `LANGCHAIN_TRACING_V2=false` 静音。
 
-**快速自检**：输入 `/doctor` 查看项目根、模型、配置来源与当前会话是否 stuck。
+**快速自检**：输入 `/doctor` 查看项目根、模型、配置来源与当前会话是否 stuck；取消/Esc 后若仍异常，同 thread 再发消息会自动 `finalize_turn` 清理。
 
 ---
 

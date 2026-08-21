@@ -628,6 +628,83 @@ def test_repair_stuck_thread_rolls_back_to_last_good_checkpoint():
     }
 
 
+def test_turn_needs_finalize_detects_stuck_and_pending_next(monkeypatch):
+    class CleanState:
+        def __init__(self):
+            self.next = ()
+
+    class PendingState:
+        def __init__(self):
+            self.next = ("model",)
+
+    class CleanAgent:
+        checkpointer = object()
+
+        def get_state(self, config=None):
+            return CleanState()
+
+    class PendingAgent:
+        checkpointer = object()
+
+        def get_state(self, config=None):
+            return PendingState()
+
+    monkeypatch.setattr(commands, "checkpoint_config_stuck", lambda *a, **k: False)
+    assert not commands.turn_needs_finalize(CleanAgent(), "t")
+    assert commands.turn_needs_finalize(PendingAgent(), "t")
+    monkeypatch.setattr(commands, "checkpoint_config_stuck", lambda *a, **k: True)
+    assert commands.turn_needs_finalize(CleanAgent(), "t")
+
+
+def test_finalize_turn_rolls_back_pending_interrupt():
+    class FakeTuple:
+        def __init__(self, channel_values):
+            self.checkpoint = {"channel_values": channel_values}
+
+    class FakeCheckpointer:
+        def __init__(self):
+            self.by_cid = {
+                "pending": {"messages": []},
+                "good": {"messages": []},
+            }
+            self.updated = None
+
+        def get_tuple(self, config):
+            cid = config["configurable"].get("checkpoint_id")
+            if cid is None:
+                return FakeTuple({"messages": []})
+            return FakeTuple(self.by_cid[cid])
+
+    class PendingState:
+        def __init__(self, cid, *, next=()):
+            self.config = {"configurable": {"checkpoint_id": cid}}
+            self.next = next
+
+    class FinalizeAgent:
+        def __init__(self):
+            self.checkpointer = FakeCheckpointer()
+            self._history = [
+                PendingState("good", next=()),
+                PendingState("pending", next=("tools",)),
+            ]
+
+        def get_state(self, config=None):
+            return PendingState("pending", next=("tools",))
+
+        def get_state_history(self, config=None):
+            return iter(reversed(self._history))
+
+        def update_state(self, config, values):
+            self.checkpointer.updated = config
+
+    agent = FinalizeAgent()
+    assert commands.turn_needs_finalize(agent, "default") is True
+    assert commands.finalize_turn(agent, "default") is True
+    assert agent.checkpointer.updated == {
+        "configurable": {"thread_id": "default", "checkpoint_id": "good"}
+    }
+
+
 def test_format_agent_error_mentions_delete_session():
     class BadRequestError(Exception):
         pass
@@ -708,6 +785,8 @@ def test_format_doctor_report_healthy(tmp_path, monkeypatch):
     assert "secr…" in text
     assert "permissions: *=ask" in text
     assert "消息条数:   1" in text
+    assert "execute 已加载" in text
+    assert "write_todos 已加载" in text
 
 
 def test_format_doctor_report_stuck(tmp_path, monkeypatch):
@@ -736,7 +815,7 @@ def test_format_doctor_report_stuck(tmp_path, monkeypatch):
     )
     agent = _FakeDoctorAgent(stuck=True)
     text = commands.format_doctor_report(cfg, agent, "default")
-    assert "⚠ 卡住" in text
+    assert "⚠ 未完成" in text
     assert "/delete-session" in text
 
 

@@ -1,6 +1,7 @@
 """CLI/TUI 共用的 stream_events(v3) 消费与 HITL 决策组装。"""
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -87,6 +88,35 @@ def decision_from_choice(
             "edited_action": {"name": name, "args": edited or dict(args or {})},
         }
     return None
+
+
+def interrupt_action_key(action: dict) -> str:
+    """HITL action_requests 项的稳定键（用于 pending 去重 / replay 过滤）。"""
+    name = action.get("name", "?")
+    args = action.get("args") or {}
+    explicit = action.get("id") or action.get("call_id")
+    if explicit:
+        return str(explicit)
+    return f"{name}:{json.dumps(args, sort_keys=True, default=str)}"
+
+
+def filter_pending_interrupts(interrupts, resolved_keys: set[str] | frozenset[str] | None):
+    """去掉已 resolved 的 action_requests；若全无 pending 则返回空列表。"""
+    if not interrupts:
+        return []
+    resolved = resolved_keys or frozenset()
+    filtered = []
+    for interrupt in interrupts:
+        value = getattr(interrupt, "value", None) or {}
+        pending = [
+            action
+            for action in value.get("action_requests", [])
+            if interrupt_action_key(action) not in resolved
+        ]
+        if not pending:
+            continue
+        filtered.append(type("I", (), {"value": {**value, "action_requests": pending}})())
+    return filtered
 
 
 def collect_interrupt_decisions(
@@ -246,6 +276,7 @@ def run_agent_turn(
     on_fallback_message: Callable[[str], None] | None = None,
     on_stream_start: Callable[[], None] | None = None,
     on_cancelled: Callable[[], None] | None = None,
+    on_turn_incomplete: Callable[[], None] | None = None,
 ) -> bool:
     """跑一轮对话或 checkpoint 重跑（含 HITL resume 循环）。返回 True=正常结束，False=放弃/取消。"""
     from langgraph.types import Command
@@ -253,6 +284,13 @@ def run_agent_turn(
     base_config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 30}
     resume = None
     replay_pending = checkpoint_id is not None
+    outcome = "complete"
+
+    def _finalize_if_needed() -> None:
+        commands.finalize_turn(agent, thread_id)
+        if on_turn_incomplete:
+            on_turn_incomplete()
+
     if replay_pending:
         saved = commands.completed_turn_checkpoint(agent, thread_id, checkpoint_id)
         if saved is not None:
@@ -275,55 +313,62 @@ def run_agent_turn(
         )
         return consumed, stream
 
-    while not is_cancelled():
-        if on_stream_start:
-            on_stream_start()
-        if resume:
-            stream_input: Any = Command(resume=resume)
-            config = base_config
-        elif replay_pending:
-            stream_input = None
-            config = {
-                "configurable": {"thread_id": thread_id, "checkpoint_id": checkpoint_id},
-                "recursion_limit": 30,
-            }
-            replay_pending = False
-        else:
-            commands.repair_stuck_thread(agent, thread_id)
-            stream_input = {"messages": [{"role": "user", "content": user_input}]}
-            config = base_config
-        try:
-            consumed, stream = _run_stream(stream_input, config)
-        except Exception as exc:
-            commands.repair_stuck_thread(agent, thread_id)
-            if (
-                not resume
-                and not replay_pending
-                and user_input
-                and ("BadRequest" in type(exc).__name__ or "400" in str(exc))
-            ):
-                try:
-                    consumed, stream = _run_stream(
-                        {"messages": [{"role": "user", "content": user_input}]},
-                        base_config,
-                    )
-                except Exception:
-                    raise exc from None
+    try:
+        while not is_cancelled():
+            if on_stream_start:
+                on_stream_start()
+            if resume:
+                stream_input: Any = Command(resume=resume)
+                config = base_config
+            elif replay_pending:
+                stream_input = None
+                config = {
+                    "configurable": {"thread_id": thread_id, "checkpoint_id": checkpoint_id},
+                    "recursion_limit": 30,
+                }
+                replay_pending = False
             else:
-                raise
-        if is_cancelled():
-            return False
+                commands.finalize_turn(agent, thread_id)
+                stream_input = {"messages": [{"role": "user", "content": user_input}]}
+                config = base_config
+            try:
+                consumed, stream = _run_stream(stream_input, config)
+            except Exception as exc:
+                commands.finalize_turn(agent, thread_id)
+                if (
+                    not resume
+                    and not replay_pending
+                    and user_input
+                    and ("BadRequest" in type(exc).__name__ or "400" in str(exc))
+                ):
+                    try:
+                        consumed, stream = _run_stream(
+                            {"messages": [{"role": "user", "content": user_input}]},
+                            base_config,
+                        )
+                    except Exception:
+                        raise exc from None
+                else:
+                    raise
+            if is_cancelled():
+                outcome = "cancel"
+                return False
 
-        if not consumed and on_fallback_message:
-            final_state = stream.output
-            final_text = commands.render(final_state["messages"]) if final_state else ""
-            if final_text:
-                on_fallback_message(final_text)
+            if not consumed and on_fallback_message:
+                final_state = stream.output
+                final_text = commands.render(final_state["messages"]) if final_state else ""
+                if final_text:
+                    on_fallback_message(final_text)
 
-        if not getattr(stream, "interrupted", False) or not getattr(stream, "interrupts", None):
-            return True
+            if not getattr(stream, "interrupted", False) or not getattr(stream, "interrupts", None):
+                return True
 
-        resume = handle_interrupts(stream.interrupts)
-        if resume is None:
-            return False
-    return False
+            resume = handle_interrupts(stream.interrupts)
+            if resume is None:
+                outcome = "abandon"
+                return False
+        outcome = "cancel"
+        return False
+    finally:
+        if outcome != "complete":
+            _finalize_if_needed()

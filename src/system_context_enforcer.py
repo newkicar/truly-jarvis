@@ -1,7 +1,7 @@
 """系统上下文强制层（ADR-0003）。
 
-对简单的日期/时间/位置事实问句，在 before_model 直接 short-circuit，
-避免模型用训练记忆或 CodeInterpreter 乱答；时间与城市走本机 shell（与 execute 等价）。
+仅对纯日期/星期问句 short-circuit（读 system prompt 首行）；时间/位置交给 execute。
+同时拦截 eval / task(researcher) 等误用。
 """
 from __future__ import annotations
 
@@ -201,7 +201,7 @@ def last_human_from_state(state) -> str:
 
 
 class SystemContextEnforcerMiddleware(AgentMiddleware):
-    """简单系统上下文问句 short-circuit + 拦截 eval/task(researcher) 误用。"""
+    """纯日期 short-circuit + 拦截 eval/task(researcher) 误用；时间/位置走 execute。"""
 
     @property
     def name(self) -> str:
@@ -211,12 +211,9 @@ class SystemContextEnforcerMiddleware(AgentMiddleware):
     def before_model(self, state, runtime):
         text = last_human_from_state(state)
         intent = classify_system_context(text)
-        if not intent.any:
+        if not intent.date or intent.time or intent.location:
             return None
-        answer = build_system_context_answer(intent)
-        if not answer:
-            return None
-        return {"jump_to": "end", "messages": [AIMessage(content=answer)]}
+        return {"jump_to": "end", "messages": [AIMessage(content=format_date_answer())]}
 
     @hook_config(can_jump_to=["end"])
     async def abefore_model(self, state, runtime):

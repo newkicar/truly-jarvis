@@ -45,11 +45,10 @@ def test_build_agent_assembles(tmp_path, monkeypatch):
 
 
 def test_build_main_prompt_injects_session_date():
-    """会话日期写入 system prompt；问几号应直接用首行，勿读 skill。"""
+    """会话日期写入 system prompt；问几号应直接用首行。"""
     prompt = build_main_prompt(now=datetime(2026, 8, 20, 12, 0, 0))
     assert "今天是 2026-08-20 星期四。" in prompt
-    assert "勿读 skill" in prompt
-    assert "system-context" in prompt
+    assert "可直接用本行作答" in prompt
     assert "12:00" not in prompt
     assert "目标" in prompt
     assert "工作方式" in prompt
@@ -62,6 +61,8 @@ def test_build_main_prompt_injects_session_date():
     assert "CodeInterpreter" in prompt
     assert "禁止" in prompt
     assert "Reports" in prompt
+    assert "环境与可核实事实" in prompt
+    assert "Get-Date" not in prompt
 
 
 def test_build_agent_uses_build_main_prompt(tmp_path, monkeypatch):
@@ -280,6 +281,39 @@ def test_build_knowledge_keeper_shape():
     assert kk["description"]
     assert "/vault/Inbox/" in kk["system_prompt"]  # type: ignore[operator]
     assert "只新增" in kk["system_prompt"]  # type: ignore[operator]
+
+
+def test_make_backend_supports_execute(tmp_path, monkeypatch):
+    """default backend 应为 LocalShellBackend，使 execute 进入工具 schema。"""
+    from deepagents.middleware.filesystem import supports_execution
+
+    from src.agent import _make_backend
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
+    cfg = make_fake_config(tmp_path)
+    backend = _make_backend(cfg)
+    assert supports_execution(backend)
+
+
+def test_build_agent_includes_todo_list_middleware(tmp_path, monkeypatch):
+    """TodoListMiddleware 应注入主代理以启用 write_todos。"""
+    import src.agent as agent_mod
+    from langchain.agents.middleware import TodoListMiddleware
+    from src.agent import create_deep_agent
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
+    cfg = make_fake_config(tmp_path)
+    captured = {}
+
+    def spy(**kwargs):
+        captured.update(kwargs)
+        return create_deep_agent(**kwargs)
+
+    monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+    build_agent(cfg, model=ToolCapableFake(reply="ok"))
+
+    mws = captured.get("middleware", [])
+    assert any(isinstance(m, TodoListMiddleware) for m in mws)
 
 
 def test_stream_events_v3_does_not_throw_and_produces_text(tmp_path, monkeypatch):

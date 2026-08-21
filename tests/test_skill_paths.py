@@ -79,13 +79,13 @@ def test_skill_virtual_sources_includes_user_layer(tmp_path, monkeypatch):
 def test_session_date_line():
     line = session_date_line(now=datetime(2026, 8, 20, 15, 30, 0))
     assert line.startswith("今天是 2026-08-20 星期四。")
-    assert "勿读 skill" in line
+    assert "可直接用本行作答" in line
 
 
 def test_build_main_prompt_includes_date_not_time():
     prompt = build_main_prompt(now=datetime(2026, 8, 20, 15, 30, 0))
     assert "今天是 2026-08-20 星期四。" in prompt
-    assert "勿读 skill" in prompt
+    assert "可直接用本行作答" in prompt
     assert "15:30" not in prompt
     assert "get_system_context" not in prompt
     assert "execute" in prompt

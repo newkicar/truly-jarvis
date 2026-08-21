@@ -65,7 +65,7 @@ def test_build_answer_time_and_location():
     assert "北京" in answer
 
 
-def test_before_model_short_circuits():
+def test_before_model_short_circuits_date_only():
     mw = SystemContextEnforcerMiddleware()
     state = {"messages": [HumanMessage(content="今天几号")]}
     result = mw.before_model(state, runtime=None)
@@ -73,6 +73,18 @@ def test_before_model_short_circuits():
     assert result["jump_to"] == "end"
     assert isinstance(result["messages"][0], AIMessage)
     assert "2026" in result["messages"][0].content or "星期" in result["messages"][0].content
+
+
+def test_before_model_time_not_short_circuited():
+    mw = SystemContextEnforcerMiddleware()
+    state = {"messages": [HumanMessage(content="现在几点")]}
+    assert mw.before_model(state, runtime=None) is None
+
+
+def test_before_model_location_not_short_circuited():
+    mw = SystemContextEnforcerMiddleware()
+    state = {"messages": [HumanMessage(content="我在哪")]}
+    assert mw.before_model(state, runtime=None) is None
 
 
 def test_before_model_skips_complex():

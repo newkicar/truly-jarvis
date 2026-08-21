@@ -259,17 +259,18 @@ def checkpoint_config_stuck(checkpointer, thread_id: str, *, checkpoint_id: str 
     return channel_values_stuck(cv)
 
 
-def repair_stuck_thread(agent, thread_id: str) -> bool:
-    """把卡在 __pregel_tasks / branch:to:* 的会话回退到最近可用 checkpoint。"""
+def _rollback_thread_to_last_usable_checkpoint(agent, thread_id: str) -> bool:
+    """回退到最近已完成（无 next、非 stuck）的 checkpoint；失败则删 thread。"""
     checkpointer = getattr(agent, "checkpointer", None)
-    if not checkpoint_config_stuck(checkpointer, thread_id):
-        return False
-
     base_config = {"configurable": {"thread_id": thread_id}}
     try:
         for state in agent.get_state_history(base_config):
             cid = state.config.get("configurable", {}).get("checkpoint_id")
-            if not cid or checkpoint_config_stuck(checkpointer, thread_id, checkpoint_id=cid):
+            if not cid:
+                continue
+            if checkpoint_config_stuck(checkpointer, thread_id, checkpoint_id=cid):
+                continue
+            if getattr(state, "next", None):
                 continue
             agent.update_state({"configurable": {"thread_id": thread_id, "checkpoint_id": cid}}, None)
             return True
@@ -280,6 +281,33 @@ def repair_stuck_thread(agent, thread_id: str) -> bool:
         checkpointer.delete_thread(thread_id)
         return True
     return False
+
+
+def turn_needs_finalize(agent, thread_id: str) -> bool:
+    """会话是否处于需清理的未完成 turn（stuck channel 或 pending next）。"""
+    checkpointer = getattr(agent, "checkpointer", None)
+    if checkpoint_config_stuck(checkpointer, thread_id):
+        return True
+    try:
+        state = agent.get_state({"configurable": {"thread_id": thread_id}})
+        return bool(getattr(state, "next", None))
+    except Exception:
+        return False
+
+
+def finalize_turn(agent, thread_id: str) -> bool:
+    """Turn 结束清理：取消/放弃/HITL 中断后避免脏 checkpoint 污染下轮。返回是否做了 repair。"""
+    if not turn_needs_finalize(agent, thread_id):
+        return False
+    return _rollback_thread_to_last_usable_checkpoint(agent, thread_id)
+
+
+def repair_stuck_thread(agent, thread_id: str) -> bool:
+    """把卡在 __pregel_tasks / branch:to:* 的会话回退到最近可用 checkpoint。"""
+    checkpointer = getattr(agent, "checkpointer", None)
+    if not checkpoint_config_stuck(checkpointer, thread_id):
+        return False
+    return _rollback_thread_to_last_usable_checkpoint(agent, thread_id)
 
 
 def _mask_secret(value: str, *, prefix: int = 4) -> str:
@@ -367,7 +395,7 @@ def _mcp_enabled_count(mcps: dict) -> int:
 def format_doctor_report(config, agent, thread_id: str, *, mcp_tool_count: int | None = None) -> str:
     """生成 /doctor 只读诊断报告（CLI/TUI 共用）。"""
     checkpointer = getattr(agent, "checkpointer", None)
-    stuck = checkpoint_config_stuck(checkpointer, thread_id)
+    stuck = turn_needs_finalize(agent, thread_id)
     cp_count, cp_max = _checkpoint_thread_stats(agent, thread_id)
     msg_count = _session_message_count(agent, thread_id)
     mcp_servers = _mcp_enabled_count(config.mcps)
@@ -395,6 +423,13 @@ def format_doctor_report(config, agent, thread_id: str, *, mcp_tool_count: int |
     if theme:
         lines.append(f"  theme: {theme}")
 
+    from src.agent import harness_capabilities
+
+    caps = harness_capabilities(config)
+    exec_label = "已加载" if caps["execute"] else "未加载 ⚠"
+    todos_label = "已加载" if caps["write_todos"] else "未加载 ⚠"
+    lines.append(f"Harness:    execute {exec_label}; write_todos {todos_label}")
+
     lines.extend(
         [
             "",
@@ -409,7 +444,7 @@ def format_doctor_report(config, agent, thread_id: str, *, mcp_tool_count: int |
     if stuck:
         lines.extend(
             [
-                "会话状态:   ⚠ 卡住（含未完成的 graph 任务）",
+                "会话状态:   ⚠ 未完成 turn（stuck checkpoint 或 pending HITL）",
                 "建议:       /delete-session 或 python -m src.main -n --cli 开新会话",
                 "            （也可直接再发一条消息，系统会自动尝试 repair）",
             ]

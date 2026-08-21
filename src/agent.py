@@ -1,6 +1,6 @@
 """主代理组装。
 
-model + CompositeBackend（default=StateBackend；/workspace /vault /memories 路由）
+model + CompositeBackend（default=LocalShellBackend；/workspace /vault /memories 路由）
 + subagents + memory + checkpointer(SqliteSaver) + store。见设计文档 §5.2/§6。
 """
 from datetime import datetime
@@ -18,8 +18,8 @@ from deepagents.backends import (
     CompositeBackend,
     FilesystemBackend,
     LocalShellBackend,
-    StateBackend,
 )
+from langchain.agents.middleware import TodoListMiddleware
 from langchain_quickjs import CodeInterpreterMiddleware
 
 from src.config import Config
@@ -54,13 +54,10 @@ MAIN_SYSTEM_PROMPT = """你是 JARVIS，个人 AI 助手，专注扩展用户的
 多步任务：先计划步骤，再逐步执行，完成后核对结果；某步失败则换合法手段重试或说明原因，不要卡死在一种做法上。
 需要信息或执行时，按需使用 skills、MCP 工具、内置工具（含 `execute`）、子代理——不凭训练记忆硬猜事实。
 
-**日期 / 时间 / 位置（不要读 skill，不要写 JS）：**
-- 问「今天几号 / 什么日期 / 星期几」→ **直接根据本提示词「当前会话」里的「今天是 …」一行回答**，不要读任何 skill 或文件，不要调工具。
-- 问「现在几点 / 精确时刻」→ **只用 `execute` 读本机 shell**，例如 Windows：
-  `powershell -NoProfile -Command "Get-Date -Format 'yyyy-MM-dd HH:mm:ss'"`。**禁止** CodeInterpreter、eval、JS、Python REPL。
-- 问「我在哪 / 什么城市」→ **只用 `execute` 查 IP**，例如：
-  `curl -s http://ip-api.com/json/?lang=zh-CN`。**禁止** CodeInterpreter / eval；不要读 `javis.json` 或 `/memories/user-profile.md`。
-- 以上问题 **禁止** 委派 researcher；**禁止** 读 `system-context`（已废弃）。
+**环境与可核实事实：**
+- 本提示词「当前会话」仅提供今天日期与星期；精确时间、所在地、网络可查事实，应通过可用工具（优先 `execute` 读本机或 curl）自行核实，再回答用户。
+- **禁止** CodeInterpreter/eval/JS 冒充系统时钟或定位；不要读 `javis.json` 或 `/memories/user-profile.md` 猜用户位置。
+- 简单日期/星期问题可直接用「今天是 …」一行作答；其余事实类问题先工具后结论，缺必要输入时再向用户确认。
 
 ## 完成标准
 - **事实**：有可靠来源再答；没有则说明不确定，不编造。
@@ -84,7 +81,7 @@ def session_date_line(*, now: datetime | None = None) -> str:
     current = now or datetime.now()
     return (
         f"今天是 {current.strftime('%Y-%m-%d')} {_WEEKDAYS[current.weekday()]}。"
-        "（用户问今天日期/星期几时，直接用本行作答，勿读 skill 或调工具。）"
+        "（用户问今天日期/星期几时，可直接用本行作答。）"
     )
 
 
@@ -104,14 +101,25 @@ def _make_model(config: Config) -> BaseChatModel:
 
 
 def _make_backend(config: Config) -> CompositeBackend:
+    workspace = LocalShellBackend(root_dir=str(config.project_root), virtual_mode=True)
     routes: dict[str, FilesystemBackend | LocalShellBackend] = {
-        "/workspace/": LocalShellBackend(root_dir=str(config.project_root), virtual_mode=True),
+        "/workspace/": workspace,
         "/vault/": FilesystemBackend(root_dir=str(config.vault_path), virtual_mode=True),
         "/memories/": FilesystemBackend(root_dir=str(config.memory_dir), virtual_mode=True),
     }
     for vpath, fs_path in skill_backend_routes(config).items():
         routes[vpath] = FilesystemBackend(root_dir=str(fs_path), virtual_mode=True)
-    return CompositeBackend(default=StateBackend(), routes=routes)
+    return CompositeBackend(default=workspace, routes=routes)
+
+
+def harness_capabilities(config: Config) -> dict[str, bool]:
+    """Codex harness 能力探测（/doctor 等只读诊断用）。"""
+    from deepagents.middleware.filesystem import supports_execution
+
+    return {
+        "execute": supports_execution(_make_backend(config)),
+        "write_todos": True,
+    }
 
 
 def build_agent(
@@ -190,6 +198,7 @@ def build_agent(
         tools=main_tools,
         middleware=[
             CodeInterpreterMiddleware(subagents=True),
+            TodoListMiddleware(),
             deny_middleware,
             deprecated_guard,
             system_context_enforcer,

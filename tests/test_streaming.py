@@ -167,3 +167,56 @@ def test_run_agent_turn_replay_emits_saved_turn_without_stream():
     )
     assert agent.stream_calls == []
     assert ends == ["saved-hello"]
+
+
+def test_filter_pending_interrupts_skips_resolved():
+    intr = type("I", (), {"value": {"action_requests": [{"name": "execute", "args": {"command": "ls"}}]}})()
+    key = streaming.interrupt_action_key({"name": "execute", "args": {"command": "ls"}})
+    assert streaming.filter_pending_interrupts([intr], {key}) == []
+    assert len(streaming.filter_pending_interrupts([intr], set())) == 1
+
+
+def test_run_agent_turn_abandon_calls_finalize():
+    class _Stream:
+        interrupted = True
+        interrupts = [type("I", (), {"value": {"action_requests": [{"name": "execute", "args": {}}]}})()]
+        output = None
+
+        def interleave(self, *kinds):
+            if False:
+                yield
+
+    class FakeAgent:
+        checkpointer = None
+        finalized = False
+
+        def stream_events(self, payload, *, version, config):
+            return _Stream()
+
+    agent = FakeAgent()
+    import src.commands as cmd
+
+    original = cmd.finalize_turn
+
+    def track_finalize(a, t):
+        agent.finalized = True
+        return original(a, t)
+
+    cmd.finalize_turn = track_finalize
+    try:
+        ok = streaming.run_agent_turn(
+            agent,
+            "t",
+            "hi",
+            handle_interrupts=lambda _: None,
+            callbacks={
+                "on_subagent": lambda *a: None,
+                "on_tool_call": lambda *a: None,
+                "on_message_delta": lambda d: None,
+            },
+        )
+    finally:
+        cmd.finalize_turn = original
+
+    assert ok is False
+    assert agent.finalized is True

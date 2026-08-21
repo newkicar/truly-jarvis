@@ -1,6 +1,7 @@
 """Textual TUI 界面（对标 opencode 终端界面）。"""
 import asyncio
 import sys
+from collections import defaultdict
 from functools import partial
 from pathlib import Path
 from time import time
@@ -392,6 +393,9 @@ class JarvisApp(App):
         self._startup_lines = startup_lines or []
         self._startup_prompt = startup_prompt
         self._worker: Worker | None = None
+        self._hitl_generation = 0
+        self._resolved_hitl: dict[str, set[str]] = defaultdict(set)
+        self._pending_hitl_keys: set[str] = set()
         self._completion_active = False
         self._overlay_state = OverlayState(kind="none", at_index=0, items=())
         self._sidebar_visible = True
@@ -583,6 +587,21 @@ class JarvisApp(App):
             result, new_thread = f"命令失败: {exc}", None
         self.call_from_thread(self._apply_command_result, result, new_thread)
 
+    def _cancel_stream_worker(self) -> None:
+        if self._worker is not None:
+            self._worker.cancel()
+            self._worker = None
+
+    def _bump_hitl_generation(self) -> None:
+        """作废进行中的 HITL Modal（切会话 / Esc / turn 未完成）。"""
+        self._hitl_generation += 1
+        if isinstance(self.screen, PermissionModal):
+            self.screen.dismiss(None)
+
+    def _mark_hitl_resolved(self, thread_id: str, keys: set[str]) -> None:
+        if keys:
+            self._resolved_hitl[thread_id].update(keys)
+
     def _apply_command_result(self, result: str, new_thread: str | None) -> None:
         log = self.query_one("#messages", RichLog)
         log.write(result)
@@ -602,6 +621,12 @@ class JarvisApp(App):
     def _switch_session(self, thread_id: str) -> None:
         if not thread_id or thread_id == self.thread_id:
             return
+        old_thread = self.thread_id
+        self._cancel_stream_worker()
+        self._mark_hitl_resolved(old_thread, set(self._pending_hitl_keys))
+        self._pending_hitl_keys.clear()
+        self._bump_hitl_generation()
+        commands.finalize_turn(self.agent, old_thread)
         self.thread_id = thread_id
         self._update_sub_title()
         self._refresh_session_sidebar()
@@ -772,22 +797,40 @@ class JarvisApp(App):
         def on_tool_call(name: str, args: str, err: bool, output: str | None, depth: int) -> None:
             write_line(format_tool_call(name, args, error=err, output=output, indent=depth))
 
-        def handle_interrupts(interrupts):
-            return streaming.collect_interrupt_decisions(
-                interrupts,
-                lambda inv: self.call_from_thread(self._wait_modal_dismiss, inv),
-                permission_state=self.permission_state,
-                on_always_approve=lambda name: self.call_from_thread(
-                    log.write, f"[b]已设置 {name} = allow（已写入 javis.json）[/b]"
-                ),
-            )
-
         def on_cancelled() -> None:
             nonlocal cancel_notified, stream_active
             cancel_notified = True
             stream_active = False
             self.call_from_thread(self._hide_ai_stream)
             write_line("[i][dim]（已取消）[/dim][/i]")
+
+        def handle_interrupts(interrupts):
+            filtered = streaming.filter_pending_interrupts(
+                interrupts,
+                self._resolved_hitl.get(self.thread_id, set()),
+            )
+            if not filtered:
+                return None
+            self._pending_hitl_keys = {
+                streaming.interrupt_action_key(action)
+                for interrupt in filtered
+                for action in (getattr(interrupt, "value", None) or {}).get("action_requests", [])
+            }
+
+            def ask_action(inv):
+                return self.call_from_thread(self._wait_modal_dismiss, inv)
+
+            return streaming.collect_interrupt_decisions(
+                filtered,
+                ask_action,
+                permission_state=self.permission_state,
+                on_always_approve=lambda name: self.call_from_thread(
+                    log.write, f"[b]已设置 {name} = allow（已写入 javis.json）[/b]"
+                ),
+            )
+
+        def on_turn_incomplete() -> None:
+            self.call_from_thread(self._on_turn_incomplete, self.thread_id)
 
         ok = False
         try:
@@ -809,6 +852,7 @@ class JarvisApp(App):
                 ),
                 on_stream_start=reset_header,
                 on_cancelled=on_cancelled,
+                on_turn_incomplete=on_turn_incomplete,
             )
         except Exception as exc:
             reset_header()
@@ -828,6 +872,7 @@ class JarvisApp(App):
 
     async def _wait_modal_dismiss(self, inv: commands.ToolInvocation):
         """push PermissionModal 并等待 dismiss 结果（在 UI 线程执行）。"""
+        gen = self._hitl_generation
         result_holder: dict[str, object] = {}
         done = asyncio.Event()
 
@@ -843,10 +888,16 @@ class JarvisApp(App):
             ),
             on_dismiss,
         )
-        # 等待用户决定；UI 事件循环继续处理按钮/键位
         await done.wait()
+        if gen != self._hitl_generation:
+            return None
         value = result_holder.get("value")
         return value if isinstance(value, dict) else None
+
+    def _on_turn_incomplete(self, thread_id: str) -> None:
+        self._mark_hitl_resolved(thread_id, set(self._pending_hitl_keys))
+        self._pending_hitl_keys.clear()
+        self._bump_hitl_generation()
 
     def _highlighted_session_id(self) -> str | None:
         sidebar = self._session_sidebar()
@@ -904,12 +955,19 @@ class JarvisApp(App):
         if self._worker is not None:
             log = self.query_one("#messages", CopyableRichLog)
             self._hide_ai_stream()
+            self._bump_hitl_generation()
             log.write("[i][dim]（已取消）[/dim][/i]")
             self._worker.cancel()
 
     def action_new_session(self) -> None:
         import uuid
 
+        old_thread = self.thread_id
+        self._cancel_stream_worker()
+        self._mark_hitl_resolved(old_thread, set(self._pending_hitl_keys))
+        self._pending_hitl_keys.clear()
+        self._bump_hitl_generation()
+        commands.finalize_turn(self.agent, old_thread)
         self.thread_id = f"session-{uuid.uuid4().hex[:8]}"
         self._update_sub_title()
         self._refresh_session_sidebar()
