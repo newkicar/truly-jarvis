@@ -205,3 +205,21 @@ def test_load_config_rag_from_json(tmp_path: Path):
     cfg = load_config(env_file=env_file, json_file=json_file)
     assert cfg.rag_ollama_base_url == "http://ollama:11434"
     assert cfg.rag_embed_model == "custom-embed"
+
+
+def test_load_config_tui_from_json(tmp_path: Path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("base_url:https://x.com\napi_key:k\nmodel_id:m\ntavily_key:t\n", encoding="utf-8")
+    json_file = tmp_path / "javis.json"
+    json_file.write_text(
+        json.dumps(
+            {
+                "model": {"base_url_env": "BASE_URL", "api_key_env": "API_KEY", "model_id_env": "MODEL_ID"},
+                "obsidian_vault": str(tmp_path / "vault"),
+                "tui": {"copy_on_select": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = load_config(env_file=env_file, json_file=json_file)
+    assert cfg.tui.get("copy_on_select") is True

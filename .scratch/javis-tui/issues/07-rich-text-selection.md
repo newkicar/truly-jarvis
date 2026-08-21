@@ -4,9 +4,9 @@
 
 **Type:** task
 
-**Status:** ready-for-human
+**Status:** done
 
-**Blocked by:** 无（可与当前 TUI 并行规划，实施顺序置后）
+**Blocked by:** 无
 
 ## 背景
 
@@ -39,11 +39,11 @@
 
 ## 验收
 
-- [ ] CMD 下对话区可拖选任意可见文本（含 session id、/history 行、AI 回复片段）。
-- [ ] 复制后可在记事本粘贴；Ctrl+Insert / 配置快捷键可用。
-- [ ] Markdown 消息仍可读（标题、列表、代码块基本不退化）。
-- [ ] 流式生成结束后选区行为可预期；单测 + TUI 冒烟更新。
-- [ ] `AGENTS.md` / TUI_HELP 补充选区说明。
+- [x] CMD 下对话区可拖选任意可见文本（含 session id、/history 行、AI 回复片段）。
+- [x] 复制后可在记事本粘贴；Ctrl+Insert / 配置快捷键可用。
+- [x] Markdown 消息仍可读（标题、列表、代码块基本不退化）。
+- [x] 流式生成结束后选区行为可预期；单测 + TUI 冒烟更新。
+- [x] `AGENTS.md` / TUI_HELP 补充选区说明。
 
 ## 参考
 

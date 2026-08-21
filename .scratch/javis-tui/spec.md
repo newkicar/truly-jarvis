@@ -27,7 +27,7 @@ JARVIS 目前是纯 `input()`/`print()` 的 CLI 交互（`src/main.py`）。用�
 
 ## Backlog（TUI 后续）
 
-- **07 — Rich 渲染 + 真实鼠标选区**（`.scratch/javis-tui/issues/07-rich-text-selection.md`）：对标 OpenCode 拖选复制，保留 Markdown 样式；**最后实现**。当前用序号命令（`/history` → `/replay N`）、`/copy-session`、侧边栏 Y/D 绕开。
+- ~~**07 — Rich 渲染 + 真实鼠标选区**~~（已完成：`CopyableRichLog` 纯文本缓冲 + `copy_on_select`）
 
 ## User Stories
 

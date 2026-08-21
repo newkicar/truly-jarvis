@@ -33,7 +33,8 @@ CLI_HELP = (
 TUI_HELP = (
     _HELP_COMMANDS
     + "会话：侧边栏点选后 Y 复制 ID、D 删除；或 /delete-session 2 按序号删。\n"
-    + "复制：Ctrl+Insert / Y（侧边栏会话）；Cursor 终端里 Ctrl+Shift+C 可能被系统截获。\n"
+    + "复制：对话区鼠标拖选（松开自动复制，javis.json tui.copy_on_select）；"
+    + "Ctrl+Insert / Y（侧边栏会话）；/copy-session 复制 thread_id。\n"
     + "退出：Ctrl+C 或 Ctrl+Q；集成终端若 Ctrl+C 直接杀进程，请用 /exit。\n"
     + "HITL 审批时: 点击按钮选择（放行/永久放行/拒绝/编辑参数），Esc 放弃。\n"
 )

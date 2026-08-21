@@ -453,6 +453,12 @@ class JarvisApp(App):
             return None
         return getattr(self.config, "project_root", None)
 
+    def _copy_on_select(self) -> bool:
+        if not self.config:
+            return False
+        tui = getattr(self.config, "tui", None) or {}
+        return bool(tui.get("copy_on_select", False))
+
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         with Horizontal(id="main_row"):
@@ -460,7 +466,13 @@ class JarvisApp(App):
             with Vertical(id="content_column"):
                 with Container(id="chat_frame"):
                     with Vertical(id="chat_stack"):
-                        yield CopyableRichLog(id="messages", wrap=True, markup=True, auto_scroll=True)
+                        yield CopyableRichLog(
+                            id="messages",
+                            wrap=True,
+                            markup=True,
+                            auto_scroll=True,
+                            copy_on_select=self._copy_on_select(),
+                        )
                         yield Static("", id="ai_stream")
                 with Horizontal(id="editor_frame"):
                     yield Static("›", id="prompt")
@@ -477,6 +489,10 @@ class JarvisApp(App):
         log.write("")
 
     def _show_ai_stream(self) -> None:
+        try:
+            self.query_one("#messages", CopyableRichLog).clear_user_selection()
+        except Exception:
+            pass
         stream = self.query_one("#ai_stream", Static)
         stream.add_class("-active")
 
@@ -502,7 +518,7 @@ class JarvisApp(App):
         self._write_system(
             log,
             "会话：Ctrl+B 开侧边栏 → 点选 → Y 复制 ID / D 删除；或 /delete-session 2 按序号。"
-            " 复制：/copy-session 或 Ctrl+Insert。退出：/exit 或 Ctrl+Q。",
+            " 复制：对话区拖选（松开自动复制）；/copy-session 或 Ctrl+Insert。退出：/exit 或 Ctrl+Q。",
         )
         for line in self._startup_lines:
             self._write_system(log, line)

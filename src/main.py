@@ -1,6 +1,7 @@
 """JARVIS 入口。
 
 默认启动 Textual TUI；`--cli` 参数回退到标准库 input 交互循环。
+`--init [目录]` 在当前或指定目录初始化 javis.json 与目录结构。
 CLI 支持 /exit、/sessions、/delete-session、/history、/replay、/fork、/snapshot、/rollback 等命令。
 """
 import sys
@@ -12,6 +13,7 @@ from src.agent import build_agent
 from src.config import ensure_utf8_stdout, load_config
 from src.mcps import load_mcp_tools
 from src.permissions import build_permission_interrupts
+from src.project_init import run_init_cli, suggest_init_if_missing
 
 ensure_utf8_stdout()
 
@@ -147,8 +149,27 @@ def _stream_turn(agent, thread_id: str, user_input: str, permission_state: dict 
 
 
 def main(argv=None) -> int:
-    config = load_config()
-    args = argv[1:] if argv else []
+    raw_args = argv if argv is not None else sys.argv
+    args = raw_args[1:]
+
+    if "--init" in args:
+        init_args = [
+            a
+            for a in args
+            if a not in ("--init", "--cli", "--tui", "-n", "--new", "--force")
+        ]
+        if "--force" in args:
+            init_args = ["--force", *init_args]
+        return run_init_cli(init_args or None)
+
+    try:
+        config = load_config()
+    except (KeyError, FileNotFoundError) as exc:
+        hint = suggest_init_if_missing()
+        if hint:
+            print(hint, file=sys.stderr)
+        raise SystemExit(str(exc)) from exc
+
     thread_id = "default"
     use_tui = "--cli" not in args
     if "-n" in args or "--new" in args:

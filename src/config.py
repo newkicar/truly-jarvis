@@ -53,6 +53,7 @@ class Config:
     agents: dict[str, object]
     rag_ollama_base_url: str
     rag_embed_model: str
+    tui: dict[str, object]
 
 
 def parse_env_text(text: str) -> dict[str, str]:
@@ -146,6 +147,10 @@ def load_config(
     if not isinstance(rag_cfg, dict):
         rag_cfg = {}
 
+    tui_cfg = data.get("tui", {})
+    if not isinstance(tui_cfg, dict):
+        tui_cfg = {}
+
     cfg = Config(
         project_root=root,
         base_url=base_url,
@@ -162,6 +167,7 @@ def load_config(
         agents=agents,
         rag_ollama_base_url=str(rag_cfg.get("ollama_base_url", "http://localhost:11434")),
         rag_embed_model=str(rag_cfg.get("embed_model", "quentinz/bge-small-zh-v1.5")),
+        tui=tui_cfg,
     )
     ensure_user_home()
     set_runtime_project_root(cfg.project_root)
