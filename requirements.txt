@@ -16,3 +16,4 @@ markdownify
 python-dotenv
 apscheduler
 textual>=0.40.0
+chromadb>=0.5.0

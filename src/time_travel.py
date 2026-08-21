@@ -20,7 +20,16 @@ DB_NAME = "git_mapping.sqlite"
 
 def _git(root: Path, *args: str) -> str:
     return subprocess.run(
-        ["git", "-C", str(root), *args],
+        [
+            "git",
+            "-C",
+            str(root),
+            "-c",
+            "user.name=JARVIS",
+            "-c",
+            "user.email=jarvis@local",
+            *args,
+        ],
         capture_output=True,
         text=True,
         check=True,

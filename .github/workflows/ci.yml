@@ -23,7 +23,10 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Prepare test environment
+        run: cp .env.example .env
 
       - name: Run tests
         run: python -m pytest tests/ -q --tb=short
