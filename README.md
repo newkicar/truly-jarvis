@@ -41,11 +41,17 @@ TAVILY_KEY=tvly-...
 **新项目初始化**（任意空目录）：
 
 ```bash
-python -m src.main --init
-# 或指定目录：python -m src.main --init /path/to/my-project
+python -m src.main --init e:\tmp\javis-test
+# 然后双击 e:\tmp\javis-test\run-javis.cmd 启动（不要 cd 进去 python -m src.main）
 ```
 
-会生成 `javis.json`、`.env` 模板、`memory/`、`schedules/`、`vault/Inbox/` 等。填写 `.env` 后再启动。
+`run-javis.cmd` 会设置 `JARVIS_PROJECT_ROOT` 并回到引擎安装目录启动。也可手动：
+
+```bash
+set JARVIS_PROJECT_ROOT=e:\tmp\javis-test
+cd e:\Thomas\Python_Project\thomas-project\truly_Javis
+python -m src.main
+```
 
 ### 运行
 

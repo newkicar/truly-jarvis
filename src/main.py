@@ -120,31 +120,34 @@ def _stream_turn(agent, thread_id: str, user_input: str, permission_state: dict 
     def on_always_approve(name: str) -> None:
         print(f"    已设置 {name} = allow（已写入 javis.json，以后自动放行）")
 
-    streaming.run_agent_turn(
-        agent,
-        thread_id,
-        user_input,
-        handle_interrupts=lambda interrupts: streaming.collect_interrupt_decisions(
-            interrupts,
-            lambda inv: streaming.cli_prompt_action(
-                inv,
+    try:
+        streaming.run_agent_turn(
+            agent,
+            thread_id,
+            user_input,
+            handle_interrupts=lambda interrupts: streaming.collect_interrupt_decisions(
+                interrupts,
+                lambda inv: streaming.cli_prompt_action(
+                    inv,
+                    permission_state=permission_state,
+                    on_always_approve=on_always_approve,
+                    vault_path=vault_path,
+                    workspace_root=workspace_root,
+                ),
                 permission_state=permission_state,
                 on_always_approve=on_always_approve,
-                vault_path=vault_path,
-                workspace_root=workspace_root,
             ),
-            permission_state=permission_state,
-            on_always_approve=on_always_approve,
-        ),
-        callbacks={
-            "on_subagent": lambda name, status, depth=0: print(f"{'  ' * depth}  [{name}] {status}"),
-            "on_tool_call": lambda name, args, err, output=None, depth=0: _cli_tool_line(
-                name, args, err, output, depth
-            ),
-            "on_message_delta": lambda delta: print(delta, end="", flush=True),
-        },
-        on_fallback_message=lambda text: print(text),
-    )
+            callbacks={
+                "on_subagent": lambda name, status, depth=0: print(f"{'  ' * depth}  [{name}] {status}"),
+                "on_tool_call": lambda name, args, err, output=None, depth=0: _cli_tool_line(
+                    name, args, err, output, depth
+                ),
+                "on_message_delta": lambda delta: print(delta, end="", flush=True),
+            },
+            on_fallback_message=lambda text: print(text),
+        )
+    except Exception as exc:
+        print(f"\n错误: {streaming.format_agent_error(exc)}\n")
     print("\n")
 
 

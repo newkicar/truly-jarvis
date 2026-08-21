@@ -272,6 +272,11 @@ class JarvisApp(App):
         background: $background;
     }
 
+    .screen--selection {
+        background: $primary 40%;
+        color: $text;
+    }
+
     Header {
         background: $surface;
         border-bottom: solid $primary;
@@ -805,6 +810,10 @@ class JarvisApp(App):
                 on_stream_start=reset_header,
                 on_cancelled=on_cancelled,
             )
+        except Exception as exc:
+            reset_header()
+            write_line(f"[bold red]错误[/bold red] {streaming.format_agent_error(exc)}")
+            ok = False
         finally:
             elapsed = time() - started
             model = getattr(self.config, "model_id", "") or "model"
@@ -851,21 +860,25 @@ class JarvisApp(App):
     def _copy_to_clipboard(self, text: str, message: str) -> None:
         from src.tui_log import copy_text_to_system_clipboard
 
+        ok = copy_text_to_system_clipboard(text)
         self.copy_to_clipboard(text)
-        copy_text_to_system_clipboard(text)
-        self.notify(message, timeout=2)
+        if ok:
+            self.notify(message, timeout=2)
+        else:
+            self.notify("复制失败（CMD 下请用 Ctrl+Insert）", timeout=3)
 
     def action_copy_session_or_selection(self) -> None:
-        """复制：侧边栏高亮会话 ID > 日志区拖选 > 提示用法。"""
+        """复制：侧边栏高亮会话 ID > 日志区拖选 > 当前 thread_id。"""
         sidebar = self._session_sidebar()
         if sidebar.has_focus:
             session_id = self._highlighted_session_id()
             if session_id:
                 self._copy_to_clipboard(session_id, f"已复制: {session_id}")
                 return
-        selected = self.screen.get_selected_text()
-        if selected and selected.strip():
-            self._copy_to_clipboard(selected.strip(), "已复制选中文本")
+        log = self.query_one("#messages", CopyableRichLog)
+        selected = log.selected_plain_text().strip()
+        if selected:
+            self._copy_to_clipboard(selected, "已复制选中文本")
             return
         if self.thread_id:
             self._copy_to_clipboard(self.thread_id, f"已复制当前会话: {self.thread_id}")

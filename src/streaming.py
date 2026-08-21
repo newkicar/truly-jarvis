@@ -10,6 +10,23 @@ REJECT_MESSAGE = "用户拒绝了该操作，请更换方案或询问用户。�
 
 StreamCallbacks = dict[str, Callable[..., None]]
 
+
+def format_agent_error(exc: BaseException) -> str:
+    """把 agent/API 异常转为 TUI/CLI 可读短句。"""
+    name = type(exc).__name__
+    msg = str(exc).replace("\n", " ")
+    if len(msg) > 400:
+        msg = msg[:400] + "…"
+    if "BadRequest" in name or "400" in msg:
+        return (
+            f"API 请求失败：{msg}\n"
+            "请检查 .env 的 MODEL_ID 是否与套餐一致（如 mimo-v2.5），"
+            "或改用 --cli / 缩短任务后再试。"
+        )
+    if "Authentication" in name or "401" in msg or "403" in msg:
+        return f"鉴权失败：{msg}\n请检查 .env 的 API_KEY / BASE_URL。"
+    return f"{name}: {msg}"
+
 _SUBAGENT_ACTIVE = frozenset({"started", "running", "start"})
 _SUBAGENT_DONE = frozenset({"completed", "failed", "done", "error"})
 

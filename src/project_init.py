@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from src.project_paths import JAVIS_JSON, discover_project_root
+from src.project_paths import JAVIS_JSON, discover_project_root, install_root
 
 ENV_EXAMPLE = """\
 # JARVIS 环境变量（复制为 .env 并填写）
@@ -40,11 +40,26 @@ JAVIS_JSON_TEMPLATE: dict = {
 }
 
 
+def write_run_launcher(project_root: Path, engine_root: Path) -> Path:
+    """生成 Windows 启动脚本：项目目录只有配置，引擎在安装目录。"""
+    launcher = project_root / "run-javis.cmd"
+    engine = engine_root.resolve()
+    launcher.write_text(
+        "@echo off\r\n"
+        "set \"JARVIS_PROJECT_ROOT=%~dp0\"\r\n"
+        f'cd /d "{engine}"\r\n'
+        "python -m src.main %*\r\n",
+        encoding="utf-8",
+    )
+    return launcher
+
+
 def init_project(
     target: Path,
     *,
     vault_path: str | None = None,
     force: bool = False,
+    engine_root: Path | None = None,
 ) -> tuple[list[str], list[str], list[str]]:
     """在 target 创建 javis.json 与目录结构。
 
@@ -53,6 +68,7 @@ def init_project(
     """
     root = target.expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
+    engine = (engine_root or install_root()).resolve()
 
     created: list[str] = []
     skipped: list[str] = []
@@ -105,6 +121,13 @@ def init_project(
         )
         created.append(str(readme))
 
+    launcher = write_run_launcher(root, engine)
+    created.append(str(launcher))
+    messages.append(
+        f"已生成 run-javis.cmd（引擎目录: {engine}）。"
+        "请勿在项目目录直接 python -m src.main（那里没有 src 包）。"
+    )
+
     return created, skipped, messages
 
 
@@ -125,7 +148,12 @@ def format_init_report(root: Path, created: list[str], skipped: list[str], messa
             "下一步：",
             f"  1. 编辑 {root / '.env'} 填写 BASE_URL / API_KEY / MODEL_ID / TAVILY_KEY",
             f"  2. 编辑 {root / JAVIS_JSON}（obsidian_vault、permissions 等）",
-            f"  3. cd {root} && python -m src.main",
+            f"  3. 双击 {root / 'run-javis.cmd'} 启动 TUI",
+            "",
+            "或手动指定项目根（从 JARVIS 安装目录运行）：",
+            f'  set JARVIS_PROJECT_ROOT={root}',
+            "  cd <JARVIS安装目录>",
+            "  python -m src.main",
         ]
     )
     return "\n".join(lines)
@@ -152,27 +180,28 @@ def run_init_cli(argv: list[str] | None = None) -> int:
     )
     ns = parser.parse_args(argv)
     root = Path(ns.directory)
-    created, skipped, messages = init_project(root, vault_path=ns.vault_path, force=ns.force)
+    created, skipped, messages = init_project(
+        root,
+        vault_path=ns.vault_path,
+        force=ns.force,
+        engine_root=install_root(),
+    )
     print(format_init_report(root.resolve(), created, skipped, messages))
     return 0
 
 
 def suggest_init_if_missing(start: Path | None = None) -> str | None:
     """cwd 及上级均无 javis.json 时返回提示文案。"""
-    root = discover_project_root(start)
     current = (start or Path.cwd()).resolve()
-    if (current / JAVIS_JSON).is_file() or (root / JAVIS_JSON).is_file():
+    if (current / JAVIS_JSON).is_file():
         return None
-    if (root.parent / JAVIS_JSON).is_file():
-        return None
-    # discover returns cwd when not found — only hint when truly no javis.json up the tree
     for directory in (current, *current.parents):
         if (directory / JAVIS_JSON).is_file():
             return None
     return (
         f"当前目录未找到 {JAVIS_JSON}。可先初始化项目：\n"
         f"  python -m src.main --init\n"
-        f"或在任意目录：python -m src.main --init /path/to/project"
+        f"然后在项目目录运行 run-javis.cmd"
     )
 
 

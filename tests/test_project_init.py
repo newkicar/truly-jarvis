@@ -10,6 +10,7 @@ def test_init_project_creates_layout(tmp_path: Path):
     assert (tmp_path / ".env").is_file()
     assert (tmp_path / "memory").is_dir()
     assert (tmp_path / "vault" / "Inbox").is_dir()
+    assert (tmp_path / "run-javis.cmd").is_file()
     data = (tmp_path / "javis.json").read_text(encoding="utf-8")
     assert "D:/vault" in data
     assert "copy_on_select" in data

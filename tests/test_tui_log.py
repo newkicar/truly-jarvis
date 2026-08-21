@@ -30,6 +30,13 @@ def test_copyable_rich_log_plain_text_from_lines():
     assert log.plain_text() == "line one\nline two"
 
 
+def test_copy_selection_empty_without_selection():
+    log = CopyableRichLog(markup=True)
+    ok, text = log.copy_selection_to_clipboard()
+    assert ok is False
+    assert text == ""
+
+
 def test_copy_text_to_system_clipboard_no_crash():
     assert copy_text_to_system_clipboard("") is False
     assert copy_text_to_system_clipboard("x") in (True, False)

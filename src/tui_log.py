@@ -12,7 +12,7 @@ from textual.widgets import RichLog
 
 
 def copy_text_to_system_clipboard(text: str) -> bool:
-    """写入系统剪贴板；Windows 用 Win32 API，其它平台走 Textual OSC 52 即可。"""
+    """写入系统剪贴板；Windows 用 Win32 API。"""
     if not text:
         return False
     if sys.platform != "win32":
@@ -34,10 +34,12 @@ def copy_text_to_system_clipboard(text: str) -> bool:
                 return False
             locked = kernel32.GlobalLock(handle)
             if not locked:
+                kernel32.GlobalFree(handle)
                 return False
             ctypes.memmove(locked, payload, len(payload))
             kernel32.GlobalUnlock(handle)
             if not user32.SetClipboardData(CF_UNICODETEXT, handle):
+                kernel32.GlobalFree(handle)
                 return False
         finally:
             user32.CloseClipboard()
@@ -61,6 +63,16 @@ class CopyableRichLog(RichLog):
     """RichLog + 纯文本缓冲 + 稳定选区（对标 OpenCode 方案 2）。"""
 
     ALLOW_SELECT = True
+    COMPONENT_CLASSES = {"copyable-rich-log--selection"}
+
+    DEFAULT_CSS = """
+    CopyableRichLog {
+        & > .copyable-rich-log--selection {
+            background: $primary 35%;
+            color: $text;
+        }
+    }
+    """
 
     def __init__(self, *args, copy_on_select: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
@@ -68,7 +80,7 @@ class CopyableRichLog(RichLog):
         self._plain_lines: list[str] = []
 
     def focus_on_click(self) -> bool:
-        """允许在日志区拖选，但不抢输入框焦点。"""
+        """允许拖选；不抢底部输入框焦点。"""
         return False
 
     def write(self, content, *args, **kwargs):
@@ -105,25 +117,46 @@ class CopyableRichLog(RichLog):
             return None
         return selection.extract(text), "\n"
 
-    def selection_updated(self, selection: Selection | None) -> None:
-        # 不 clear _line_cache：CMD 下会导致选区闪烁/失效
-        self.refresh()
+    def selected_plain_text(self) -> str:
+        """当前选区对应的纯文本（无选区则空串）。"""
+        try:
+            screen = self.screen
+        except Exception:
+            return ""
+        if screen is None:
+            return ""
+        selection = screen.selections.get(self)
+        if selection is None:
+            return ""
+        pair = self.get_selection(selection)
+        if not pair:
+            return ""
+        return pair[0]
+
+    def copy_selection_to_clipboard(self) -> tuple[bool, str]:
+        """复制当前选区；返回 (是否写入系统剪贴板, 文本)。"""
+        text = self.selected_plain_text().strip()
+        if not text:
+            return False, ""
+        ok = copy_text_to_system_clipboard(text)
+        if self.app is not None:
+            self.app.copy_to_clipboard(text)
+        return ok, text
 
     def clear_user_selection(self) -> None:
-        """流式开始时清除选区，避免 copy 后无法再选。"""
-        if self.app is not None:
+        """流式开始时清除选区。"""
+        if self.app is not None and self.screen is not None:
             self.screen.clear_selection()
         self.refresh()
 
-    def on_mouse_up(self, event: events.MouseUp) -> None:
-        if event.button != 1 or not self.copy_on_select:
+    def on_text_selected(self, event: events.TextSelected) -> None:
+        """拖选结束后复制（等 Textual 完成选区再读，避免空剪贴板）。"""
+        if not self.copy_on_select:
             return
-        selected = self.screen.get_selected_text()
-        if not selected or not selected.strip():
+        ok, text = self.copy_selection_to_clipboard()
+        if not text:
             return
-        text = selected.strip()
-        copy_text_to_system_clipboard(text)
-        if self.app is not None:
-            self.app.copy_to_clipboard(text)
-            self.app.notify("已复制选中文本", timeout=2)
-        self.screen.clear_selection()
+        if ok and self.app is not None:
+            self.app.notify(f"已复制 {len(text)} 字符", timeout=2)
+        elif self.app is not None:
+            self.app.notify("复制失败，请用 Ctrl+Insert", timeout=3)
