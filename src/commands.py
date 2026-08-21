@@ -451,9 +451,6 @@ def always_approve(permission_state: dict, tool: str) -> bool:
     if tool not in GATED_TOOLS:
         return False
     apply_permission_override(permission_state, tool, "allow")
-    from src.config import load_config
-
-    load_config()
     dump_permissions_json(
         current_permissions(permission_state),
         project_root() / "javis.json",
