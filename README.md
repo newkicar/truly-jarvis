@@ -109,7 +109,7 @@ python -m src.main -n
 ## 测试与冒烟
 
 ```bash
-# 单元测试（假 agent，可进 CI）——当前 189
+# 单元测试（假 agent，可进 CI）
 pytest tests/ -q
 
 # CLI 真模型冒烟（手动，消耗额度，不进 CI）
@@ -121,6 +121,28 @@ python -m src.smoke_test --tui
 # TUI HITL 冒烟：自动发送「写 Inbox」用例，手动点 Permission Modal 验证 resume
 python -m src.smoke_test --tui-hitl
 ```
+
+### 调试与排错
+
+**CLI 非交互测试**：不要用 `echo "你好" | python -m src.main --cli`——管道关闭后 CLI 仍会卡在 `JARVIS>` 等输入，进程不会退出，还可能占用 `checkpoints.sqlite`。若必须脚本化，请在新会话里显式退出：
+
+```bash
+(echo 你好 & echo /exit) | python -m src.main -n --cli
+```
+
+更推荐：`python -m src.smoke_test "你好"`（跑一轮即退出），或 `python -m src.main -n --cli` 手动测。
+
+**API 400（`BadRequestError` / 空 assistant 消息）** 常见原因：
+
+| 原因 | 处理 |
+|------|------|
+| opencode 端点偶发 400 | 直接重试；代码会自动 repair + 重试一次 |
+| `default` 等会话 checkpoint 损坏（此前任务 mid-stream 失败） | `/delete-session` 或 `python -m src.main -n --cli` 开新会话 |
+| `.env` 的 `MODEL_ID` 与套餐不一致 | 核对 go 套餐可用模型名 |
+
+**会话隔离**：调试模型/API 问题时优先 `-n` / `--new`，避免污染 `default` 线程。定时任务线程 `sched-*` 会自动清理，勿手动删。
+
+**LangSmith 401 警告**：未配置 LangSmith API key 时会有 tracing 报错，不影响对话；本地可设 `LANGCHAIN_TRACING_V2=false` 静音。
 
 ---
 

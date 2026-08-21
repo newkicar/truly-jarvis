@@ -20,6 +20,9 @@ TUI HITL 冒烟（--tui-hitl，需真实终端）:
   6. 可选替代用例（手动输入）: 「在 workspace 执行 dir 命令」触发 execute 审批
 
 注意: 非确定性、耗时、耗额度；**切勿**加入 GitHub Actions / CI。
+
+CLI 脚本化: 勿用 `echo ... | python -m src.main --cli`（会卡在 JARVIS>）；用本模块或 `(echo 问题 & echo /exit) | python -m src.main -n --cli`。
+API 400 排错见仓库根 README「调试与排错」。
 """
 from __future__ import annotations
 
