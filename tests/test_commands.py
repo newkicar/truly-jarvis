@@ -59,8 +59,33 @@ def test_list_history_shows_boundaries_with_labels():
     text = commands.list_history(agent, "t")
     assert "user: 调研国产大模型" in text
     assert "分叉点" in text
-    assert "cid-0000000-a" in text  # 短 id 可见，可复制用于 /replay
+    assert "1." in text
+    assert "/replay" in text
     assert "loop" not in text
+
+
+def test_resolve_checkpoint_id_by_history_index():
+    states = [
+        FakeState("cid-0000000-aaaa", "input", -1, [_human("第一个问题")]),
+        FakeState("cid-0000000-bbbb", "loop", 0),
+        FakeState("cid-0000000-cccc", "input", 1, [_human("第二个问题")]),
+    ]
+    agent = FakeAgent(states)
+    assert commands.resolve_checkpoint_id(agent, "t", "1") == "cid-0000000-aaaa"
+    assert commands.resolve_checkpoint_id(agent, "t", "2") == "cid-0000000-cccc"
+    assert commands.resolve_checkpoint_id(agent, "t", "9") is None
+
+
+def test_dispatch_replay_by_index():
+    states = [
+        FakeState("cid-0000000-aaaa", "input", -1, [_human("q")]),
+        FakeState("cid-0000000-bbbb", "input", 0, [_human("q2")]),
+    ]
+    agent = FakeAgent(states)
+    text, new_thread, replay_cid = commands.dispatch_command(agent, "t", "/replay 1")
+    assert text is None
+    assert replay_cid == "cid-0000000-aaaa"
+    assert new_thread is None
 
 
 def test_list_history_empty():

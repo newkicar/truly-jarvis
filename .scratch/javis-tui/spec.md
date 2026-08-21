@@ -25,6 +25,10 @@ JARVIS 目前是纯 `input()`/`print()` 的 CLI 交互（`src/main.py`）。用�
 - **架构分层**：把 `main.py` 里的命令分发 + 会话管理逻辑抽到 `src/commands.py`（纯逻辑），CLI 与 TUI 共用；`main.py` 加 `--tui`（默认）/ `--cli` 分支，保持向后兼容。
 - **入口**：`python -m src.main` 默认进 TUI；`--cli` 保留现有 `input()` 交互。
 
+## Backlog（TUI 后续）
+
+- **07 — Rich 渲染 + 真实鼠标选区**（`.scratch/javis-tui/issues/07-rich-text-selection.md`）：对标 OpenCode 拖选复制，保留 Markdown 样式；**最后实现**。当前用序号命令（`/history` → `/replay N`）、`/copy-session`、侧边栏 Y/D 绕开。
+
 ## User Stories
 
 1. 作为用户，我希望启动 JARVIS 后进入一个类似 opencode 的 TUI 界面，以便获得现代化终端体验。

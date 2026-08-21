@@ -14,12 +14,12 @@ _HELP_COMMANDS = """\
   /sessions       列出历史会话
   /delete-session [thread_id]  删除历史会话（可写序号；省略 id 则删当前）
   /copy-session   复制当前会话 ID 到剪贴板
-  /history        查看当前会话时间线（每轮提问/分叉，短 id 可用于回退）
-  /replay <id>    从指定 checkpoint 重跑（支持短 id）
-  /fork <id>      从指定 checkpoint 分叉出新分支（支持短 id）
+  /history        查看当前会话时间线（带序号，可用于回退）
+  /replay <id>    从指定 checkpoint 重跑（序号 / 短 id / 完整 id）
+  /fork <id>      从指定 checkpoint 分叉出新分支（序号 / 短 id / 完整 id）
   /snapshot       记录当前文件状态到当前 checkpoint（git 快照）
   /snapshots      列出文件快照（git）
-  /rollback <id>  按 checkpoint 回退项目文件到对应 git 提交
+  /rollback <id>  按 checkpoint 回退项目文件到对应 git 提交（序号 / 短 id）
   /reload-schedules  重载 schedules/*.json 定时任务配置（无需重启）
 直接输入文字开始对话。
 """
@@ -124,11 +124,19 @@ def boundary_checkpoints(agent, thread_id: str):
 
 
 def resolve_checkpoint_id(agent, thread_id: str, raw: str):
-    """把用户输入（完整 id 或短 id 前缀）解析成完整 checkpoint_id。
+    """把用户输入解析成完整 checkpoint_id。
 
-    短 id = cid[:13]（/history 显示用的短格式）。支持前缀唯一匹配；
-    多个匹配返回 None，表示歧义。单次遍历完成精确 + 前缀匹配。
+    支持：/history 序号（1 起）、完整 id、短 id 前缀唯一匹配。
     """
+    raw = raw.strip()
+    if not raw:
+        return None
+    if raw.isdigit():
+        checkpoints = boundary_checkpoints(agent, thread_id)
+        idx = int(raw)
+        if 1 <= idx <= len(checkpoints):
+            return checkpoints[idx - 1].config.get("configurable", {}).get("checkpoint_id")
+        return None
     prefix_matches: list[str] = []
     for s in agent.get_state_history(config={"configurable": {"thread_id": thread_id}}):
         cid = s.config.get("configurable", {}).get("checkpoint_id")
@@ -259,8 +267,8 @@ def list_history(agent, thread_id: str) -> str:
     checkpoints = boundary_checkpoints(agent, thread_id)
     if not checkpoints:
         return "（暂无历史）"
-    lines = []
-    for i, s in enumerate(checkpoints):
+    lines = ["当前会话时间线（从旧到新）:"]
+    for i, s in enumerate(checkpoints, 1):
         cid = s.config.get("configurable", {}).get("checkpoint_id")
         src = (s.metadata or {}).get("source")
         step = s.metadata.get("step") if s.metadata else None
@@ -272,10 +280,8 @@ def list_history(agent, thread_id: str) -> str:
         else:  # update
             label = f"状态更新 (step {step})"
         lines.append(f"  {i}. [{src:5s}] {label:<60} {short}")
-    lines.append(
-        "   → 用短 id（前 13 位）即可 /replay 或 /fork，如 /replay "
-        + checkpoint_short_id(checkpoints[-1].config.get("configurable", {}).get("checkpoint_id", ""))
-    )
+    last = len(checkpoints)
+    lines.append(f"   → /replay {last} 或 /fork {last}（也可用短 id / 完整 id）")
     return "\n".join(lines)
 
 
@@ -283,6 +289,9 @@ def prepare_replay(agent, thread_id: str, checkpoint_id: str) -> tuple[str | Non
     """解析 /replay 目标 checkpoint。返回 (error_message, full_checkpoint_id)。"""
     full_id = resolve_checkpoint_id(agent, thread_id, checkpoint_id)
     if full_id is None:
+        if checkpoint_id.strip().isdigit():
+            n = len(boundary_checkpoints(agent, thread_id))
+            return f"重跑失败: 无效序号「{checkpoint_id}」（当前共 {n} 个边界点）", None
         return f"重跑失败: 找不到 checkpoint {checkpoint_id}", None
     return None, full_id
 
@@ -322,6 +331,9 @@ def fork(agent, thread_id: str, checkpoint_id: str):
     base = {"configurable": {"thread_id": thread_id}}
     full_id = resolve_checkpoint_id(agent, thread_id, checkpoint_id)
     if full_id is None:
+        if checkpoint_id.strip().isdigit():
+            n = len(boundary_checkpoints(agent, thread_id))
+            return f"分叉失败: 无效序号「{checkpoint_id}」（当前共 {n} 个边界点）", None
         return f"分叉失败: 找不到 checkpoint {checkpoint_id}", None
     try:
         target = None
