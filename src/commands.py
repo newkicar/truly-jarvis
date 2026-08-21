@@ -223,6 +223,55 @@ def resolve_thread_id(agent, raw: str) -> str | None:
     return None
 
 
+def channel_values_stuck(channel_values: dict | None) -> bool:
+    """checkpoint 是否卡在 graph 中断态（API 失败 mid-stream 后常见）。"""
+    if not channel_values:
+        return False
+    if channel_values.get("__pregel_tasks"):
+        return True
+    return any(str(key).startswith("branch:to:") for key in channel_values)
+
+
+def checkpoint_config_stuck(checkpointer, thread_id: str, *, checkpoint_id: str | None = None) -> bool:
+    """读取 checkpointer 最新（或指定）checkpoint 是否处于中断态。"""
+    if checkpointer is None or not hasattr(checkpointer, "get_tuple"):
+        return False
+    config = {"configurable": {"thread_id": thread_id}}
+    if checkpoint_id:
+        config["configurable"]["checkpoint_id"] = checkpoint_id
+    try:
+        tup = checkpointer.get_tuple(config)
+    except Exception:
+        return False
+    if not tup:
+        return False
+    cv = (tup.checkpoint or {}).get("channel_values") or {}
+    return channel_values_stuck(cv)
+
+
+def repair_stuck_thread(agent, thread_id: str) -> bool:
+    """把卡在 __pregel_tasks / branch:to:* 的会话回退到最近可用 checkpoint。"""
+    checkpointer = getattr(agent, "checkpointer", None)
+    if not checkpoint_config_stuck(checkpointer, thread_id):
+        return False
+
+    base_config = {"configurable": {"thread_id": thread_id}}
+    try:
+        for state in agent.get_state_history(base_config):
+            cid = state.config.get("configurable", {}).get("checkpoint_id")
+            if not cid or checkpoint_config_stuck(checkpointer, thread_id, checkpoint_id=cid):
+                continue
+            agent.update_state({"configurable": {"thread_id": thread_id, "checkpoint_id": cid}}, None)
+            return True
+    except Exception:
+        pass
+
+    if checkpointer is not None and hasattr(checkpointer, "delete_thread"):
+        checkpointer.delete_thread(thread_id)
+        return True
+    return False
+
+
 def delete_session(agent, target: str, current_thread_id: str) -> tuple[str, str | None]:
     """删除指定会话 checkpoint；若删的是当前会话则返回新 thread_id。"""
     if target.startswith("sched-"):

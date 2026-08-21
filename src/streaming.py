@@ -20,8 +20,9 @@ def format_agent_error(exc: BaseException) -> str:
     if "BadRequest" in name or "400" in msg:
         return (
             f"API 请求失败：{msg}\n"
-            "请检查 .env 的 MODEL_ID 是否与套餐一致（如 mimo-v2.5），"
-            "或改用 --cli / 缩短任务后再试。"
+            "常见原因：① opencode 端点偶发 400（可重试）；"
+            "② 当前会话 checkpoint 已损坏（执行 /delete-session 或 python -m src.main -n --cli 开新会话）；"
+            "③ .env 的 MODEL_ID 与套餐不一致。"
         )
     if "Authentication" in name or "401" in msg or "403" in msg:
         return f"鉴权失败：{msg}\n请检查 .env 的 API_KEY / BASE_URL。"
@@ -267,6 +268,13 @@ def run_agent_turn(
                 else:
                     callbacks["on_message_delta"](text)
             return True
+    def _run_stream(stream_input: Any, config: dict):
+        stream = agent.stream_events(stream_input, version="v3", config=config)
+        consumed = consume_stream_events(
+            stream, callbacks, is_cancelled=is_cancelled, on_cancelled=on_cancelled
+        )
+        return consumed, stream
+
     while not is_cancelled():
         if on_stream_start:
             on_stream_start()
@@ -281,12 +289,28 @@ def run_agent_turn(
             }
             replay_pending = False
         else:
+            commands.repair_stuck_thread(agent, thread_id)
             stream_input = {"messages": [{"role": "user", "content": user_input}]}
             config = base_config
-        stream = agent.stream_events(stream_input, version="v3", config=config)
-        consumed = consume_stream_events(
-            stream, callbacks, is_cancelled=is_cancelled, on_cancelled=on_cancelled
-        )
+        try:
+            consumed, stream = _run_stream(stream_input, config)
+        except Exception as exc:
+            commands.repair_stuck_thread(agent, thread_id)
+            if (
+                not resume
+                and not replay_pending
+                and user_input
+                and ("BadRequest" in type(exc).__name__ or "400" in str(exc))
+            ):
+                try:
+                    consumed, stream = _run_stream(
+                        {"messages": [{"role": "user", "content": user_input}]},
+                        base_config,
+                    )
+                except Exception:
+                    raise exc from None
+            else:
+                raise
         if is_cancelled():
             return False
 

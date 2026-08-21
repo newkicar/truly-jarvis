@@ -576,3 +576,65 @@ def test_dispatch_rollback_reports_empty_inbox(monkeypatch, tmp_path):
     )
     assert "未找到 checkpoint" in text or "跳过项目文件回退" in text
     assert "Inbox/Reports：该会话无需要还原的文件" in text
+
+
+def test_channel_values_stuck_detects_pregel_tasks_and_branch():
+    assert not commands.channel_values_stuck(None)
+    assert not commands.channel_values_stuck({"messages": []})
+    assert commands.channel_values_stuck({"__pregel_tasks": [{"id": "x"}]})
+    assert commands.channel_values_stuck({"branch:to:model": None})
+
+
+def test_repair_stuck_thread_rolls_back_to_last_good_checkpoint():
+    class FakeTuple:
+        def __init__(self, channel_values):
+            self.checkpoint = {"channel_values": channel_values}
+
+    class FakeCheckpointer:
+        def __init__(self):
+            self.by_cid = {
+                "bad": {"__pregel_tasks": [{"id": "x"}], "branch:to:model": None},
+                "good": {"messages": []},
+            }
+            self.updated = None
+
+        def get_tuple(self, config):
+            cid = config["configurable"].get("checkpoint_id")
+            if cid is None:
+                return FakeTuple(self.by_cid["bad"])
+            return FakeTuple(self.by_cid[cid])
+
+        def delete_thread(self, thread_id):
+            self.deleted = thread_id
+
+    class RepairAgent:
+        def __init__(self):
+            self.checkpointer = FakeCheckpointer()
+            self._states = [
+                FakeState("good", "input", -1),
+                FakeState("bad", "loop", 1),
+            ]
+
+        def get_state_history(self, config=None):
+            return iter(reversed(self._states))
+
+        def update_state(self, config, values):
+            self.checkpointer.updated = config
+
+    agent = RepairAgent()
+    assert commands.repair_stuck_thread(agent, "default") is True
+    assert agent.checkpointer.updated == {
+        "configurable": {"thread_id": "default", "checkpoint_id": "good"}
+    }
+
+
+def test_format_agent_error_mentions_delete_session():
+    class BadRequestError(Exception):
+        pass
+
+    err = BadRequestError("Error code: 400 - {'model': 'muse-spark'}")
+    from src import streaming
+
+    msg = streaming.format_agent_error(err)
+    assert "/delete-session" in msg
+    assert "-n" in msg
