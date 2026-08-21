@@ -26,6 +26,7 @@
 | `.scratch/javis-tui/` | TUI 专项票 |
 | `.scratch/javis-roadmap/` | 后续路线（Inbox → TUI 体验 → 测试），**已关票** |
 | `.scratch/javis-generalization/` | 泛化（项目根 + workspace-first @ + / 建议），**已关票** |
+| `.scratch/javis-codex-harness/` | Codex harness 借鉴（/doctor、checkpoint finalize、permission hooks），**起草中** |
 
 路线决策摘要： [`.scratch/javis-roadmap/map.md`](../.scratch/javis-roadmap/map.md)
 
