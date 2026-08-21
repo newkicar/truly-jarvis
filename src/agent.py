@@ -153,6 +153,9 @@ def build_agent(
         interrupt_on, permission_state = build_permission_interrupts(config.permissions)
     deny_middleware = build_permission_deny_middleware(permission_state)
     deprecated_guard = DeprecatedPathMiddleware()
+    from src.system_context_enforcer import SystemContextEnforcerMiddleware
+
+    system_context_enforcer = SystemContextEnforcerMiddleware()
     vault_guard = VaultWriteGuardMiddleware()
     root = config.project_root
     inbox_snapshot = InboxSnapshotMiddleware(root, config.vault_path)
@@ -189,6 +192,7 @@ def build_agent(
             CodeInterpreterMiddleware(subagents=True),
             deny_middleware,
             deprecated_guard,
+            system_context_enforcer,
             vault_guard,
             inbox_snapshot,
         ],  # type: ignore[list-item]
