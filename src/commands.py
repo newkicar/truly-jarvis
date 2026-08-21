@@ -428,7 +428,11 @@ def format_doctor_report(config, agent, thread_id: str, *, mcp_tool_count: int |
     caps = harness_capabilities(config)
     exec_label = "已加载" if caps["execute"] else "未加载 ⚠"
     todos_label = "已加载" if caps["write_todos"] else "未加载 ⚠"
-    lines.append(f"Harness:    execute {exec_label}; write_todos {todos_label}")
+    tavily_label = "已配置" if caps.get("tavily") else "未配置 ⚠"
+    lines.append(
+        f"Harness:    execute {exec_label}; write_todos {todos_label}; "
+        f"quick_search {tavily_label}"
+    )
 
     lines.extend(
         [

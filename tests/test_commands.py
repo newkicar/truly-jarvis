@@ -787,6 +787,7 @@ def test_format_doctor_report_healthy(tmp_path, monkeypatch):
     assert "消息条数:   1" in text
     assert "execute 已加载" in text
     assert "write_todos 已加载" in text
+    assert "quick_search 已配置" in text
 
 
 def test_format_doctor_report_stuck(tmp_path, monkeypatch):

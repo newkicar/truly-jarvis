@@ -8,8 +8,9 @@ from src.system_context_enforcer import (
     SystemContextIntent,
     build_system_context_answer,
     classify_system_context,
+    eval_code_looks_like_clock_probe,
+    eval_misuse_message,
     format_date_answer,
-    wrong_tool_message,
 )
 
 
@@ -40,6 +41,12 @@ def test_classify_location_questions():
 def test_classify_combined():
     intent = classify_system_context("现在几点，我在哪")
     assert intent.time and intent.location
+
+
+def test_eval_code_detects_clock_probe():
+    assert eval_code_looks_like_clock_probe("new Date().toString()")
+    assert eval_code_looks_like_clock_probe("Date.now()")
+    assert not eval_code_looks_like_clock_probe("1 + 2")
 
 
 def test_format_date_answer():
@@ -93,26 +100,26 @@ def test_before_model_skips_complex():
     assert mw.before_model(state, runtime=None) is None
 
 
-def test_blocks_eval_on_time_question():
+def test_blocks_eval_clock_probe_by_code_not_question():
     mw = SystemContextEnforcerMiddleware()
-    req = _Req("eval", {"code": "new Date()"}, state={"messages": [HumanMessage("现在几点")]})
+    req = _Req("eval", {"code": "new Date()"}, state={"messages": [HumanMessage("帮我算斐波那契")]})
     msg = mw.wrap_tool_call(req, handler=lambda r: None)
     assert msg.status == "error"
-    assert "禁止 eval" in msg.content
+    assert "execute" in msg.content
 
 
-def test_blocks_task_researcher_on_location():
+def test_allows_eval_for_pure_computation():
     mw = SystemContextEnforcerMiddleware()
     req = _Req(
-        "task",
-        {"subagent_type": "researcher", "description": "查城市"},
-        state={"messages": [HumanMessage("我在哪")]},
+        "eval",
+        {"code": "Array.from({length:3}, (_,i)=>i+1).reduce((a,b)=>a+b,0)"},
+        state={"messages": [HumanMessage("帮我算 1+2+3")]},
     )
-    msg = mw.wrap_tool_call(req, handler=lambda r: None)
-    assert msg.status == "error"
-    assert "researcher" not in msg.content.lower() or "禁止 task" in msg.content
+    assert mw._blocked_tool(req) is None
 
 
-def test_wrong_tool_message_mentions_execute():
-    text = wrong_tool_message("eval", SystemContextIntent(time=True))
-    assert "Get-Date" in text
+def test_eval_misuse_message_is_generic():
+    text = eval_misuse_message()
+    assert "execute" in text
+    assert "quick_search" in text
+    assert "天气" not in text

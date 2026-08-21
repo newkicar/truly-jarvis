@@ -1,7 +1,7 @@
 """系统上下文强制层（ADR-0003）。
 
-仅对纯日期/星期问句 short-circuit（读 system prompt 首行）；时间/位置交给 execute。
-同时拦截 eval / task(researcher) 等误用。
+仅对纯日期/星期问句 short-circuit（读 system prompt 首行）。
+eval 若用于探测系统时钟（代码特征），在工具层温和重定向——不按用户问法分类。
 """
 from __future__ import annotations
 
@@ -57,9 +57,14 @@ _LOCATION_PATTERNS = (
     re.compile(r"(现在)?在(哪|哪里|什么地方)"),
     re.compile(r"where am i", re.I),
 )
+_CLOCK_EVAL_PATTERNS = (
+    re.compile(r"\bnew\s+Date\b", re.I),
+    re.compile(r"\bDate\.now\b", re.I),
+    re.compile(r"toISOString|toLocaleString|getTimezoneOffset", re.I),
+    re.compile(r"Get-Date|System\.TimeZoneInfo", re.I),
+)
 
 _EVAL_TOOL = "eval"
-_BLOCKED_TOOLS_ON_INTENT = frozenset({_EVAL_TOOL})
 
 
 @dataclass(frozen=True)
@@ -94,11 +99,22 @@ def classify_system_context(text: str) -> SystemContextIntent:
     time = _matches_any(t, _TIME_PATTERNS)
     location = _matches_any(t, _LOCATION_PATTERNS)
 
-    # 「今天」单独出现且很短 → 日期
     if not date and re.fullmatch(r"(今天|今日)[？?]?", t):
         date = True
 
     return SystemContextIntent(date=date, time=time, location=location)
+
+
+def eval_code_looks_like_clock_probe(code: str) -> bool:
+    """eval 代码是否在探测时钟/时区（工具层特征，与用户问法无关）。"""
+    return _matches_any(str(code or ""), _CLOCK_EVAL_PATTERNS)
+
+
+def eval_misuse_message() -> str:
+    return (
+        "eval 用于代码计算，不用于读取系统时钟或环境。"
+        "本机信息用 execute；需外部信息用 quick_search。"
+    )
 
 
 def fetch_local_time(*, timeout: float = 15) -> str:
@@ -172,18 +188,6 @@ def build_system_context_answer(
     return "\n".join(parts)
 
 
-def wrong_tool_message(tool: str, intent: SystemContextIntent) -> str:
-    hints: list[str] = []
-    if intent.date:
-        hints.append("问日期/星期 → 直接读 system prompt「今天是 …」")
-    if intent.time:
-        hints.append("问时间 → execute Get-Date")
-    if intent.location:
-        hints.append("问城市 → execute curl IP 定位")
-    detail = "；".join(hints) or "请用 execute 读本机"
-    return f"系统上下文问题禁止 {tool}。{detail}。（middleware 拦截）"
-
-
 def last_human_from_messages(messages) -> str:
     for msg in reversed(messages or []):
         if isinstance(msg, HumanMessage):
@@ -201,7 +205,7 @@ def last_human_from_state(state) -> str:
 
 
 class SystemContextEnforcerMiddleware(AgentMiddleware):
-    """纯日期 short-circuit + 拦截 eval/task(researcher) 误用；时间/位置走 execute。"""
+    """纯日期 short-circuit；eval 时钟探测代码在工具层重定向。"""
 
     @property
     def name(self) -> str:
@@ -219,37 +223,31 @@ class SystemContextEnforcerMiddleware(AgentMiddleware):
     async def abefore_model(self, state, runtime):
         return self.before_model(state, runtime)
 
-    def _blocked_tool(self, request) -> tuple[str, SystemContextIntent] | None:
-        state = getattr(request, "state", None)
-        intent = classify_system_context(last_human_from_state(state))
-        if not intent.any:
-            return None
+    def _blocked_tool(self, request) -> tuple[str, str] | None:
         tool_call = getattr(request, "tool_call", None) or {}
         if not isinstance(tool_call, dict):
             return None
         tool = tool_call.get("name", "")
         args = tool_call.get("args", {}) or {}
-        if tool in _BLOCKED_TOOLS_ON_INTENT:
-            return tool, intent
-        if tool == "task":
-            subagent = str(
-                args.get("subagent_type") or args.get("subagentType") or ""
-            ).casefold()
-            if subagent in ("researcher", "knowledge_keeper", "knowledge-keeper"):
-                return tool, intent
+
+        if tool == _EVAL_TOOL:
+            code = str(args.get("code") or args.get("expression") or "")
+            if eval_code_looks_like_clock_probe(code):
+                return tool, eval_misuse_message()
+
         if tool == "read_file":
             path = _tool_arg_value(args, "file_path", "path")
             if "user-profile" in path.replace("\\", "/").casefold():
-                return tool, intent
+                return tool, "不要读 user-profile 推断用户状况；用工具自行核实。"
         return None
 
     def wrap_tool_call(self, request, handler):
         blocked = self._blocked_tool(request)
         if blocked:
-            tool, intent = blocked
+            tool, message = blocked
             tool_call = getattr(request, "tool_call", None) or {}
             return ToolMessage(
-                content=wrong_tool_message(tool, intent),
+                content=message,
                 name=tool,
                 tool_call_id=tool_call.get("id", ""),
                 status="error",
@@ -259,10 +257,10 @@ class SystemContextEnforcerMiddleware(AgentMiddleware):
     async def awrap_tool_call(self, request, handler):
         blocked = self._blocked_tool(request)
         if blocked:
-            tool, intent = blocked
+            tool, message = blocked
             tool_call = getattr(request, "tool_call", None) or {}
             return ToolMessage(
-                content=wrong_tool_message(tool, intent),
+                content=message,
                 name=tool,
                 tool_call_id=tool_call.get("id", ""),
                 status="error",

@@ -89,8 +89,8 @@ def test_build_main_prompt_includes_date_not_time():
     assert "15:30" not in prompt
     assert "get_system_context" not in prompt
     assert "execute" in prompt
-    assert "CodeInterpreter" in prompt
-    assert "禁止" in prompt
+    assert "quick_search" in prompt
+    assert "环境与可核实事实" in prompt
     assert "停止规则" not in prompt
 
 

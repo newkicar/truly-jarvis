@@ -65,10 +65,10 @@ def make_quick_search_tool(tavily_key: str):
 
     @tool
     def quick_search(query: str) -> str:
-        """快速搜索互联网，返回 AI 生成的答案摘要 + 相关片段（约 1-2 秒，轻量）。
+        """搜索互联网，返回 AI 摘要 + 来源片段（约 1–2 秒）。
 
-        适用于：简单事实问题（天气、时间、定义、人物简介、一句话能回答的事实）。
-        不适合：需要深入分析、多角度对比或全面调研的问题（用 search / deep_search）。
+        当答案依赖外部实时信息、且本地文件/system prompt 不足以核实时使用。
+        深度多源调研用 search / deep_search 或 task(researcher)。
         """
         return _search(
             tavily_key, query, search_depth="fast", include_answer=True, max_results=3

@@ -10,7 +10,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from src.agent import build_agent, build_main_prompt
+from src.agent import build_agent, build_main_prompt, JARVIS_HARNESS_SUFFIX
 from src.skill_paths import USER_SKILLS_VPATH
 from src.subagents import build_knowledge_keeper
 from conftest import make_fake_config
@@ -56,13 +56,12 @@ def test_build_main_prompt_injects_session_date():
     assert "停止规则" not in prompt
     assert "skills" in prompt and "MCP" in prompt
     assert "execute" in prompt
+    assert "quick_search" in prompt
     assert "JARVIS" in prompt
     assert "muse-spark" not in prompt.lower() or "不要" in prompt
-    assert "CodeInterpreter" in prompt
-    assert "禁止" in prompt
+    assert "Harness" in JARVIS_HARNESS_SUFFIX
+    assert "天气" not in prompt
     assert "Reports" in prompt
-    assert "环境与可核实事实" in prompt
-    assert "Get-Date" not in prompt
 
 
 def test_build_agent_uses_build_main_prompt(tmp_path, monkeypatch):
@@ -84,7 +83,8 @@ def test_build_agent_uses_build_main_prompt(tmp_path, monkeypatch):
 
     assert captured.get("system_prompt") == build_main_prompt()
     assert "工作方式" in captured.get("system_prompt", "")
-    assert captured.get("tools") == []
+    tool_names = [t.name for t in captured.get("tools", [])]
+    assert "quick_search" in tool_names
 
 
 def test_build_agent_invoke_returns_message(tmp_path, monkeypatch):
@@ -142,11 +142,12 @@ def test_build_agent_injects_mcp_tools(tmp_path, monkeypatch):
     ]
     build_agent(cfg, model=model, mcp_tools=fake_tools)
 
-    assert [t.name for t in captured.get("tools", [])] == ["git_status"]
+    tool_names = [t.name for t in captured.get("tools", [])]
+    assert tool_names == ["quick_search", "git_status"]
 
 
-def test_build_agent_no_mcp_tools_defaults_empty(tmp_path, monkeypatch):
-    """未传 mcp_tools 时 tools 为空列表。"""
+def test_build_agent_no_mcp_tools_still_has_quick_search(tmp_path, monkeypatch):
+    """未传 mcp_tools 时仍应注入 quick_search。"""
     import src.agent as agent_mod
     from src.agent import create_deep_agent
 
@@ -162,7 +163,8 @@ def test_build_agent_no_mcp_tools_defaults_empty(tmp_path, monkeypatch):
     model = ToolCapableFake(reply="ok")
     build_agent(cfg, model=model)
 
-    assert captured.get("tools") == []
+    tool_names = [t.name for t in captured.get("tools", [])]
+    assert tool_names == ["quick_search"]
 
 
 def test_build_agent_registers_skill_sources(tmp_path, monkeypatch):
@@ -314,6 +316,27 @@ def test_build_agent_includes_todo_list_middleware(tmp_path, monkeypatch):
 
     mws = captured.get("middleware", [])
     assert any(isinstance(m, TodoListMiddleware) for m in mws)
+
+
+def test_build_agent_registers_harness_profile(tmp_path, monkeypatch):
+    """应为 model_id 注册 HarnessProfile（deepagents 标准扩展点）。"""
+    import src.agent as agent_mod
+    from deepagents import HarnessProfile
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
+    cfg = make_fake_config(tmp_path)
+    captured = {}
+
+    def spy(model_id, profile):
+        captured["model_id"] = model_id
+        captured["profile"] = profile
+
+    monkeypatch.setattr(agent_mod, "register_harness_profile", spy)
+    build_agent(cfg, model=ToolCapableFake(reply="ok"))
+
+    assert captured["model_id"] == cfg.model_id
+    assert isinstance(captured["profile"], HarnessProfile)
+    assert "先工具" in (captured["profile"].system_prompt_suffix or "")
 
 
 def test_stream_events_v3_does_not_throw_and_produces_text(tmp_path, monkeypatch):

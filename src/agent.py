@@ -13,7 +13,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.store.memory import InMemoryStore
 from langgraph.store.base import BaseStore
 
-from deepagents import create_deep_agent
+from deepagents import HarnessProfile, create_deep_agent, register_harness_profile
 from deepagents.backends import (
     CompositeBackend,
     FilesystemBackend,
@@ -40,6 +40,13 @@ from src.wiki import make_wiki_tools
 
 _WEEKDAYS = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
 
+# deepagents HarnessProfile：通用推理约束，不写场景菜谱（对标 profile system_prompt_suffix）
+JARVIS_HARNESS_SUFFIX = """\
+## Harness
+- 先弄清本轮交付物；多步任务可用 write_todos 跟踪，逐步执行并核对结果。
+- 可验证的事实：先工具、后结论；某工具失败则换合法手段，都失败则说明不确定——不凭训练记忆硬答，也不在能自行获取时先反问用户。
+- eval / CodeInterpreter 仅用于代码计算与 fan-out，不用于读取系统环境。"""
+
 MAIN_SYSTEM_PROMPT = """你是 JARVIS，个人 AI 助手，专注扩展用户的心智。
 
 **身份（用户问「你是谁」时）：**
@@ -52,12 +59,12 @@ MAIN_SYSTEM_PROMPT = """你是 JARVIS，个人 AI 助手，专注扩展用户的
 ## 工作方式
 接到提问或任务时，先弄清要交付什么。简单问题直接回答。
 多步任务：先计划步骤，再逐步执行，完成后核对结果；某步失败则换合法手段重试或说明原因，不要卡死在一种做法上。
-需要信息或执行时，按需使用 skills、MCP 工具、内置工具（含 `execute`）、子代理——不凭训练记忆硬猜事实。
+需要信息或执行时，按需使用 skills、MCP、内置工具（含 execute、quick_search）、子代理——不凭训练记忆硬猜事实。
 
 **环境与可核实事实：**
-- 本提示词「当前会话」仅提供今天日期与星期；精确时间、所在地、网络可查事实，应通过可用工具（优先 `execute` 读本机或 curl）自行核实，再回答用户。
-- **禁止** CodeInterpreter/eval/JS 冒充系统时钟或定位；不要读 `javis.json` 或 `/memories/user-profile.md` 猜用户位置。
-- 简单日期/星期问题可直接用「今天是 …」一行作答；其余事实类问题先工具后结论，缺必要输入时再向用户确认。
+- 本提示词「当前会话」仅提供今天日期与星期；其余需核实的信息应通过可用工具自行获取后再答。
+- 不要读 `javis.json` 或 `/memories/user-profile.md` 推断用户状况。
+- 简单日期/星期问题可直接用「今天是 …」一行作答。
 
 ## 完成标准
 - **事实**：有可靠来源再答；没有则说明不确定，不编造。
@@ -69,7 +76,7 @@ MAIN_SYSTEM_PROMPT = """你是 JARVIS，个人 AI 助手，专注扩展用户的
 - 文件路径只用 `/workspace/`（项目）、`/vault/`（Obsidian）、`/memories/`（用户记忆）、`/skills/`（用户全局 skill）、`/builtin-skills/`（随安装包 skill）。
 - 值得长期保留或用户要求记住 → knowledge_keeper。
 - 委派时传递用户原意，不扩写成「全面调研 / 行业动态报告」。
-- 多角度并行**研究**可用 CodeInterpreter + `task()` fan-out 多个 researcher，再合并（**不**用于查时间/位置）。
+- 多角度并行**研究**可用 CodeInterpreter + `task()` fan-out 多个 researcher，再合并。
 
 ## 输出
 简体中文，简洁有结构。引用本地知识时用 `/vault/` 路径。
@@ -119,7 +126,16 @@ def harness_capabilities(config: Config) -> dict[str, bool]:
     return {
         "execute": supports_execution(_make_backend(config)),
         "write_todos": True,
+        "tavily": bool(str(config.tavily_key or "").strip()),
     }
+
+
+def _register_jarvis_harness(model_id: str) -> None:
+    """为当前模型注册 HarnessProfile（deepagents 标准扩展点，非场景 middleware）。"""
+    register_harness_profile(
+        model_id,
+        HarnessProfile(system_prompt_suffix=JARVIS_HARNESS_SUFFIX),
+    )
 
 
 def build_agent(
@@ -167,6 +183,7 @@ def build_agent(
     vault_guard = VaultWriteGuardMiddleware()
     root = config.project_root
     inbox_snapshot = InboxSnapshotMiddleware(root, config.vault_path)
+    _register_jarvis_harness(config.model_id)
     researcher = build_researcher(
         search_tools=search_tools, wiki_tools=wiki_tools, rag_tool=rag_tool,
         deny_middleware=deny_middleware,
@@ -188,7 +205,9 @@ def build_agent(
     ]
 
     skills = skill_virtual_sources(config)
-    main_tools = list(mcp_tools or [])
+    main_tools: list = [make_quick_search_tool(config.tavily_key)]
+    if mcp_tools:
+        main_tools.extend(mcp_tools)
 
     return create_deep_agent(
         model=model,

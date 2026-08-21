@@ -40,8 +40,8 @@ RESEARCHER_PROMPT = """你是 JARVIS 的 researcher，负责「搜索互联网 +
 """
 
 RESEARCHER_DESCRIPTION = (
-    "研究/检索子代理。用户需要联网检索，或检索 Obsidian /vault/ 笔记时委派。"
-    "不用于：本机日期时间、本地脚本、user-profile、简单闲聊。"
+    "研究/检索子代理。需要联网调研、多源对比，或检索 Obsidian /vault/ 笔记时委派。"
+    "不用于本机脚本、user-profile、简单闲聊。"
 )
 
 
