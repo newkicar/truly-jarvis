@@ -638,3 +638,133 @@ def test_format_agent_error_mentions_delete_session():
     msg = streaming.format_agent_error(err)
     assert "/delete-session" in msg
     assert "-n" in msg
+
+
+class _FakeCheckpointer:
+    def __init__(self, *, stuck: bool = False, cp_count: int = 0, cp_max: int = 0):
+        self.stuck = stuck
+        self.cp_count = cp_count
+        self.cp_max = cp_max
+
+    def get_tuple(self, config):
+        if not self.stuck:
+            return None
+        return type("T", (), {"checkpoint": {"channel_values": {"__pregel_tasks": [{}]}}})()
+
+
+class _FakeConn:
+    def __init__(self, count, max_size):
+        self._count = count
+        self._max = max_size
+
+    def execute(self, sql, params=()):
+        return self
+
+    def fetchone(self):
+        return (self._count, self._max)
+
+
+class _FakeDoctorAgent:
+    def __init__(self, *, stuck=False, messages=None, cp_count=0, cp_max=0):
+        self.checkpointer = _FakeCheckpointer(stuck=stuck)
+        self.checkpointer.conn = _FakeConn(cp_count, cp_max)
+        self._messages = messages or []
+
+    def get_state(self, config=None):
+        return type("S", (), {"values": {"messages": self._messages}})()
+
+
+def test_format_doctor_report_healthy(tmp_path, monkeypatch):
+    from src.config import Config
+
+    monkeypatch.setattr(commands, "resolve_env_file", lambda root: tmp_path / ".env")
+    monkeypatch.setattr(commands, "resolve_javis_json", lambda root: tmp_path / "javis.json")
+    (tmp_path / ".env").write_text("BASE_URL=http://x\nAPI_KEY=secret\nMODEL_ID=m\nTAVILY_KEY=t", encoding="utf-8")
+    (tmp_path / "javis.json").write_text('{"obsidian_vault":"v","permissions":{"*":"ask"}}', encoding="utf-8")
+
+    cfg = Config(
+        project_root=tmp_path,
+        base_url="http://x",
+        api_key="secret-key",
+        model_id="m",
+        tavily_key="t",
+        vault_path=(tmp_path / "v").resolve(),
+        memory_dir=tmp_path / "memory",
+        checkpoint_db=tmp_path / "cp.sqlite",
+        schedules_dir=tmp_path / "schedules",
+        skills=(),
+        mcps={"servers": {}},
+        permissions={"*": "ask"},
+        agents={},
+        rag_ollama_base_url="http://localhost:11434",
+        rag_embed_model="embed",
+        tui={"theme": "flexoki"},
+    )
+    agent = _FakeDoctorAgent(messages=[_human("hi")], cp_count=3, cp_max=1200)
+    text = commands.format_doctor_report(cfg, agent, "default", mcp_tool_count=0)
+    assert "JARVIS 诊断" in text
+    assert "会话状态:   正常" in text
+    assert "m" in text
+    assert "secr…" in text
+    assert "permissions: *=ask" in text
+    assert "消息条数:   1" in text
+
+
+def test_format_doctor_report_stuck(tmp_path, monkeypatch):
+    from src.config import Config
+
+    monkeypatch.setattr(commands, "resolve_env_file", lambda root: tmp_path / ".env")
+    monkeypatch.setattr(commands, "resolve_javis_json", lambda root: tmp_path / "javis.json")
+
+    cfg = Config(
+        project_root=tmp_path,
+        base_url="http://x",
+        api_key="k",
+        model_id="m",
+        tavily_key="t",
+        vault_path=tmp_path,
+        memory_dir=tmp_path,
+        checkpoint_db=tmp_path / "cp.sqlite",
+        schedules_dir=tmp_path,
+        skills=(),
+        mcps={},
+        permissions={},
+        agents={},
+        rag_ollama_base_url="http://localhost:11434",
+        rag_embed_model="embed",
+        tui={},
+    )
+    agent = _FakeDoctorAgent(stuck=True)
+    text = commands.format_doctor_report(cfg, agent, "default")
+    assert "⚠ 卡住" in text
+    assert "/delete-session" in text
+
+
+def test_dispatch_doctor(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "src.config.load_config",
+        lambda: type("C", (), {
+            "project_root": tmp_path,
+            "base_url": "u",
+            "api_key": "k",
+            "model_id": "m",
+            "tavily_key": "t",
+            "vault_path": tmp_path,
+            "memory_dir": tmp_path,
+            "checkpoint_db": tmp_path / "cp.sqlite",
+            "schedules_dir": tmp_path,
+            "skills": (),
+            "mcps": {},
+            "permissions": {},
+            "agents": {},
+            "rag_ollama_base_url": "http://localhost:11434",
+            "rag_embed_model": "e",
+            "tui": {},
+        })(),
+    )
+    monkeypatch.setattr("src.mcps.load_mcp_tools", lambda mcps: [])
+    monkeypatch.setattr(commands, "format_doctor_report", lambda *a, **k: "doctor-ok")
+    text, new_thread, replay = commands.dispatch_command(_FakeDoctorAgent(), "t1", "/doctor")
+    assert text == "doctor-ok"
+    assert new_thread is None
+    assert replay is None

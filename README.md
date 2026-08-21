@@ -96,6 +96,7 @@ python -m src.main -n
 | 命令 | 说明 |
 |------|------|
 | `/sessions` | 列出历史会话（过滤 `sched-*`） |
+| `/doctor` | 诊断模型/配置/会话 checkpoint 是否健康 |
 | `/history` | 当前会话边界点时间线（短 id 可用于回退） |
 | `/replay <id>` | 从 checkpoint 重跑 |
 | `/fork <id>` | 从 checkpoint 分叉新会话 |
@@ -143,6 +144,8 @@ python -m src.smoke_test --tui-hitl
 **会话隔离**：调试模型/API 问题时优先 `-n` / `--new`，避免污染 `default` 线程。定时任务线程 `sched-*` 会自动清理，勿手动删。
 
 **LangSmith 401 警告**：未配置 LangSmith API key 时会有 tracing 报错，不影响对话；本地可设 `LANGCHAIN_TRACING_V2=false` 静音。
+
+**快速自检**：输入 `/doctor` 查看项目根、模型、配置来源与当前会话是否 stuck。
 
 ---
 

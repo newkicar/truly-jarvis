@@ -3,10 +3,19 @@
 从 main.py 抽取：不依赖终端交互（无 input()/print()），
 所有函数「接收 agent/thread_id → 返回文本」，可被 CLI 与 TUI 直接复用。
 """
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
 from src import time_travel
+from src.project_paths import (
+    ENV_JARVIS_HOME,
+    ENV_PROJECT_ROOT,
+    install_root,
+    resolve_env_file,
+    resolve_javis_json,
+    user_home,
+)
 
 _HELP_COMMANDS = """\
 命令：
@@ -14,6 +23,7 @@ _HELP_COMMANDS = """\
   /sessions       列出历史会话
   /delete-session [thread_id]  删除历史会话（可写序号；省略 id 则删当前）
   /copy-session   复制当前会话 ID 到剪贴板
+  /doctor         诊断配置与会话健康（模型/权限/checkpoint）
   /history        查看当前会话时间线（带序号，可用于回退）
   /replay <id>    从指定 checkpoint 重跑（序号 / 短 id / 完整 id）
   /fork <id>      从指定 checkpoint 分叉出新分支（序号 / 短 id / 完整 id）
@@ -272,6 +282,144 @@ def repair_stuck_thread(agent, thread_id: str) -> bool:
     return False
 
 
+def _mask_secret(value: str, *, prefix: int = 4) -> str:
+    if not value:
+        return "（空）"
+    if len(value) <= prefix + 1:
+        return "*" * len(value)
+    return f"{value[:prefix]}…"
+
+
+def _permissions_summary(permissions: dict | None) -> str:
+    if not permissions:
+        return "（未配置；gated 工具默认 ask）"
+    default = permissions.get("*", "ask")
+    extras = [f"{k}={v}" for k, v in permissions.items() if k != "*"]
+    if not extras:
+        return f"*={default}"
+    tail = ", ".join(extras[:6])
+    if len(extras) > 6:
+        tail += ", …"
+    return f"*={default}；{tail}"
+
+
+def _config_layer_lines(project_root: Path) -> list[str]:
+    """列出 effective 配置来源（只读，与 load_config 解析顺序一致）。"""
+    lines: list[str] = []
+    env_path = resolve_env_file(project_root)
+    if env_path.is_file():
+        lines.append(f"  .env ← {env_path}")
+    else:
+        lines.append(f"  .env ← （未找到；期望 {env_path} 或 {install_root() / '.env'}）")
+
+    json_path = resolve_javis_json(project_root)
+    if json_path.is_file():
+        lines.append(f"  javis.json ← {json_path}")
+    else:
+        lines.append(f"  javis.json ← （未找到；期望 {project_root / 'javis.json'}）")
+
+    lines.append(f"  用户全局目录 ← {user_home()}（skills；JARVIS_HOME 可覆盖）")
+    if os.environ.get(ENV_PROJECT_ROOT, "").strip():
+        lines.append(f"  环境变量 {ENV_PROJECT_ROOT}={os.environ[ENV_PROJECT_ROOT].strip()}")
+    if os.environ.get(ENV_JARVIS_HOME, "").strip():
+        lines.append(f"  环境变量 {ENV_JARVIS_HOME}={os.environ[ENV_JARVIS_HOME].strip()}")
+    return lines
+
+
+def _checkpoint_thread_stats(agent, thread_id: str) -> tuple[int | None, int | None]:
+    """返回 (checkpoint 条数, 最大 blob 字节)，无 checkpointer 时为 (None, None)。"""
+    checkpointer = getattr(agent, "checkpointer", None)
+    conn = getattr(checkpointer, "conn", None)
+    if conn is None:
+        return None, None
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*), MAX(length(checkpoint)) FROM checkpoints WHERE thread_id = ?",
+            (thread_id,),
+        ).fetchone()
+        if not row:
+            return 0, 0
+        return int(row[0] or 0), int(row[1] or 0)
+    except Exception:
+        return None, None
+
+
+def _session_message_count(agent, thread_id: str) -> int | None:
+    try:
+        state = agent.get_state({"configurable": {"thread_id": thread_id}})
+        messages = (state.values or {}).get("messages") or []
+        return len(messages)
+    except Exception:
+        return None
+
+
+def _mcp_enabled_count(mcps: dict) -> int:
+    servers = mcps.get("servers") if isinstance(mcps, dict) else None
+    if not isinstance(servers, dict):
+        return 0
+    count = 0
+    for entry in servers.values():
+        if isinstance(entry, dict) and entry.get("enabled", True):
+            count += 1
+    return count
+
+
+def format_doctor_report(config, agent, thread_id: str, *, mcp_tool_count: int | None = None) -> str:
+    """生成 /doctor 只读诊断报告（CLI/TUI 共用）。"""
+    checkpointer = getattr(agent, "checkpointer", None)
+    stuck = checkpoint_config_stuck(checkpointer, thread_id)
+    cp_count, cp_max = _checkpoint_thread_stats(agent, thread_id)
+    msg_count = _session_message_count(agent, thread_id)
+    mcp_servers = _mcp_enabled_count(config.mcps)
+    if mcp_tool_count is None:
+        mcp_tools_line = f"MCP servers（enabled）: {mcp_servers}"
+    else:
+        mcp_tools_line = f"MCP: {mcp_servers} server(s)，{mcp_tool_count} tool(s) 已加载"
+
+    lines = [
+        "JARVIS 诊断",
+        "─────────────────────────────",
+        f"项目根:     {config.project_root}",
+        f"Vault:      {config.vault_path}",
+        f"模型:       {config.model_id}",
+        f"端点:       {config.base_url}",
+        f"API Key:    {_mask_secret(config.api_key)}",
+        mcp_tools_line,
+        f"Checkpoint: {config.checkpoint_db}",
+        "",
+        "配置来源:",
+        *_config_layer_lines(config.project_root),
+        f"  permissions: {_permissions_summary(config.permissions)}",
+    ]
+    theme = config.tui.get("theme") if isinstance(config.tui, dict) else None
+    if theme:
+        lines.append(f"  theme: {theme}")
+
+    lines.extend(
+        [
+            "",
+            f"当前会话:   {thread_id}",
+        ]
+    )
+    if msg_count is not None:
+        lines.append(f"消息条数:   {msg_count}")
+    if cp_count is not None:
+        lines.append(f"Checkpoint: {cp_count} 条（最大 blob {cp_max} 字节）")
+
+    if stuck:
+        lines.extend(
+            [
+                "会话状态:   ⚠ 卡住（含未完成的 graph 任务）",
+                "建议:       /delete-session 或 python -m src.main -n --cli 开新会话",
+                "            （也可直接再发一条消息，系统会自动尝试 repair）",
+            ]
+        )
+    else:
+        lines.append("会话状态:   正常")
+
+    return "\n".join(lines)
+
+
 def delete_session(agent, target: str, current_thread_id: str) -> tuple[str, str | None]:
     """删除指定会话 checkpoint；若删的是当前会话则返回新 thread_id。"""
     if target.startswith("sched-"):
@@ -525,6 +673,16 @@ def dispatch_command(agent, thread_id: str, command: str, sched=None, vault_path
         return text, new_thread, None
     if cmd == "/copy-session":
         return copy_session_id_text(thread_id), None, None
+    if cmd == "/doctor":
+        from src.config import load_config
+        from src.mcps import load_mcp_tools
+
+        try:
+            cfg = load_config()
+        except Exception as exc:
+            return f"诊断失败: {exc}", None, None
+        mcp_tools = load_mcp_tools(cfg.mcps)
+        return format_doctor_report(cfg, agent, thread_id, mcp_tool_count=len(mcp_tools)), None, None
     if cmd == "/history":
         return list_history(agent, thread_id), None, None
     if cmd == "/replay":

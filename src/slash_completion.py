@@ -17,6 +17,7 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("/sessions", "/sessions", "列出历史会话"),
     SlashCommand("/delete-session", "/delete-session [id]", "删除历史会话（可写序号）"),
     SlashCommand("/copy-session", "/copy-session", "复制当前会话 ID"),
+    SlashCommand("/doctor", "/doctor", "诊断配置与会话健康"),
     SlashCommand("/history", "/history", "当前会话边界点时间线"),
     SlashCommand("/replay", "/replay <id>", "从 checkpoint 重跑"),
     SlashCommand("/fork", "/fork <id>", "从 checkpoint 分叉新会话"),
