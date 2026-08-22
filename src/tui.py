@@ -26,6 +26,7 @@ from src.tui_format import (
     ai_message_header_markup,
     ai_stream_renderable,
     format_tool_call,
+    format_todos_panel,
     permission_preview,
     render_markdown,
     system_message_markup,
@@ -347,6 +348,21 @@ class JarvisApp(App):
         padding: 0 1;
     }
 
+    #todo_panel {
+        height: auto;
+        max-height: 8;
+        display: none;
+        margin: 0 1 0 0;
+        padding: 0 1;
+        border: round $primary 30%;
+        background: $panel 40%;
+        overflow-y: auto;
+    }
+
+    #todo_panel.-active {
+        display: block;
+    }
+
     #editor_frame:focus-within {
         border: round $accent;
     }
@@ -483,6 +499,7 @@ class JarvisApp(App):
                             copy_on_select=self._copy_on_select(),
                         )
                         yield Static("", id="ai_stream")
+                yield Static("", id="todo_panel")
                 with Horizontal(id="editor_frame"):
                     yield Static("›", id="prompt")
                     yield Input(placeholder="输入消息，/ 开头为命令，@ 引用路径", id="input")
@@ -518,8 +535,28 @@ class JarvisApp(App):
         self._hide_ai_stream()
         if not isinstance(text, str):
             text = commands.content_to_text(text)
-        if text.strip():
-            self._write_ai(log, text)
+        log.write(ai_message_header_markup())
+        log.write(render_markdown(text))
+        log.write("")
+
+    def _fetch_agent_todos(self) -> list[dict]:
+        try:
+            state = self.agent.get_state({"configurable": {"thread_id": self.thread_id}})
+            values = getattr(state, "values", None) or {}
+            raw = values.get("todos") or []
+            return [t for t in raw if isinstance(t, dict)]
+        except Exception:
+            return []
+
+    def _refresh_todos_panel(self, todos: list[dict] | None = None) -> None:
+        panel = self.query_one("#todo_panel", Static)
+        markup = format_todos_panel(todos if todos is not None else self._fetch_agent_todos())
+        if markup:
+            panel.add_class("-active")
+            panel.update(markup)
+        else:
+            panel.remove_class("-active")
+            panel.update("")
 
     def on_mount(self) -> None:
         log = self.query_one("#messages", RichLog)
@@ -796,6 +833,8 @@ class JarvisApp(App):
 
         def on_tool_call(name: str, args: str, err: bool, output: str | None, depth: int) -> None:
             write_line(format_tool_call(name, args, error=err, output=output, indent=depth))
+            if name == "write_todos" and not cancelled():
+                self.call_from_thread(self._refresh_todos_panel)
 
         def on_cancelled() -> None:
             nonlocal cancel_notified, stream_active
@@ -853,6 +892,8 @@ class JarvisApp(App):
                 on_stream_start=reset_header,
                 on_cancelled=on_cancelled,
                 on_turn_incomplete=on_turn_incomplete,
+                permission_state=self.permission_state,
+                project_root=self._workspace_root(),
             )
         except Exception as exc:
             reset_header()
@@ -868,6 +909,7 @@ class JarvisApp(App):
                 write_line("[i][dim]（已放弃本轮）[/dim][/i]")
             elif ok:
                 write_line(f"[dim]▌ {model} ({elapsed:.1f}s)[/dim]")
+            self.call_from_thread(self._refresh_todos_panel)
             write_line("")
 
     async def _wait_modal_dismiss(self, inv: commands.ToolInvocation):

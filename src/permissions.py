@@ -74,6 +74,7 @@ def _action_from_tool_call(state: dict, tool: str, request) -> str:
     """按 state 当前规则 + 一次工具调用参数解析动作（allow/ask/deny）。
 
     request 是 ToolCallRequest（含 .tool_call dict）或直接 ToolCall dict。
+    Hook 优先于 javis.json permissions（Codex: Hooks → rules → User）。
     """
     tool_call = getattr(request, "tool_call", None)
     if isinstance(tool_call, dict) and "name" in tool_call:
@@ -81,6 +82,23 @@ def _action_from_tool_call(state: dict, tool: str, request) -> str:
         args = tool_call.get("args", {})
     else:
         args = getattr(request, "args", None) or {}
+
+    hook_rules = state.get("hooks") or []
+    if hook_rules and tool in GATED_TOOLS:
+        from src.permission_hooks import resolve_permission_hook
+
+        hook = resolve_permission_hook(
+            hook_rules,
+            tool,
+            args if isinstance(args, dict) else {},
+            thread_id=str(state.get("thread_id") or ""),
+            project_root=state.get("project_root"),
+        )
+        if hook is not None:
+            decision, _msg = hook
+            if decision in VALID_ACTIONS:
+                return decision
+
     active_rule = state["tools"].get(tool, state["default"])
     if isinstance(active_rule, str):
         return active_rule if active_rule in VALID_ACTIONS else "ask"
@@ -102,7 +120,26 @@ def _build_when(state: dict, tool: str, rule: object):
     return when
 
 
-def build_permission_interrupts(permissions: dict | None) -> tuple[dict, dict]:
+def sync_permission_context(
+    state: dict | None,
+    *,
+    thread_id: str = "",
+    project_root: Path | None = None,
+) -> None:
+    """每轮对话前写入 thread_id / project_root，供 permission hooks 使用。"""
+    if state is None:
+        return
+    state["thread_id"] = thread_id
+    if project_root is not None:
+        state["project_root"] = project_root
+
+
+def build_permission_interrupts(
+    permissions: dict | None,
+    *,
+    hooks: dict | None = None,
+    project_root: Path | None = None,
+) -> tuple[dict, dict]:
     """把 javis.json 的 permissions 配置转成 deepagents 的 interrupt_on。
 
     返回 (interrupt_on, state)：
@@ -111,11 +148,17 @@ def build_permission_interrupts(permissions: dict | None) -> tuple[dict, dict]:
 
     permissions 缺省/为 None 时，所有 gated tool 默认 "ask"（每次都审批）。
     """
+    from src.permission_hooks import parse_permission_hooks
+
     permissions = permissions or {}
     default = permissions.get("*", "ask")
+    hook_rules = parse_permission_hooks(hooks or {}, project_root=project_root)
     state = {
         "default": default,
         "tools": {t: permissions.get(t, default) for t in GATED_TOOLS},
+        "hooks": hook_rules,
+        "thread_id": "",
+        "project_root": project_root,
     }
     return _build_interrupt_on(state), state
 
@@ -180,16 +223,31 @@ class PermissionDenyMiddleware(AgentMiddleware):
     def name(self) -> str:
         return "permission-deny"
 
-    def _deny(self, request, tool: str) -> str:
+    def _deny(self, request, tool: str, *, prefix: str = "") -> str:
         """命中 deny 时生成给模型的错误消息。"""
         tool_call = getattr(request, "tool_call", None) or {}
         args = tool_call.get("args", {}) if isinstance(tool_call, dict) else {}
         value = _command_from_args(args) if tool == "execute" else _tool_arg_value(
             args, "file_path", "path", "pattern", "command"
         )
+        hook_msg = ""
+        hook_rules = self.state.get("hooks") or []
+        if hook_rules and tool in GATED_TOOLS:
+            from src.permission_hooks import resolve_permission_hook
+
+            hook = resolve_permission_hook(
+                hook_rules,
+                tool,
+                args if isinstance(args, dict) else {},
+                thread_id=str(self.state.get("thread_id") or ""),
+                project_root=self.state.get("project_root"),
+            )
+            if hook and hook[0] == "deny" and hook[1]:
+                hook_msg = f" Hook: {hook[1]}"
+        lead = prefix or "Permission denied: 操作被 javis.json permissions 规则拒绝（deny）。"
         return (
-            f"Permission denied: 操作被 javis.json permissions 规则拒绝（deny）。"
-            f"工具 {tool}，参数 {value or args}。请更换方案或询问用户，不要重试相同调用。"
+            f"{lead}"
+            f"工具 {tool}，参数 {value or args}。{hook_msg} 请更换方案或询问用户，不要重试相同调用。"
         )
 
     def wrap_tool_call(self, request, handler):

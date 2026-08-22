@@ -4,7 +4,7 @@
 
 **Type:** task
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 **Blocked by:** 01
 
@@ -16,14 +16,14 @@
 
 ## 范围
 
-- [ ] 配置形态（二选一或并存，实现时定）：
+- [x] 配置形态（二选一或并存，实现时定）：
   - `javis.json` → `hooks.permission`: `[{ "match": "git push", "command": ["python", "hooks/deny.py"], ... }]`
   - 或 `~/.javis/hooks/permission/` 目录约定  
-- [ ] Hook 输入：JSON stdin（tool name、args、path、thread_id）；输出：`{"decision":"allow"|"deny"|"ask"}`  
-- [ ] 集成点：`permissions.py` 或 `streaming.collect_interrupt_decisions` 之前；**deny** 不弹 Modal，直接 ToolMessage error  
-- [ ] 超时与失败：hook 失败 → 回落 `ask`（默认安全）  
-- [ ] 单测：fake hook 脚本；match 规则；deny 不中断 graph 以外路径  
-- [ ] `/doctor` 列出已加载 hook 数量与路径（依赖 01）  
+- [x] Hook 输入：JSON stdin（tool name、args、path、thread_id）；输出：`{"decision":"allow"|"deny"|"ask"}`  
+- [x] 集成点：`permissions.py` 或 `streaming.collect_interrupt_decisions` 之前；**deny** 不弹 Modal，直接 ToolMessage error  
+- [x] 超时与失败：hook 失败 → 回落 `ask`（默认安全）  
+- [x] 单测：fake hook 脚本；match 规则；deny 不中断 graph 以外路径  
+- [x] `/doctor` 列出已加载 hook 数量与路径（依赖 01）  
 
 ## 非目标
 
@@ -42,3 +42,7 @@
 
 - Codex: `hook_runtime.rs`、`tools/approvals.rs`（Hooks 优先）  
 - JARVIS: `src/permissions.py`、`src/streaming.py`
+
+## Comments
+
+- 2026-08-22：落地 `src/permission_hooks.py`；Hooks 优先于 permissions；`collect_interrupt_decisions` + deny middleware 双路径；示例 `hooks/permission_example.py`；`tests/test_permission_hooks.py`。

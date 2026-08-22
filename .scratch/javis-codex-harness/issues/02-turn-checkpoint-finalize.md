@@ -4,7 +4,7 @@
 
 **Type:** task
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 **Blocked by:** —
 
@@ -16,11 +16,11 @@
 
 ## 范围
 
-- [ ] 审计 `run_agent_turn` / TUI worker：所有异常与 cancel 路径调用 `repair_stuck_thread` 或更强 `finalize_turn(agent, thread_id)`  
-- [ ] TUI：维护 pending HITL call_id 集合（参考 Codex）；切 session / replay 时不重弹已失效 Modal  
-- [ ] Esc 取消：显式 abort stream + finalize（避免 orphan Python 进程占 sqlite）  
-- [ ] 单测：模拟 stuck channel_values → finalize → 下一轮 stream 可成功（可 mock agent）  
-- [ ] 与 01 联动：`/doctor` 在 finalize 后报告 healthy  
+- [x] 审计 `run_agent_turn` / TUI worker：所有异常与 cancel 路径调用 `repair_stuck_thread` 或更强 `finalize_turn(agent, thread_id)`  
+- [x] TUI：维护 pending HITL call_id 集合（参考 Codex）；切 session / replay 时不重弹已失效 Modal  
+- [x] Esc 取消：显式 abort stream + finalize（避免 orphan Python 进程占 sqlite）  
+- [x] 单测：模拟 stuck channel_values → finalize → 下一轮 stream 可成功（可 mock agent）  
+- [x] 与 01 联动：`/doctor` 在 finalize 后报告 healthy  
 
 ## 非目标
 
@@ -41,3 +41,4 @@
 ## Comments
 
 - 2026-08-22：`repair_stuck_thread` 已合并进本票基础，勿重复造轮子。
+- 2026-08-22：`finalize_turn` + TUI `_resolved_hitl` / `_hitl_generation` + `run_agent_turn` finally 路径已落地；单测 `test_run_agent_turn_abandon_calls_finalize` 等绿。待人工 smoke Esc/HITL 后关票。

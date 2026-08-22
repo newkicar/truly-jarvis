@@ -423,16 +423,22 @@ def format_doctor_report(config, agent, thread_id: str, *, mcp_tool_count: int |
     if theme:
         lines.append(f"  theme: {theme}")
 
-    from src.agent import harness_capabilities
+    from src.agent import harness_capabilities, harness_profile_loaded
+    from src.permission_hooks import parse_permission_hooks, summarize_permission_hooks
 
     caps = harness_capabilities(config)
     exec_label = "已加载" if caps["execute"] else "未加载 ⚠"
     todos_label = "已加载" if caps["write_todos"] else "未加载 ⚠"
     tavily_label = "已配置" if caps.get("tavily") else "未配置 ⚠"
+    profile_label = "已加载" if harness_profile_loaded(config.model_id) else "未注册 ⚠"
+    hook_rules = parse_permission_hooks(config.hooks, project_root=config.project_root)
+    hook_summary = summarize_permission_hooks(hook_rules).split("\n", 1)[0]
     lines.append(
         f"Harness:    execute {exec_label}; write_todos {todos_label}; "
         f"quick_search {tavily_label}"
     )
+    lines.append(f"HarnessProfile: {profile_label} ({config.model_id})")
+    lines.append(f"  {hook_summary}")
 
     lines.extend(
         [

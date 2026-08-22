@@ -145,7 +145,29 @@ python -m src.smoke_test --tui-hitl
 
 **LangSmith 401 警告**：未配置 LangSmith API key 时会有 tracing 报错，不影响对话；本地可设 `LANGCHAIN_TRACING_V2=false` 静音。
 
-**快速自检**：输入 `/doctor` 查看项目根、模型、配置来源与当前会话是否 stuck；取消/Esc 后若仍异常，同 thread 再发消息会自动 `finalize_turn` 清理。
+**快速自检**：输入 `/doctor` 查看项目根、模型、HarnessProfile、permission hooks 数量与当前会话是否 stuck；取消/Esc 后若仍异常，同 thread 再发消息会自动 `finalize_turn` 清理。
+
+### Permission hooks（审批前扩展）
+
+在 HITL Modal 之前可配置外部命令，按工具调用返回 `allow` / `deny` / `ask`（未匹配仍走 `permissions` + Modal）。优先级：**Hooks → javis.json permissions → 用户审批**。
+
+`javis.json` 示例：
+
+```json
+"hooks": {
+  "permission": [
+    {
+      "match": "execute:git push*",
+      "command": ["python", "hooks/permission_example.py"]
+    }
+  ]
+}
+```
+
+Hook stdin（JSON）：`tool`、`args`、`path`（命令或文件路径）、`thread_id`、`project_root`。  
+Hook stdout（JSON）：`{"decision":"allow"|"deny"|"ask","message":"..."}`。失败或超时回落 `ask`。
+
+仓库自带示例脚本 [`hooks/permission_example.py`](hooks/permission_example.py)（`git push` → deny，`git status` → allow）。
 
 ---
 

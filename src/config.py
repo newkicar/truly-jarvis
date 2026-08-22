@@ -50,6 +50,7 @@ class Config:
     skills: tuple[Path, ...]
     mcps: dict[str, object]
     permissions: dict[str, object]
+    hooks: dict[str, object]
     agents: dict[str, object]
     rag_ollama_base_url: str
     rag_embed_model: str
@@ -143,6 +144,10 @@ def load_config(
     if not isinstance(agents, dict):
         agents = {}
 
+    hooks = data.get("hooks", {})
+    if not isinstance(hooks, dict):
+        hooks = {}
+
     rag_cfg = data.get("rag", {})
     if not isinstance(rag_cfg, dict):
         rag_cfg = {}
@@ -164,6 +169,7 @@ def load_config(
         skills=skills,
         mcps=mcps,
         permissions=data.get("permissions", {}),
+        hooks=hooks,
         agents=agents,
         rag_ollama_base_url=str(rag_cfg.get("ollama_base_url", "http://localhost:11434")),
         rag_embed_model=str(rag_cfg.get("embed_model", "quentinz/bge-small-zh-v1.5")),

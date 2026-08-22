@@ -21,6 +21,7 @@ def make_fake_config(tmp_path) -> Config:
         skills=(),
         mcps={},
         permissions={},
+        hooks={},
         agents={},
         rag_ollama_base_url="http://localhost:11434",
         rag_embed_model="quentinz/bge-small-zh-v1.5",

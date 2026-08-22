@@ -74,7 +74,11 @@ def main() -> int:
     mcp_tools = load_mcp_tools(config.mcps)
 
     with SqliteSaver.from_conn_string(str(config.checkpoint_db)) as checkpointer:
-        _, permission_state = build_permission_interrupts(config.permissions)
+        _, permission_state = build_permission_interrupts(
+            config.permissions,
+            hooks=config.hooks,
+            project_root=config.project_root,
+        )
         agent = build_agent(
             config,
             checkpointer=checkpointer,

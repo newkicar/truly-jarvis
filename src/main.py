@@ -107,6 +107,8 @@ def _stream_replay(agent, thread_id: str, checkpoint_id: str, permission_state: 
             "on_message_delta": lambda delta: print(delta, end="", flush=True),
         },
         on_fallback_message=lambda text: print(text),
+        permission_state=permission_state,
+        project_root=workspace_root,
     )
     print("\n")
 
@@ -145,6 +147,8 @@ def _stream_turn(agent, thread_id: str, user_input: str, permission_state: dict 
                 "on_message_delta": lambda delta: print(delta, end="", flush=True),
             },
             on_fallback_message=lambda text: print(text),
+            permission_state=permission_state,
+            project_root=workspace_root,
         )
     except Exception as exc:
         print(f"\n错误: {streaming.format_agent_error(exc)}\n")
@@ -187,7 +191,11 @@ def main(argv=None) -> int:
     mcp_tools = load_mcp_tools(config.mcps)
 
     with SqliteSaver.from_conn_string(str(config.checkpoint_db)) as checkpointer:
-        _, permission_state = build_permission_interrupts(config.permissions)
+        _, permission_state = build_permission_interrupts(
+            config.permissions,
+            hooks=config.hooks,
+            project_root=config.project_root,
+        )
         agent = build_agent(
             config,
             checkpointer=checkpointer,

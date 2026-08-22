@@ -215,6 +215,29 @@ def permission_preview(
     return "\n".join(lines) if lines else "（无参数）"
 
 
+def format_todos_panel(todos: list[dict] | None) -> str:
+    """TUI 任务列表面板（write_todos / state.todos）。"""
+    if not todos:
+        return ""
+    lines = ["[bold dim]Tasks[/bold dim]"]
+    icons = {"pending": "○", "in_progress": "◐", "completed": "●"}
+    for item in todos:
+        if not isinstance(item, dict):
+            continue
+        status = str(item.get("status") or "pending")
+        icon = icons.get(status, "○")
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        if status == "completed":
+            lines.append(f"  [strike dim]{icon} {content}[/strike dim]")
+        elif status == "in_progress":
+            lines.append(f"  [bold]{icon} {content}[/bold]")
+        else:
+            lines.append(f"  {icon} {content}")
+    return "\n".join(lines) if len(lines) > 1 else ""
+
+
 # 兼容旧引用
 def user_message_panel(text: str) -> str:
     return user_message_markup(text)

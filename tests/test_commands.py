@@ -772,11 +772,15 @@ def test_format_doctor_report_healthy(tmp_path, monkeypatch):
         skills=(),
         mcps={"servers": {}},
         permissions={"*": "ask"},
+        hooks={},
         agents={},
         rag_ollama_base_url="http://localhost:11434",
         rag_embed_model="embed",
         tui={"theme": "flexoki"},
     )
+    from src.agent import _register_jarvis_harness
+
+    _register_jarvis_harness("m")
     agent = _FakeDoctorAgent(messages=[_human("hi")], cp_count=3, cp_max=1200)
     text = commands.format_doctor_report(cfg, agent, "default", mcp_tool_count=0)
     assert "JARVIS 诊断" in text
@@ -788,6 +792,8 @@ def test_format_doctor_report_healthy(tmp_path, monkeypatch):
     assert "execute 已加载" in text
     assert "write_todos 已加载" in text
     assert "quick_search 已配置" in text
+    assert "HarnessProfile: 已加载 (m)" in text
+    assert "permission hooks: 0" in text
 
 
 def test_format_doctor_report_stuck(tmp_path, monkeypatch):
@@ -809,6 +815,7 @@ def test_format_doctor_report_stuck(tmp_path, monkeypatch):
         skills=(),
         mcps={},
         permissions={},
+        hooks={},
         agents={},
         rag_ollama_base_url="http://localhost:11434",
         rag_embed_model="embed",

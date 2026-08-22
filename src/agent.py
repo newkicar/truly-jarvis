@@ -40,6 +40,8 @@ from src.wiki import make_wiki_tools
 
 _WEEKDAYS = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
 
+_HARNESS_REGISTERED: set[str] = set()
+
 # deepagents HarnessProfile：通用推理约束，不写场景菜谱（对标 profile system_prompt_suffix）
 JARVIS_HARNESS_SUFFIX = """\
 ## Harness
@@ -134,8 +136,25 @@ def _register_jarvis_harness(model_id: str) -> None:
     """为当前模型注册 HarnessProfile（deepagents 标准扩展点，非场景 middleware）。"""
     register_harness_profile(
         model_id,
-        HarnessProfile(system_prompt_suffix=JARVIS_HARNESS_SUFFIX),
+        HarnessProfile(
+            system_prompt_suffix=JARVIS_HARNESS_SUFFIX,
+            tool_description_overrides={
+                "quick_search": (
+                    "Search the public internet for facts not in local files or conversation. "
+                    "Use when the answer depends on external, location-specific, or time-sensitive information."
+                ),
+                "execute": (
+                    "Run a shell command on the local machine. "
+                    "Use to inspect environment, run programs, or gather facts the model cannot infer."
+                ),
+            },
+        ),
     )
+    _HARNESS_REGISTERED.add(model_id)
+
+
+def harness_profile_loaded(model_id: str) -> bool:
+    return model_id in _HARNESS_REGISTERED
 
 
 def build_agent(
@@ -174,7 +193,11 @@ def build_agent(
     if permission_state is not None:
         interrupt_on = build_permission_interrupts_from_state(permission_state)
     else:
-        interrupt_on, permission_state = build_permission_interrupts(config.permissions)
+        interrupt_on, permission_state = build_permission_interrupts(
+            config.permissions,
+            hooks=config.hooks,
+            project_root=config.project_root,
+        )
     deny_middleware = build_permission_deny_middleware(permission_state)
     deprecated_guard = DeprecatedPathMiddleware()
     from src.system_context_enforcer import SystemContextEnforcerMiddleware

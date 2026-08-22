@@ -29,6 +29,7 @@ JAVIS_JSON_TEMPLATE: dict = {
     "schedules_dir": "schedules",
     "mcps": {"servers": {}},
     "permissions": {"*": "ask"},
+    "hooks": {"permission": []},
     "rag": {
         "ollama_base_url": "http://localhost:11434",
         "embed_model": "quentinz/bge-small-zh-v1.5",

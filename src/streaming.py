@@ -127,11 +127,30 @@ def collect_interrupt_decisions(
     on_always_approve: Callable[[str], None] | None = None,
 ) -> dict | None:
     """逐条中断收集决策，返回 {"decisions": [...]} 或 None（放弃本轮）。"""
+    from src.permission_hooks import resolve_permission_hook
+
     decisions: list[dict] = []
     for interrupt in interrupts:
         value = getattr(interrupt, "value", None) or {}
         for action in value.get("action_requests", []):
             inv = commands.ToolInvocation.from_action(action)
+            if permission_state:
+                hook = resolve_permission_hook(
+                    permission_state.get("hooks") or [],
+                    inv.name,
+                    inv.args or {},
+                    thread_id=str(permission_state.get("thread_id") or ""),
+                    project_root=permission_state.get("project_root"),
+                )
+                if hook is not None:
+                    hook_decision, hook_msg = hook
+                    if hook_decision == "allow":
+                        decisions.append({"type": "approve"})
+                        continue
+                    if hook_decision == "deny":
+                        msg = hook_msg or REJECT_MESSAGE
+                        decisions.append({"type": "reject", "message": msg})
+                        continue
             result = ask_action(inv)
             if result is None:
                 return None
@@ -277,9 +296,16 @@ def run_agent_turn(
     on_stream_start: Callable[[], None] | None = None,
     on_cancelled: Callable[[], None] | None = None,
     on_turn_incomplete: Callable[[], None] | None = None,
+    permission_state: dict | None = None,
+    project_root=None,
 ) -> bool:
     """跑一轮对话或 checkpoint 重跑（含 HITL resume 循环）。返回 True=正常结束，False=放弃/取消。"""
     from langgraph.types import Command
+    from src.permissions import sync_permission_context
+
+    sync_permission_context(
+        permission_state, thread_id=thread_id, project_root=project_root
+    )
 
     base_config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 30}
     resume = None
