@@ -794,6 +794,7 @@ def test_format_doctor_report_healthy(tmp_path, monkeypatch):
     assert "quick_search 已配置" in text
     assert "HarnessProfile: 已加载 (m)" in text
     assert "permission hooks: 0" in text
+    assert "skills:" in text
 
 
 def test_format_doctor_report_stuck(tmp_path, monkeypatch):

@@ -28,7 +28,13 @@ JAVIS_JSON_TEMPLATE: dict = {
     "skills": ["skills/"],
     "schedules_dir": "schedules",
     "mcps": {"servers": {}},
-    "permissions": {"*": "ask"},
+    "permissions": {
+        "*": "ask",
+        "execute": "ask",
+        "write_file": "ask",
+        "edit_file": "ask",
+        "delete": "ask",
+    },
     "hooks": {"permission": []},
     "rag": {
         "ollama_base_url": "http://localhost:11434",

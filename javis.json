@@ -15,7 +15,11 @@
     "servers": {}
   },
   "permissions": {
-    "*": "ask"
+    "*": "ask",
+    "execute": "ask",
+    "write_file": "ask",
+    "edit_file": "ask",
+    "delete": "ask"
   },
   "rag": {
     "ollama_base_url": "http://localhost:11434",

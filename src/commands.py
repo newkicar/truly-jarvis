@@ -433,12 +433,18 @@ def format_doctor_report(config, agent, thread_id: str, *, mcp_tool_count: int |
     profile_label = "已加载" if harness_profile_loaded(config.model_id) else "未注册 ⚠"
     hook_rules = parse_permission_hooks(config.hooks, project_root=config.project_root)
     hook_summary = summarize_permission_hooks(hook_rules).split("\n", 1)[0]
+    from src.skill_discovery import discover_skill_catalog, summarize_skill_catalog
+
+    skill_lines = summarize_skill_catalog(discover_skill_catalog(config)).split("\n")
     lines.append(
         f"Harness:    execute {exec_label}; write_todos {todos_label}; "
         f"quick_search {tavily_label}"
     )
     lines.append(f"HarnessProfile: {profile_label} ({config.model_id})")
     lines.append(f"  {hook_summary}")
+    lines.append(f"  {skill_lines[0]}")
+    for skill_line in skill_lines[1:]:
+        lines.append(f"  {skill_line}")
 
     lines.extend(
         [

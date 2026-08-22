@@ -3,6 +3,7 @@
 model + CompositeBackend（default=LocalShellBackend；/workspace /vault /memories 路由）
 + subagents + memory + checkpointer(SqliteSaver) + store。见设计文档 §5.2/§6。
 """
+import sys
 from datetime import datetime
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -47,7 +48,35 @@ JARVIS_HARNESS_SUFFIX = """\
 ## Harness
 - 先弄清本轮交付物；多步任务可用 write_todos 跟踪，逐步执行并核对结果。
 - 可验证的事实：先工具、后结论；某工具失败则换合法手段，都失败则说明不确定——不凭训练记忆硬答，也不在能自行获取时先反问用户。
+- 匹配任务时先读相关 SKILL.md（read_file），再按 skill 步骤选 tool / task(researcher)。
 - eval / CodeInterpreter 仅用于代码计算与 fan-out，不用于读取系统环境。"""
+
+MUSE_HARNESS_EXTRA = """\
+- 你是 agent：优先 tool call，再文字回答。外部/实时/本机事实 → quick_search 或 execute 或 task(researcher)，不要先问用户能否帮你查。"""
+
+TOOL_DESCRIPTION_OVERRIDES = {
+    "quick_search": (
+        "Search the public internet for facts not in local files or conversation. "
+        "Use when the answer depends on external, location-specific, or time-sensitive information. "
+        "Call before answering factual questions you cannot verify from context."
+    ),
+    "execute": (
+        "Run a shell command on the local machine. "
+        "Use to inspect environment, run programs, or gather facts (time, paths, command output). "
+        "Do not use CodeInterpreter/eval for environment reads."
+    ),
+    "task": (
+        "Delegate work to a subagent in an isolated context. "
+        "Use subagentType researcher for web + /vault/ research, multi-source synthesis, or deep search; "
+        "use knowledge_keeper when the user wants to save vetted knowledge to /vault/Inbox/. "
+        "Pass the user's intent verbatim in the description."
+    ),
+    "write_todos": (
+        "Create or update a structured task list for multi-step work in this session. "
+        "Use when the user request has 3+ distinct steps or asks for planning; "
+        "mark items in_progress before working and completed when done."
+    ),
+}
 
 MAIN_SYSTEM_PROMPT = """你是 JARVIS，个人 AI 助手，专注扩展用户的心智。
 
@@ -59,24 +88,25 @@ MAIN_SYSTEM_PROMPT = """你是 JARVIS，个人 AI 助手，专注扩展用户的
 准确完成用户**本轮**提出的问题或任务，不擅自扩大范围。
 
 ## 工作方式
-接到提问或任务时，先弄清要交付什么。简单问题直接回答。
-多步任务：先计划步骤，再逐步执行，完成后核对结果；某步失败则换合法手段重试或说明原因，不要卡死在一种做法上。
-需要信息或执行时，按需使用 skills、MCP、内置工具（含 execute、quick_search）、子代理——不凭训练记忆硬猜事实。
+接到提问或任务时，先弄清要交付什么，再选工具或子代理执行。
+**可直接文字作答的**仅限：今天日期/星期（见「当前会话」）、纯概念解释、用户已在本轮给出的信息。
+**其余**（实时事实、本机状态、vault 内容、需运行验证的任务）→ 先 read_file 匹配 skill、或 quick_search / execute / task(researcher)，再总结。
+多步任务：可用 write_todos 跟踪；某步失败则换合法手段，不要卡死。
 
 **环境与可核实事实：**
-- 本提示词「当前会话」仅提供今天日期与星期；其余需核实的信息应通过可用工具自行获取后再答。
+- 本提示词「当前会话」仅提供今天日期与星期；精确时间/本机信息用 execute。
 - 不要读 `javis.json` 或 `/memories/user-profile.md` 推断用户状况。
-- 简单日期/星期问题可直接用「今天是 …」一行作答。
+- Skills：启动时已 discovery 各 SKILL.md 的 name/description；相关时用 read_file 读完整 SKILL.md 再行动。
 
 ## 完成标准
 - **事实**：有可靠来源再答；没有则说明不确定，不编造。
-- **调研**：需要联网或检索 vault 时再委派 researcher；覆盖用户原问题即可，不自动升级成报告或写入 vault。
+- **调研**：需要联网或检索 vault 时用 quick_search 或 task(researcher)；覆盖用户原问题即可，不自动升级成报告或写入 vault。
 - **落盘**：仅当用户明确要求保存、沉淀或整理报告时，才写 `/vault/Inbox/` 或 `/vault/Reports/`。
 - **可验证任务**：能跑则跑（测试、命令输出）；无法验证时说明建议的检查步骤，不谎称已完成。
 
 ## 约束
 - 文件路径只用 `/workspace/`（项目）、`/vault/`（Obsidian）、`/memories/`（用户记忆）、`/skills/`（用户全局 skill）、`/builtin-skills/`（随安装包 skill）。
-- 值得长期保留或用户要求记住 → knowledge_keeper。
+- 值得长期保留或用户要求记住 → task(knowledge_keeper, …)。
 - 委派时传递用户原意，不扩写成「全面调研 / 行业动态报告」。
 - 多角度并行**研究**可用 CodeInterpreter + `task()` fan-out 多个 researcher，再合并。
 
@@ -94,10 +124,56 @@ def session_date_line(*, now: datetime | None = None) -> str:
     )
 
 
-def build_main_prompt(*, now: datetime | None = None) -> str:
-    """主系统提示词：会话日期 + 结果导向正文。"""
+def build_environment_block(config: Config) -> str:
+    """轻量运行环境（对标 OpenCode environment；不含用户所在地，ADR-0003）。"""
+    platform = sys.platform
+    mcp_n = len((config.mcps or {}).get("servers") or {}) if isinstance(config.mcps, dict) else 0
+    return "\n".join(
+        [
+            "## 运行环境",
+            f"- 平台: {platform}",
+            f"- 项目根 /workspace/: {config.project_root}",
+            f"- 知识库 /vault/: {config.vault_path}",
+            f"- 记忆 /memories/: {config.memory_dir}",
+            "- 主代理工具: quick_search, execute, read/grep/glob/ls, task, write_todos"
+            + (f", MCP×{mcp_n}" if mcp_n else ""),
+            "- 子代理: researcher（联网+vault）, knowledge_keeper（Inbox 沉淀）",
+            "- Skills: deepagents 已 discovery frontmatter；相关任务 read_file 对应 SKILL.md",
+        ]
+    )
+
+
+def build_main_prompt(*, config: Config | None = None, now: datetime | None = None) -> str:
+    """主系统提示词：会话日期 + 可选环境块 + 正文。"""
     date_line = session_date_line(now=now)
-    return f"## 当前会话\n{date_line}\n\n{MAIN_SYSTEM_PROMPT}"
+    parts = [f"## 当前会话\n{date_line}"]
+    if config is not None:
+        parts.append(build_environment_block(config))
+    parts.append(MAIN_SYSTEM_PROMPT)
+    return "\n\n".join(parts)
+
+
+def _harness_suffix_for_model(model_id: str) -> str:
+    mid = (model_id or "").lower()
+    if "muse" in mid:
+        return JARVIS_HARNESS_SUFFIX + MUSE_HARNESS_EXTRA
+    return JARVIS_HARNESS_SUFFIX
+
+
+def _register_jarvis_harness(model_id: str) -> None:
+    """为当前模型注册 HarnessProfile（deepagents 标准扩展点，非场景 middleware）。"""
+    register_harness_profile(
+        model_id,
+        HarnessProfile(
+            system_prompt_suffix=_harness_suffix_for_model(model_id),
+            tool_description_overrides=dict(TOOL_DESCRIPTION_OVERRIDES),
+        ),
+    )
+    _HARNESS_REGISTERED.add(model_id)
+
+
+def harness_profile_loaded(model_id: str) -> bool:
+    return model_id in _HARNESS_REGISTERED
 
 
 def _make_model(config: Config) -> BaseChatModel:
@@ -130,31 +206,6 @@ def harness_capabilities(config: Config) -> dict[str, bool]:
         "write_todos": True,
         "tavily": bool(str(config.tavily_key or "").strip()),
     }
-
-
-def _register_jarvis_harness(model_id: str) -> None:
-    """为当前模型注册 HarnessProfile（deepagents 标准扩展点，非场景 middleware）。"""
-    register_harness_profile(
-        model_id,
-        HarnessProfile(
-            system_prompt_suffix=JARVIS_HARNESS_SUFFIX,
-            tool_description_overrides={
-                "quick_search": (
-                    "Search the public internet for facts not in local files or conversation. "
-                    "Use when the answer depends on external, location-specific, or time-sensitive information."
-                ),
-                "execute": (
-                    "Run a shell command on the local machine. "
-                    "Use to inspect environment, run programs, or gather facts the model cannot infer."
-                ),
-            },
-        ),
-    )
-    _HARNESS_REGISTERED.add(model_id)
-
-
-def harness_profile_loaded(model_id: str) -> bool:
-    return model_id in _HARNESS_REGISTERED
 
 
 def build_agent(
@@ -236,7 +287,7 @@ def build_agent(
         model=model,
         backend=_make_backend(config),
         subagents=[researcher, knowledge_keeper, *config_subagents],  # type: ignore[list-item]
-        system_prompt=build_main_prompt(),
+        system_prompt=build_main_prompt(config=config),
         tools=main_tools,
         middleware=[
             CodeInterpreterMiddleware(subagents=True),

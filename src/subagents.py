@@ -40,8 +40,10 @@ RESEARCHER_PROMPT = """你是 JARVIS 的 researcher，负责「搜索互联网 +
 """
 
 RESEARCHER_DESCRIPTION = (
-    "研究/检索子代理。需要联网调研、多源对比，或检索 Obsidian /vault/ 笔记时委派。"
-    "不用于本机脚本、user-profile、简单闲聊。"
+    "联网调研与 Obsidian /vault/ 检索子代理。"
+    "用户问实时新闻/天气/价格、需多源对比、要在知识库找笔记或 wikilink 导航、"
+    "quick_search 结果不够深时使用 task(researcher, …)。"
+    "不用于：纯闲聊、本机 execute 任务、仅写 Inbox（用 knowledge_keeper）。"
 )
 
 
@@ -89,10 +91,9 @@ KNOWLEDGE_KEEPER_PROMPT = """你是 JARVIS 的 knowledge_keeper，负责「把�
 """
 
 KNOWLEDGE_KEEPER_DESCRIPTION = (
-    "知识沉淀子代理。当对话中产生了「值得长期保留的新知识」（研究结论、"
-    "已核实的行业动态、用户要求记住的事实）时，委派本子代理把它整理成带 "
-    "wikilink 的笔记写入 /vault/Inbox/ 暂存区。仅新增，不改动既有笔记。"
-    "临时/闲聊/不确定内容不要委派。"
+    "知识沉淀子代理。用户明确要求「记住/保存/沉淀/整理进 vault」、"
+    "或对话已产生经核实的长期知识（研究结论、行业动态）时使用 task(knowledge_keeper, …)。"
+    "只新增 /vault/Inbox/ 笔记，带 wikilink；不用于临时问答、未核实内容、纯检索。"
 )
 
 

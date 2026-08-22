@@ -54,12 +54,13 @@ def test_build_main_prompt_injects_session_date():
     assert "工作方式" in prompt
     assert "完成标准" in prompt
     assert "停止规则" not in prompt
-    assert "skills" in prompt and "MCP" in prompt
+    assert "Skills" in prompt or "skills" in prompt
     assert "execute" in prompt
     assert "quick_search" in prompt
     assert "JARVIS" in prompt
     assert "muse-spark" not in prompt.lower() or "不要" in prompt
     assert "Harness" in JARVIS_HARNESS_SUFFIX
+    assert "简单问题直接回答" not in prompt
     assert "天气" not in prompt
     assert "Reports" in prompt
 
@@ -81,7 +82,7 @@ def test_build_agent_uses_build_main_prompt(tmp_path, monkeypatch):
     model = ToolCapableFake(reply="ok")
     build_agent(cfg, model=model)
 
-    assert captured.get("system_prompt") == build_main_prompt()
+    assert captured.get("system_prompt") == build_main_prompt(config=cfg)
     assert "工作方式" in captured.get("system_prompt", "")
     tool_names = [t.name for t in captured.get("tools", [])]
     assert "quick_search" in tool_names
