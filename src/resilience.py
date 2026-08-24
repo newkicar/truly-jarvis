@@ -224,6 +224,11 @@ DOOM_LOOP_GUIDANCE = (
     "若连续换方案仍失败，停下向用户报告已尝试清单与卡点。"
 )
 
+TOOL_ERROR_GUIDANCE = (
+    "\n\n[系统提示] 工具执行抛出了异常（不是正常错误返回）。"
+    "把上面的报错当作数据：先诊断根因，再换一种合法方案；不要原样重试。"
+)
+
 
 def _tool_signature(request) -> tuple[str, str]:
     tool_call = getattr(request, "tool_call", None) or {}
@@ -233,6 +238,47 @@ def _tool_signature(request) -> tuple[str, str]:
     except (TypeError, ValueError):
         canonical = repr(args)
     return str(tool_call.get("name", "?")), canonical
+
+
+class ToolErrorBoundaryMiddleware(AgentMiddleware):
+    """工具异常兜底：任何工具抛出的异常都转为错误 ToolMessage（失败是数据）。
+
+    框架的工具边界只保护部分校验路径（如 utils.validate_path）；backend 层
+    抛出的异常（如越界路径 ValueError）会击穿工具函数直达 graph，把整轮
+    对话炸死——模型连第三次尝试的机会都没有。本中间件保证：无论异常从
+    哪一层冒出，模型收到的都是可读的错误数据 + 换方案引导。
+    """
+
+    @property
+    def name(self) -> str:
+        return "tool-error-boundary"
+
+    def _to_error_message(self, request, exc: BaseException):
+        from langchain_core.messages import ToolMessage
+
+        tool_call = getattr(request, "tool_call", None) or {}
+        content = (
+            f"Error: {type(exc).__name__}: {exc}"
+            f"{TOOL_ERROR_GUIDANCE}"
+        )
+        return ToolMessage(
+            content=content,
+            name=str(tool_call.get("name", "?")),
+            tool_call_id=str(tool_call.get("id", "")),
+            status="error",
+        )
+
+    def wrap_tool_call(self, request, handler):
+        try:
+            return handler(request)
+        except Exception as exc:  # noqa: BLE001 — 工具边界：异常必须变成数据，不能逃逸
+            return self._to_error_message(request, exc)
+
+    async def awrap_tool_call(self, request, handler):
+        try:
+            return await handler(request)
+        except Exception as exc:  # noqa: BLE001
+            return self._to_error_message(request, exc)
 
 
 class DoomLoopMiddleware(AgentMiddleware):

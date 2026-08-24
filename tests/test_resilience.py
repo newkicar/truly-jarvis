@@ -1,4 +1,6 @@
-"""执行韧性层测试：错误分类、退避重试、步数软着陆、doom-loop 防御。"""
+"""执行韧性层测试：错误分类、退避重试、步数软着陆、doom-loop 防御、工具异常兜底。"""
+from unittest.mock import patch
+
 import pytest
 
 from src import resilience, streaming
@@ -331,3 +333,145 @@ def test_run_agent_turn_uses_max_steps_config():
             agent, "t", "hi", handle_interrupts=lambda _: None, callbacks=dict(_CB), max_steps=123
         )
     assert agent.seen_configs[0]["recursion_limit"] == 123
+
+
+# --------------------------------------------------- ToolErrorBoundaryMiddleware 单元
+
+
+def test_tool_error_boundary_catches_sync():
+    from langchain_core.messages import ToolMessage
+
+    mw = resilience.ToolErrorBoundaryMiddleware()
+
+    class FakeRequest:
+        tool_call = {"name": "write_file", "id": "tc-1", "args": {"file_path": "/workspace/D:/tmp/x.py"}}
+
+    def boom(_req):
+        raise ValueError("Path:D:\\tmp\\x.py outside root directory: /workspace")
+
+    result = mw.wrap_tool_call(FakeRequest(), boom)
+    assert isinstance(result, ToolMessage)
+    assert result.status == "error"
+    assert "outside root directory" in result.content
+    assert "ToolErrorBoundaryMiddleware" not in result.content  # 不能暴露中间件名
+    assert "不要原样重试" in result.content
+
+
+@pytest.mark.asyncio
+async def test_tool_error_boundary_catches_async():
+    from langchain_core.messages import ToolMessage
+
+    mw = resilience.ToolErrorBoundaryMiddleware()
+
+    class FakeRequest:
+        tool_call = {"name": "edit_file", "id": "tc-2", "args": {"file_path": "/workspace/notes.txt"}}
+
+    async def boom(_req):
+        raise OSError("disk full")
+
+    result = await mw.awrap_tool_call(FakeRequest(), boom)
+    assert isinstance(result, ToolMessage)
+    assert result.status == "error"
+    assert "OSError: disk full" in result.content
+
+
+def test_tool_error_boundary_passes_through_ok():
+    mw = resilience.ToolErrorBoundaryMiddleware()
+
+    class FakeRequest:
+        tool_call = {"name": "read_file", "id": "tc-3", "args": {}}
+
+    ok_msg = "file contents"
+
+    def success(_req):
+        from langchain_core.messages import ToolMessage
+
+        return ToolMessage(content=ok_msg, tool_call_id="tc-3")
+
+    result = mw.wrap_tool_call(FakeRequest(), success)
+    assert result.content == ok_msg
+
+
+# ---- agent-level integration：HITL 放行后越界写入 → 模型收到错误数据，继续 DONE
+
+
+def test_tool_boundary_hilt_resume_no_crash():
+    """复现真实事故链：模型用 /workspace/D:/tmp 路径写文件 → HITL 放行 →
+    backend ValueError → 没有 ToolErrorBoundaryMiddleware 时整轮炸穿；
+    有兜底后模型收到错误数据，继续对话到 DONE。"""
+    import tempfile
+    from pathlib import Path
+
+    from langchain_core.language_models.chat_models import BaseChatModel
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, ChatResult
+    from langgraph.types import Command
+
+    from src.agent import build_agent
+    from tests.conftest import make_fake_config
+
+    tmp = Path(tempfile.mkdtemp())
+    cfg = make_fake_config(tmp)
+
+    class ScriptedModel(BaseChatModel):
+        """第 1 轮：write_file /workspace/D:/tmp/x.py；第 2 轮：DONE。"""
+        step: int = 0
+
+        def bind_tools(self, tools, **kw):
+            return self
+
+        def _generate(self, messages, stop=None, run_manager=None, **kw):
+            self.step += 1
+            if self.step == 1:
+                return ChatResult(generations=[ChatGeneration(message=AIMessage(
+                    content="", tool_calls=[{
+                        "name": "write_file",
+                        "args": {"file_path": "/workspace/D:/tmp/javis-demo/fizzbuzz.py", "content": "x"},
+                        "id": "c1", "type": "tool_call",
+                    }]
+                ))])
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content="DONE"))])
+
+        @property
+        def _llm_type(self):
+            return "scripted"
+
+    agent = build_agent(cfg, model=ScriptedModel())
+    config = {"configurable": {"thread_id": "tb-hilt-1"}}
+
+    # 第一轮：invoke → HITL 中断
+    result = agent.invoke({"messages": [{"role": "user", "content": "go"}]}, config=config)
+    interrupts = result.get("__interrupt__") if isinstance(result, dict) else None
+    assert interrupts and len(interrupts) > 0, "应触发 HITL 中断"
+
+    # 放行 resume
+    result = agent.invoke(
+        Command(resume={"decisions": [{"type": "approve"}]}),
+        config=config,
+    )
+
+    # 断言：不再炸穿，模型收到错误数据并继续到 DONE
+    messages = result["messages"]
+    tool_msgs = [m for m in messages if type(m).__name__ == "ToolMessage"]
+    assert len(tool_msgs) >= 1, "应有 ToolMessage（backend 错误数据）"
+    assert tool_msgs[-1].status == "error"
+    assert "ValueError" in tool_msgs[-1].content or "outside root" in tool_msgs[-1].content
+    # 最后一条是模型的 DONE
+    assert messages[-1].content == "DONE"
+
+
+# ---- finalize 回归：fatal 异常后 finalize_turn 被调用
+
+
+def test_run_agent_turn_finalize_on_fatal():
+    with patch.object(streaming.commands, "finalize_turn") as mock_fin:
+        with pytest.raises(Exception):
+            streaming.run_agent_turn(
+                FlakyAgent(_exc("ValueError", "fatal blow")),
+                "thread-fin",
+                "hi",
+                handle_interrupts=lambda _: None,
+                callbacks=_CB,
+            )
+        # 两次调用：①新轮次开始前清理上一轮 ②fatal 异常兜底
+        assert mock_fin.call_count == 2

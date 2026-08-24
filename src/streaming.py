@@ -364,12 +364,16 @@ def run_agent_turn(
             try:
                 return _run_stream(stream_input, config)
             except Exception as exc:
-                if (
-                    is_cancelled()
-                    or resume
-                    or resilience.classify_error(exc) != "retryable"
-                    or attempt >= resilience.RETRY_MAX_ATTEMPTS - 1
-                ):
+                should_retry = (
+                    not is_cancelled()
+                    and not resume
+                    and resilience.classify_error(exc) == "retryable"
+                    and attempt < resilience.RETRY_MAX_ATTEMPTS - 1
+                )
+                if not should_retry:
+                    # 不重试的异常（fatal/auth/取消/resume）：先清理 checkpoint 再上抛，
+                    # 避免脏状态污染下一轮（恢复原 400-repair 时代的行为）。
+                    commands.finalize_turn(agent, thread_id)
                     raise
                 commands.finalize_turn(agent, thread_id)
                 wait = resilience.backoff_delay(

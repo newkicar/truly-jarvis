@@ -4,7 +4,10 @@ researcher / knowledge_keeper（SubAgent dict 形态）。
 researcher 定义见 .scratch/javis-implementation/issues/04-researcher-prompt.md Resolution。
 """
 from src.inbox_snapshot_middleware import InboxSnapshotMiddleware
+from src.resilience import ToolErrorBoundaryMiddleware
 from src.vault_guard import VaultWriteGuardMiddleware
+
+_ERROR_BOUNDARY = ToolErrorBoundaryMiddleware()
 
 RESEARCHER_PROMPT = """你是 JARVIS 的 researcher，负责「搜索互联网 + 检索本地知识库 → 过滤无用信息 → 带来源总结」。
 
@@ -61,9 +64,10 @@ def build_researcher(search_tools=(), wiki_tools=(), rag_tool=None, deny_middlew
         "description": RESEARCHER_DESCRIPTION,
         "system_prompt": RESEARCHER_PROMPT,
         "tools": tools,
+        "middleware": [_ERROR_BOUNDARY],
     }
     if deny_middleware is not None:
-        spec["middleware"] = [deny_middleware]
+        spec["middleware"] = [_ERROR_BOUNDARY, deny_middleware]
     return spec  # type: ignore[return-value]
 
 
@@ -108,6 +112,7 @@ def build_knowledge_keeper(deny_middleware=None, project_root=None, vault_path=N
         middlewares.append(InboxSnapshotMiddleware(project_root, vault_path))
     if deny_middleware is not None:
         middlewares.insert(0, deny_middleware)
+    middlewares.insert(0, _ERROR_BOUNDARY)
     spec: dict[str, object] = {
         "name": "knowledge_keeper",
         "description": KNOWLEDGE_KEEPER_DESCRIPTION,

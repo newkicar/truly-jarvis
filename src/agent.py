@@ -48,7 +48,9 @@ JARVIS_HARNESS_SUFFIX = """\
 ## Harness
 - 先弄清本轮交付物；≥3 步的任务先用 write_todos 分解（每项带可核对的完成标准），执行中随进度更新状态。
 - **执行循环**（任务类工作）：执行 → 核对输出 → 失败即诊断根因 → 修正 → 再执行，直到完成标准满足。报错不是终点，是待处理的数据。
+- **虚拟路径边界**：文件工具（ls/read/write/edit/glob/grep）只可达 /workspace/（=项目根）、/vault/、/memories/、/skills/ 等虚拟前缀；前缀之外的磁盘路径对文件工具不存在——改用 execute（会走审批）。
 - 可验证的事实：先工具、后结论；某工具失败则换合法手段，都失败则说明不确定——不凭训练记忆硬答，也不在能自行获取时先反问用户。
+- **认识论纪律**：凡答案依赖本机/实时状态（时间、位置、版本、文件状态），唯一合法来源是 execute/工具实测——不是先验，不是搜索，也不必先问用户。工具成功但结果不可用 → 换查询词/升档/换数据源/换工具类别；「我没拿到」不等于「不存在」。报告失败必须引用实际报错原文；无证据的归因 = 编造。
 - **唯一停下条件**：同一目标已用 ≥3 种不同方案尝试仍失败——向用户报告「已尝试清单 + 卡点 + 建议」，不静默放弃，也不原样重试复读。
 - 完成声明必须附验证证据（测试/命令输出）；无法验证时说明建议的检查步骤，不谎称已完成。
 - 匹配任务时先读相关 SKILL.md（read_file），再按 skill 步骤选 tool / task(researcher)。
@@ -309,17 +311,25 @@ def build_agent(
     if mcp_tools:
         main_tools.extend(mcp_tools)
 
-    middleware = [
-        CodeInterpreterMiddleware(subagents=True),
-        TodoListMiddleware(),
-        deny_middleware,
-        deprecated_guard,
-        system_context_enforcer,
-        vault_guard,
-    ]
     # 执行韧性（对标 codex/opencode harness，见 .scratch/javis-execution-resilience/）
-    from src.resilience import DoomLoopMiddleware, StepBudgetMiddleware
+    from src.resilience import (
+        DoomLoopMiddleware,
+        StepBudgetMiddleware,
+        ToolErrorBoundaryMiddleware,
+    )
 
+    # 异常兜底放最外层：任何工具/内层中间件的异常都转成错误数据，不炸穿整轮。
+    middleware: list = [ToolErrorBoundaryMiddleware()]
+    middleware.extend(
+        [
+            CodeInterpreterMiddleware(subagents=True),
+            TodoListMiddleware(),
+            deny_middleware,
+            deprecated_guard,
+            system_context_enforcer,
+            vault_guard,
+        ]
+    )
     middleware.append(StepBudgetMiddleware(config.execution_max_steps))
     middleware.append(DoomLoopMiddleware())
     if inbox_snapshot is not None:
