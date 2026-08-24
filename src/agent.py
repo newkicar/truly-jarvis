@@ -172,19 +172,22 @@ def _harness_suffix_for_model(model_id: str) -> str:
 
 
 def _register_jarvis_harness(model_id: str) -> None:
-    """为当前模型注册 HarnessProfile（deepagents 标准扩展点，非场景 middleware）。"""
-    register_harness_profile(
-        model_id,
-        HarnessProfile(
-            system_prompt_suffix=_harness_suffix_for_model(model_id),
-            tool_description_overrides=dict(TOOL_DESCRIPTION_OVERRIDES),
-        ),
+    """为当前模型注册 HarnessProfile（deepagents 标准扩展点，非场景 middleware）。
+
+    deepagents 对预构建模型实例按 `provider:model` 键查表（如 openai:mimo-v2.5），
+    对 spec 字符串按原文查表——两个键都要注册，否则 suffix/工具描述覆盖静默失效。
+    """
+    profile = HarnessProfile(
+        system_prompt_suffix=_harness_suffix_for_model(model_id),
+        tool_description_overrides=dict(TOOL_DESCRIPTION_OVERRIDES),
     )
-    _HARNESS_REGISTERED.add(model_id)
+    for key in (model_id, f"openai:{model_id}"):
+        register_harness_profile(key, profile)
+        _HARNESS_REGISTERED.add(key)
 
 
 def harness_profile_loaded(model_id: str) -> bool:
-    return model_id in _HARNESS_REGISTERED
+    return model_id in _HARNESS_REGISTERED or f"openai:{model_id}" in _HARNESS_REGISTERED
 
 
 def _make_model(config: Config) -> BaseChatModel:

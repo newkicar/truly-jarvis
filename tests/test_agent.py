@@ -328,16 +328,17 @@ def test_build_agent_registers_harness_profile(tmp_path, monkeypatch):
     cfg = make_fake_config(tmp_path)
     captured = {}
 
-    def spy(model_id, profile):
-        captured["model_id"] = model_id
-        captured["profile"] = profile
+    def spy_all(model_id, profile):
+        captured.setdefault("calls", []).append((model_id, profile))
 
-    monkeypatch.setattr(agent_mod, "register_harness_profile", spy)
+    monkeypatch.setattr(agent_mod, "register_harness_profile", spy_all)
     build_agent(cfg, model=ToolCapableFake(reply="ok"))
 
-    assert captured["model_id"] == cfg.model_id
-    assert isinstance(captured["profile"], HarnessProfile)
-    assert "先工具" in (captured["profile"].system_prompt_suffix or "")
+    registered_keys = [k for k, _ in captured["calls"]]
+    assert cfg.model_id in registered_keys
+    profiles = [p for _, p in captured["calls"]]
+    assert all(isinstance(p, HarnessProfile) for p in profiles)
+    assert any("先工具" in (p.system_prompt_suffix or "") for p in profiles)
 
 
 def test_stream_events_v3_does_not_throw_and_produces_text(tmp_path, monkeypatch):
@@ -407,3 +408,19 @@ def test_build_agent_without_vault_no_vault_route(tmp_path, monkeypatch):
     assert "/vault/" not in routes
     assert "/workspace/" in routes
     assert "/memories/" in routes
+
+
+def test_build_agent_registers_provider_qualified_harness_profile(tmp_path, monkeypatch):
+    """HarnessProfile 必须同时注册裸 model_id 与 openai:model_id 两个键。
+
+    deepagents 对预构建模型实例按 provider:model 查表；只注册裸键会导致
+    suffix / 工具描述覆盖静默失效（2026-08-24 实测踩坑）。
+    """
+    import src.agent as agent_mod
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
+    cfg = make_fake_config(tmp_path)
+    build_agent(cfg, model=ToolCapableFake(reply="ok"))
+    assert cfg.model_id in agent_mod._HARNESS_REGISTERED
+    assert f"openai:{cfg.model_id}" in agent_mod._HARNESS_REGISTERED
+    assert agent_mod.harness_profile_loaded(cfg.model_id)
