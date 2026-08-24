@@ -22,7 +22,9 @@ JAVIS_JSON_TEMPLATE: dict = {
         "api_key_env": "API_KEY",
         "model_id_env": "MODEL_ID",
     },
-    "obsidian_vault": "vault",
+    # 知识库（可选）：填路径启用 /vault/；留空 "" 或删除本键 = 无知识库。
+    # 兼容旧键 obsidian_vault（knowledge_base 优先）。
+    "knowledge_base": "vault",
     "memory_dir": "memory",
     "checkpoint_db": "checkpoints.sqlite",
     "skills": ["skills/"],
@@ -88,7 +90,7 @@ def init_project(
     else:
         data = dict(JAVIS_JSON_TEMPLATE)
         if vault_path:
-            data["obsidian_vault"] = vault_path
+            data["knowledge_base"] = vault_path
         javis_path.write_text(
             json.dumps(data, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
@@ -121,9 +123,9 @@ def init_project(
     readme = root / "vault" / "README.md"
     if not readme.is_file():
         readme.write_text(
-            "# 本地 Vault 占位\n\n"
-            "可在 `javis.json` 的 `obsidian_vault` 改为你的 Obsidian 路径；"
-            "或在此目录放 markdown 作为可选知识库。\n",
+            "# 本地知识库占位\n\n"
+            "可在 `javis.json` 的 `knowledge_base` 改为你的 Obsidian 路径；"
+            "留空（\"\"）或删除该键则禁用知识库。也可在此目录放 markdown 作为本地知识库。\n",
             encoding="utf-8",
         )
         created.append(str(readme))
@@ -154,7 +156,7 @@ def format_init_report(root: Path, created: list[str], skipped: list[str], messa
             "",
             "下一步：",
             f"  1. 编辑 {root / '.env'} 填写 BASE_URL / API_KEY / MODEL_ID / TAVILY_KEY",
-            f"  2. 编辑 {root / JAVIS_JSON}（obsidian_vault、permissions 等）",
+            f"  2. 编辑 {root / JAVIS_JSON}（knowledge_base、permissions 等）",
             f"  3. 双击 {root / 'run-javis.cmd'} 启动 TUI",
             "",
             "或手动指定项目根（从 JARVIS 安装目录运行）：",
@@ -175,10 +177,11 @@ def run_init_cli(argv: list[str] | None = None) -> int:
         help="目标目录（默认当前目录）",
     )
     parser.add_argument(
+        "--knowledge-base",
         "--vault",
         dest="vault_path",
         default=None,
-        help="Obsidian vault 路径（写入 javis.json obsidian_vault）",
+        help="知识库路径（写入 javis.json knowledge_base；留空禁用）",
     )
     parser.add_argument(
         "--force",

@@ -223,3 +223,59 @@ def test_load_config_tui_from_json(tmp_path: Path):
     )
     cfg = load_config(env_file=env_file, json_file=json_file)
     assert cfg.tui.get("copy_on_select") is True
+
+
+def _write_min_env(tmp_path: Path) -> Path:
+    env_file = tmp_path / ".env"
+    env_file.write_text("base_url:https://x.com\napi_key:k\nmodel_id:m\ntavily_key:t\n", encoding="utf-8")
+    return env_file
+
+
+def _write_json(tmp_path: Path, data: dict) -> Path:
+    json_file = tmp_path / "javis.json"
+    base = {"model": {"base_url_env": "BASE_URL", "api_key_env": "API_KEY", "model_id_env": "MODEL_ID"}}
+    base.update(data)
+    json_file.write_text(json.dumps(base), encoding="utf-8")
+    return json_file
+
+
+def test_load_config_knowledge_base_preferred_over_legacy(tmp_path: Path):
+    """knowledge_base 优先于旧键 obsidian_vault。"""
+    env_file = _write_min_env(tmp_path)
+    json_file = _write_json(
+        tmp_path,
+        {
+            "obsidian_vault": str(tmp_path / "old-vault"),
+            "knowledge_base": str(tmp_path / "new-kb"),
+        },
+    )
+    cfg = load_config(env_file=env_file, json_file=json_file)
+    assert cfg.vault_path == (tmp_path / "new-kb").resolve()
+
+
+def test_load_config_knowledge_base_falls_back_to_obsidian_vault(tmp_path: Path):
+    """未写 knowledge_base 时回退 obsidian_vault（兼容家里电脑旧配置）。"""
+    env_file = _write_min_env(tmp_path)
+    json_file = _write_json(tmp_path, {"obsidian_vault": str(tmp_path / "vault")})
+    cfg = load_config(env_file=env_file, json_file=json_file)
+    assert cfg.vault_path == (tmp_path / "vault").resolve()
+
+
+@pytest.mark.parametrize("raw", ["", None])
+def test_load_config_empty_knowledge_base_disables_vault(tmp_path: Path, raw):
+    """knowledge_base 留空/为 null → vault_path=None（无 /vault/）。"""
+    env_file = _write_min_env(tmp_path)
+    json_file = _write_json(
+        tmp_path,
+        {"obsidian_vault": str(tmp_path / "vault"), "knowledge_base": raw},
+    )
+    cfg = load_config(env_file=env_file, json_file=json_file)
+    assert cfg.vault_path is None
+
+
+def test_load_config_no_kb_keys_vault_optional(tmp_path: Path):
+    """两个键都没写也不报错：知识库可选（公司电脑场景）。"""
+    env_file = _write_min_env(tmp_path)
+    json_file = _write_json(tmp_path, {})
+    cfg = load_config(env_file=env_file, json_file=json_file)
+    assert cfg.vault_path is None

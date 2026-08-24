@@ -408,7 +408,7 @@ def format_doctor_report(config, agent, thread_id: str, *, mcp_tool_count: int |
         "JARVIS 诊断",
         "─────────────────────────────",
         f"项目根:     {config.project_root}",
-        f"Vault:      {config.vault_path}",
+        f"知识库:     {config.vault_path if config.vault_path is not None else '未配置（无 /vault/）'}",
         f"模型:       {config.model_id}",
         f"端点:       {config.base_url}",
         f"API Key:    {_mask_secret(config.api_key)}",

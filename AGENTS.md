@@ -13,7 +13,7 @@
 - 主库 `deepagents`（`create_deep_agent`）；模型走 OpenAI 兼容端点 `https://opencode.ai/zen/go/v1`（go 按月套餐，已验证对话 + tool calling），模型 `mimo-v2.5`（2026-08-17 起，原 deepseek-v4-flash 因涨价弃用），模型名不加前缀，经 `.env` 的 `MODEL_ID` 读取。
 - 交互形态：默认 TUI（Textual），`python -m src.main --cli` 回退纯 CLI。
 - **项目根**（ADR-0004）：`discover_project_root()` 从 cwd 向上找 `javis.json`；`/workspace/` = `Config.project_root`（非安装目录）；`JARVIS_PROJECT_ROOT` 可覆盖。新项目：`python -m src.main --init`。
-- 知识库 = Obsidian vault（`E:\Thomas\Obsidian_warehouse`，路径可改，走 `javis.json`），**可选**后端，路由 `/vault/`。
+- 知识库 = Obsidian vault（**可选**，路径写在 `javis.json` 的 `knowledge_base` 键——不同电脑可配不同路径，留空 `""` 或删除该键 = 无 `/vault/`；兼容旧键 `obsidian_vault`，`knowledge_base` 优先），路由 `/vault/`。
   - 访问方式 = **WIKI 导航式**：`FilesystemBackend` 指向 vault，复用原生 `grep/glob/read_file`，加 `src/wiki.py` 的 wikilink/backlink 导航工具（出链/反链，**零索引**实时扫描）。
   - 语义增强 = **增量 RAG**（`src/rag.py`）：Ollama `bge-small-zh-v1.5` embedding + chromadb（索引存 `memory/rag-index/`），hash 增量索引只重建变更文件；`vault_semantic_search` 工具与 grep/wiki 结果合并去重。Ollama 不可用时自动回落。
 - 记忆分离：知识 → Obsidian vault；信息记忆（偏好/行业）→ 项目 `memory/`。

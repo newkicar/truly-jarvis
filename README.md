@@ -20,7 +20,7 @@
 - Python 3.11+（推荐 3.12）
 - 依赖：`pip install -r requirements.txt`
 - 模型：`.env` 配置 OpenAI 兼容端点（当前默认 `https://opencode.ai/zen/go/v1` + `mimo-v2.5`）
-- 知识库：Obsidian vault 路径写在 `javis.json` 的 `obsidian_vault`
+- 知识库（可选）：路径写在 `javis.json` 的 `knowledge_base`（如 Obsidian vault）；留空 `""` 或删除该键 = 无 `/vault/`。兼容旧键 `obsidian_vault`（`knowledge_base` 优先）。
 - 可选：Ollama（增量 RAG embedding）、已配置的 MCP servers
 
 ### 配置
@@ -34,7 +34,7 @@ MODEL_ID=mimo-v2.5
 TAVILY_KEY=tvly-...
 ```
 
-2. 编辑 `javis.json`：vault 路径、`permissions`、`mcps.servers`、`schedules_dir` 等可变项均在此，不写死在代码里。
+2. 编辑 `javis.json`：知识库路径（`knowledge_base`，不同电脑可配不同路径或留空禁用）、`permissions`、`mcps.servers`、`schedules_dir` 等可变项均在此，不写死在代码里。
 
 **项目根**：在哪运行，哪就是 `/workspace/`。JARVIS 从 cwd 向上找 `javis.json` 确定项目根；也可设 `JARVIS_PROJECT_ROOT` 覆盖。在 `truly_Javis/` 内开发时行为与以前一致。
 
@@ -83,7 +83,7 @@ python -m src.main -n
 
 **HITL 审批**（写文件 / 执行命令等）：Modal 四按钮——放行(a) / 永久放行(s) / 拒绝(d) / 编辑参数(e)。写 Inbox 时会展示 unified diff 预览。
 
-**写边界**：JARVIS 只能写 `/vault/Inbox/` 与 `/vault/Reports/`；Vault 其它路径只读。详见 [`docs/adr/0002-inbox-only-write-and-snapshots.md`](docs/adr/0002-inbox-only-write-and-snapshots.md)。
+**写边界**：JARVIS 只能写 `/vault/Inbox/` 与 `/vault/Reports/`；Vault 其它路径只读。知识库为**可选**配置——未配置 `knowledge_base` 时没有 `/vault/`，代理正常工作（检索/沉淀类任务会被环境说明引导跳过）。详见 [`docs/adr/0002-inbox-only-write-and-snapshots.md`](docs/adr/0002-inbox-only-write-and-snapshots.md)。
 
 **系统上下文**（日期 / 时间 / 城市）：启动时 system prompt 仅含**当天日期 + 星期**；问精确时间或城市时用 `execute` 读本机，不写死 `javis.json` 或 profile。详见 [`docs/adr/0003-system-context-on-demand.md`](docs/adr/0003-system-context-on-demand.md)。
 

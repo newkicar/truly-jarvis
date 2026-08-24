@@ -4,7 +4,7 @@
 
 **Type:** task
 
-**Status:** ready-for-human
+**Status:** done
 
 **Blocked by:** —
 
@@ -42,3 +42,7 @@
 
 - 2026-08-22：`repair_stuck_thread` 已合并进本票基础，勿重复造轮子。
 - 2026-08-22：`finalize_turn` + TUI `_resolved_hitl` / `_hitl_generation` + `run_agent_turn` finally 路径已落地；单测 `test_run_agent_turn_abandon_calls_finalize` 等绿。待人工 smoke Esc/HITL 后关票。
+
+## Resolution
+
+- 实现：`src/commands.py::finalize_turn/turn_needs_finalize/repair_stuck_thread`；接线于 `src/streaming.py` 与 `src/tui.py`（切线程 finalize + pending HITL 过滤 `filter_pending_interrupts`）。

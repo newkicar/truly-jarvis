@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import make_fake_config
+from tests.conftest import make_fake_config
 from src.agent import build_main_prompt, session_date_line
 from src.project_paths import ensure_user_home, user_home
 from src.skill_paths import (

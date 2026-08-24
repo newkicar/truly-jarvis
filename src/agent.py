@@ -128,12 +128,17 @@ def build_environment_block(config: Config) -> str:
     """轻量运行环境（对标 OpenCode environment；不含用户所在地，ADR-0003）。"""
     platform = sys.platform
     mcp_n = len((config.mcps or {}).get("servers") or {}) if isinstance(config.mcps, dict) else 0
+    vault_line = (
+        f"- 知识库 /vault/: {config.vault_path}"
+        if config.vault_path is not None
+        else "- 知识库: 未配置（本次会话没有 /vault/，忽略一切知识库检索与沉淀任务）"
+    )
     return "\n".join(
         [
             "## 运行环境",
             f"- 平台: {platform}",
             f"- 项目根 /workspace/: {config.project_root}",
-            f"- 知识库 /vault/: {config.vault_path}",
+            vault_line,
             f"- 记忆 /memories/: {config.memory_dir}",
             "- 主代理工具: quick_search, execute, read/grep/glob/ls, task, write_todos"
             + (f", MCP×{mcp_n}" if mcp_n else ""),
@@ -189,9 +194,12 @@ def _make_backend(config: Config) -> CompositeBackend:
     workspace = LocalShellBackend(root_dir=str(config.project_root), virtual_mode=True)
     routes: dict[str, FilesystemBackend | LocalShellBackend] = {
         "/workspace/": workspace,
-        "/vault/": FilesystemBackend(root_dir=str(config.vault_path), virtual_mode=True),
         "/memories/": FilesystemBackend(root_dir=str(config.memory_dir), virtual_mode=True),
     }
+    if config.vault_path is not None:
+        routes["/vault/"] = FilesystemBackend(
+            root_dir=str(config.vault_path), virtual_mode=True
+        )
     for vpath, fs_path in skill_backend_routes(config).items():
         routes[vpath] = FilesystemBackend(root_dir=str(fs_path), virtual_mode=True)
     return CompositeBackend(default=workspace, routes=routes)
@@ -234,13 +242,15 @@ def build_agent(
         make_search_tool(config.tavily_key),
         make_deep_search_tool(config.tavily_key),
     ]
-    wiki_tools = make_wiki_tools(config.vault_path)
-    rag_tool = make_semantic_search_tool(
-        config.vault_path,
-        config.memory_dir / "rag-index",
-        base_url=config.rag_ollama_base_url,
-        embed_model=config.rag_embed_model,
-    )
+    wiki_tools = make_wiki_tools(config.vault_path) if config.vault_path is not None else []
+    rag_tool = None
+    if config.vault_path is not None:
+        rag_tool = make_semantic_search_tool(
+            config.vault_path,
+            config.memory_dir / "rag-index",
+            base_url=config.rag_ollama_base_url,
+            embed_model=config.rag_embed_model,
+        )
     if permission_state is not None:
         interrupt_on = build_permission_interrupts_from_state(permission_state)
     else:
@@ -256,7 +266,11 @@ def build_agent(
     system_context_enforcer = SystemContextEnforcerMiddleware()
     vault_guard = VaultWriteGuardMiddleware()
     root = config.project_root
-    inbox_snapshot = InboxSnapshotMiddleware(root, config.vault_path)
+    inbox_snapshot = (
+        InboxSnapshotMiddleware(root, config.vault_path)
+        if config.vault_path is not None
+        else None
+    )
     _register_jarvis_harness(config.model_id)
     researcher = build_researcher(
         search_tools=search_tools, wiki_tools=wiki_tools, rag_tool=rag_tool,
@@ -283,21 +297,24 @@ def build_agent(
     if mcp_tools:
         main_tools.extend(mcp_tools)
 
+    middleware = [
+        CodeInterpreterMiddleware(subagents=True),
+        TodoListMiddleware(),
+        deny_middleware,
+        deprecated_guard,
+        system_context_enforcer,
+        vault_guard,
+    ]
+    if inbox_snapshot is not None:
+        middleware.append(inbox_snapshot)
+
     return create_deep_agent(
         model=model,
         backend=_make_backend(config),
         subagents=[researcher, knowledge_keeper, *config_subagents],  # type: ignore[list-item]
         system_prompt=build_main_prompt(config=config),
         tools=main_tools,
-        middleware=[
-            CodeInterpreterMiddleware(subagents=True),
-            TodoListMiddleware(),
-            deny_middleware,
-            deprecated_guard,
-            system_context_enforcer,
-            vault_guard,
-            inbox_snapshot,
-        ],  # type: ignore[list-item]
+        middleware=middleware,  # type: ignore[list-item]
         memory=memory,
         skills=skills,
         interrupt_on=interrupt_on,  # HITL 审批（javis.json permissions）

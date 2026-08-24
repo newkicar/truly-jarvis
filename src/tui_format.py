@@ -107,10 +107,12 @@ def format_tool_call(
     return f"{header}\n{indented}"
 
 
-def resolve_virtual_path(path: str, *, vault_path: Path, workspace_root: Path) -> Path | None:
+def resolve_virtual_path(path: str, *, vault_path: Path | None, workspace_root: Path) -> Path | None:
     """把 /vault/ /workspace/ 虚拟路径解析为本地 Path。"""
     norm = path.replace("\\", "/")
     if norm.startswith("/vault/"):
+        if vault_path is None:
+            return None
         return vault_path / norm[len("/vault/") :].lstrip("/")
     if norm.startswith("/workspace/"):
         return workspace_root / norm[len("/workspace/") :].lstrip("/")

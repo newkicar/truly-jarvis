@@ -14,7 +14,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from src import commands, streaming
 from src.agent import build_agent
-from conftest import make_fake_config
+from tests.conftest import make_fake_config
 
 
 class CountingFake(BaseChatModel):

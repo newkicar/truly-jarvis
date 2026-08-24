@@ -4,6 +4,7 @@
     "api_key_env": "API_KEY",
     "model_id_env": "MODEL_ID"
   },
+  "knowledge_base": "",
   "obsidian_vault": "E:\\Thomas\\Obsidian_warehouse",
   "memory_dir": "memory",
   "checkpoint_db": "checkpoints.sqlite",

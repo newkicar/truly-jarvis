@@ -4,7 +4,7 @@
 
 **Type:** task
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Blocked by:** —
 
@@ -16,13 +16,18 @@
 
 ## 范围
 
-- [ ] `format_doctor_report(config, agent, thread_id) -> str` 纯函数，含：
+- [x] `format_doctor_report(config, agent, thread_id) -> str` 纯函数，含：
   - `project_root`、`MODEL_ID`（masked api key）、MCP 数量、checkpoint db 路径  
   - **config layers**：列出各层来源（install .env / JARVIS_HOME / project javis.json / env override）及关键字段（permissions 摘要、theme）  
   - **session health**：`checkpoint_config_stuck()` 结果；若 stuck 提示 `/delete-session` 或 `-n`  
   - 可选：thread 消息数、最大 checkpoint blob 大小（sqlite 查询）  
-- [ ] `/doctor` 注册到 `dispatch_command` + TUI `/` 建议  
-- [ ] 单测：fake agent/checkpointer；stuck vs healthy 两种输出  
+- [x] `/doctor` 注册到 `dispatch_command` + TUI `/` 建议  
+- [x] 单测：fake agent/checkpointer；stuck vs healthy 两种输出  
+
+## Resolution
+
+- 实现：`src/commands.py::format_doctor_report` + `_config_layer_lines` + `checkpoint_config_stuck`；注册于 `dispatch_command` 与 `src/slash_completion.py`。
+- 测试：`tests/test_commands.py::test_format_doctor_report_healthy/stuck/dispatch`。
 
 ## 非目标
 

@@ -13,7 +13,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from src.agent import build_agent, build_main_prompt, JARVIS_HARNESS_SUFFIX
 from src.skill_paths import USER_SKILLS_VPATH
 from src.subagents import build_knowledge_keeper
-from conftest import make_fake_config
+from tests.conftest import make_fake_config
 
 
 class ToolCapableFake(BaseChatModel):
@@ -359,3 +359,51 @@ def test_stream_events_v3_does_not_throw_and_produces_text(tmp_path, monkeypatch
             text_chunks.extend(item.text)
 
     assert "流式回答" in "".join(text_chunks)
+
+
+def _cfg_without_vault(tmp_path):
+    import dataclasses
+
+    from tests.conftest import make_fake_config
+
+    return dataclasses.replace(make_fake_config(tmp_path), vault_path=None)
+
+
+def test_environment_block_without_vault(tmp_path):
+    """知识库未配置：环境块声明没有 /vault/，引导模型跳过知识库任务。"""
+    from src.agent import build_environment_block
+
+    block = build_environment_block(_cfg_without_vault(tmp_path))
+    assert "未配置" in block
+    assert "/vault/" not in block.replace("没有 /vault/", "")
+
+
+def test_environment_block_with_vault_shows_path(tmp_path):
+    from src.agent import build_environment_block
+
+    cfg = make_fake_config(tmp_path)
+    block = build_environment_block(cfg)
+    assert str(cfg.vault_path) in block
+
+
+def test_build_agent_without_vault_no_vault_route(tmp_path, monkeypatch):
+    """知识库未配置（公司电脑）：组装成功且 backend 无 /vault/ 路由。"""
+    import src.agent as agent_mod
+    from src.agent import create_deep_agent
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
+    cfg = _cfg_without_vault(tmp_path)
+    captured = {}
+
+    def spy(**kwargs):
+        captured.update(kwargs)
+        return create_deep_agent(**kwargs)
+
+    monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+    model = ToolCapableFake(reply="ok")
+    agent = build_agent(cfg, model=model)
+    assert agent is not None
+    routes = getattr(captured.get("backend"), "routes", {})
+    assert "/vault/" not in routes
+    assert "/workspace/" in routes
+    assert "/memories/" in routes

@@ -9,7 +9,7 @@ import json
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from src import scheduler
-from conftest import make_fake_config
+from tests.conftest import make_fake_config
 
 
 def _write_schedule(sdir, name, data):
@@ -173,3 +173,14 @@ def test_describe_cron():
     assert scheduler.describe_cron("0 */2 * * *") == "每 2 小时"
     assert scheduler.describe_cron("0 0 */2 * *") == "每 2 天"
     assert scheduler.describe_cron("0 8 * * 1") == "0 8 * * 1"
+
+def test_resolve_save_path_vault_without_kb_raises(tmp_path):
+    """知识库未配置时，vault: 保存路径明确报错（不静默崩溃）。"""
+    import dataclasses
+
+    cfg = dataclasses.replace(make_fake_config(tmp_path), vault_path=None)
+    try:
+        scheduler.resolve_save_path(cfg, "vault:Inbox/")
+        assert False, "应当抛 ScheduleConfigError"
+    except scheduler.ScheduleConfigError as e:
+        assert "knowledge_base" in str(e)

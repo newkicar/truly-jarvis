@@ -5,7 +5,7 @@
 ## Language
 
 **Vault**：
-用户的 Obsidian 知识库整体。JARVIS 可只读检索其中任意笔记；除下方可写目录外不得创建、修改或删除文件。
+用户的 Obsidian 知识库整体（可选后端，`javis.json` 的 `knowledge_base` 配置路径；留空或删除该键 = 本次会话没有 `/vault/`）。JARVIS 可只读检索其中任意笔记；除下方可写目录外不得创建、修改或删除文件。
 _Avoid_: 知识库根、整个仓库（当实际只指可写区时）
 
 **Inbox**：

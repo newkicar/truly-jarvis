@@ -16,7 +16,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from conftest import make_fake_config
+from tests.conftest import make_fake_config
 from src.agent import build_agent
 
 
@@ -57,7 +57,7 @@ class ToolCallingFake(BaseChatModel):
         return "tool-calling-fake"
 
 
-from conftest import make_fake_config
+from tests.conftest import make_fake_config
 
 
 def _fake_config(tmp_path):

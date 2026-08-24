@@ -43,7 +43,7 @@ class Config:
     api_key: str
     model_id: str
     tavily_key: str
-    vault_path: Path
+    vault_path: Path | None
     memory_dir: Path
     checkpoint_db: Path
     schedules_dir: Path
@@ -131,7 +131,10 @@ def load_config(
     model_id = env[_resolve_env_name("model_id_env", "MODEL_ID")]
     tavily_key = env[_resolve_env_name("tavily_key_env", "TAVILY_KEY")]
 
-    vault = Path(os.path.expandvars(data["obsidian_vault"])).resolve()
+    # 知识库（可选）：javis.json `knowledge_base` 优先，兼容旧键 `obsidian_vault`；
+    # 空字符串 / null / 两键均缺省 → None（本次会话没有 /vault/）。
+    kb_raw = data.get("knowledge_base", data.get("obsidian_vault"))
+    vault = Path(os.path.expandvars(str(kb_raw))).resolve() if kb_raw else None
     memory = (root / data.get("memory_dir", "memory")).resolve()
     checkpoint_db = (root / data.get("checkpoint_db", "checkpoints.sqlite")).resolve()
     schedules_dir = (root / data.get("schedules_dir", "schedules")).resolve()

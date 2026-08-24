@@ -3,7 +3,7 @@ from dataclasses import replace
 
 import pytest
 
-from conftest import make_fake_config
+from tests.conftest import make_fake_config
 from src.config_agents import build_config_subagents
 from src.permissions import (
     PermissionDenyMiddleware,

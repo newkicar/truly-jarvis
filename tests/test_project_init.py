@@ -28,7 +28,9 @@ def test_init_project_skips_existing_javis_json(tmp_path: Path):
 def test_init_project_force_overwrites_javis_json(tmp_path: Path):
     (tmp_path / "javis.json").write_text("{}", encoding="utf-8")
     init_project(tmp_path, force=True)
-    assert '"obsidian_vault"' in (tmp_path / "javis.json").read_text(encoding="utf-8")
+    text = (tmp_path / "javis.json").read_text(encoding="utf-8")
+    assert '"knowledge_base"' in text
+    assert '"obsidian_vault"' not in text
 
 
 def test_suggest_init_if_missing(tmp_path: Path, monkeypatch):

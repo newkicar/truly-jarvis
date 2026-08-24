@@ -1,6 +1,6 @@
 # JARVIS Codex Harness — 决策摘要
 
-`Status: open`（2026-08-22 起草）
+`Status: done`（2026-08-24 关票：01/02/03 全部实现并带测试，280 单测绿）
 
 ## 背景
 

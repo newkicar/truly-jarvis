@@ -4,7 +4,7 @@
 
 **Type:** task
 
-**Status:** ready-for-human
+**Status:** done
 
 **Blocked by:** 01
 
@@ -46,3 +46,7 @@
 ## Comments
 
 - 2026-08-22：落地 `src/permission_hooks.py`；Hooks 优先于 permissions；`collect_interrupt_decisions` + deny middleware 双路径；示例 `hooks/permission_example.py`；`tests/test_permission_hooks.py`。
+
+## Resolution
+
+- 实现：`src/permission_hooks.py`（parse/run/summarize，失败超时回落 ask）+ `hooks/permission_example.py`；集成于 `src/permissions.py` 与 `/doctor` hook 摘要。

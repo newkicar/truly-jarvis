@@ -96,6 +96,11 @@ def resolve_save_path(config: Config, save_path: str) -> Path:
     validate_schedule_save_path(save_path)
     save_path = (save_path or "vault:Inbox/").strip()
     if save_path.startswith("vault:"):
+        if config.vault_path is None:
+            raise ScheduleConfigError(
+                "save_path 指向 vault，但 javis.json 未配置知识库（knowledge_base）；"
+                "请配置知识库或把 save_path 改为 workspace: 路径"
+            )
         return (config.vault_path / save_path[len("vault:"):]).resolve()
     if save_path.startswith("workspace:"):
         return (config.project_root / save_path[len("workspace:"):]).resolve()
