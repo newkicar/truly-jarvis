@@ -54,6 +54,7 @@ class Config:
     agents: dict[str, object]
     rag_ollama_base_url: str
     rag_embed_model: str
+    execution_max_steps: int
     tui: dict[str, object]
 
 
@@ -155,6 +156,15 @@ def load_config(
     if not isinstance(rag_cfg, dict):
         rag_cfg = {}
 
+    execution_cfg = data.get("execution", {})
+    if not isinstance(execution_cfg, dict):
+        execution_cfg = {}
+    try:
+        max_steps = int(execution_cfg.get("max_steps", 200))
+    except (TypeError, ValueError):
+        max_steps = 200
+    max_steps = max(10, min(max_steps, 9999))
+
     tui_cfg = data.get("tui", {})
     if not isinstance(tui_cfg, dict):
         tui_cfg = {}
@@ -176,6 +186,7 @@ def load_config(
         agents=agents,
         rag_ollama_base_url=str(rag_cfg.get("ollama_base_url", "http://localhost:11434")),
         rag_embed_model=str(rag_cfg.get("embed_model", "quentinz/bge-small-zh-v1.5")),
+        execution_max_steps=max_steps,
         tui=tui_cfg,
     )
     ensure_user_home()

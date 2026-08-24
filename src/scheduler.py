@@ -125,7 +125,10 @@ def _run_task(agent, config: Config, task: dict):
 
         result = agent.invoke(
             {"messages": [{"role": "user", "content": prompt}]},
-            config={"configurable": {"thread_id": f"sched-{task['id']}"}, "recursion_limit": 30},
+            config={
+                "configurable": {"thread_id": f"sched-{task['id']}"},
+                "recursion_limit": max(10, int(getattr(config, "execution_max_steps", 200))),
+            },
         )
         # HITL：定时任务无人审批，若触发审批中断则视为失败（不悬挂，明确记录）
         interrupts = getattr(result, "interrupts", None) or []

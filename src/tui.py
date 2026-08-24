@@ -836,6 +836,9 @@ class JarvisApp(App):
             if name == "write_todos" and not cancelled():
                 self.call_from_thread(self._refresh_todos_panel)
 
+        def on_status(text: str) -> None:
+            write_line(f"[i][dim]… {text}[/dim][/i]")
+
         def on_cancelled() -> None:
             nonlocal cancel_notified, stream_active
             cancel_notified = True
@@ -884,6 +887,7 @@ class JarvisApp(App):
                     "on_tool_call": on_tool_call,
                     "on_message_delta": on_message_delta,
                     "on_message_end": on_message_end,
+                    "on_status": on_status,
                 },
                 is_cancelled=cancelled,
                 on_fallback_message=lambda text: self.call_from_thread(
@@ -894,6 +898,7 @@ class JarvisApp(App):
                 on_turn_incomplete=on_turn_incomplete,
                 permission_state=self.permission_state,
                 project_root=self._workspace_root(),
+                max_steps=int(getattr(self.config, "execution_max_steps", 200)),
             )
         except Exception as exc:
             reset_header()

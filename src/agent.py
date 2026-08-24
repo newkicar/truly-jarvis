@@ -46,8 +46,11 @@ _HARNESS_REGISTERED: set[str] = set()
 # deepagents HarnessProfile：通用推理约束，不写场景菜谱（对标 profile system_prompt_suffix）
 JARVIS_HARNESS_SUFFIX = """\
 ## Harness
-- 先弄清本轮交付物；多步任务可用 write_todos 跟踪，逐步执行并核对结果。
+- 先弄清本轮交付物；≥3 步的任务先用 write_todos 分解（每项带可核对的完成标准），执行中随进度更新状态。
+- **执行循环**（任务类工作）：执行 → 核对输出 → 失败即诊断根因 → 修正 → 再执行，直到完成标准满足。报错不是终点，是待处理的数据。
 - 可验证的事实：先工具、后结论；某工具失败则换合法手段，都失败则说明不确定——不凭训练记忆硬答，也不在能自行获取时先反问用户。
+- **唯一停下条件**：同一目标已用 ≥3 种不同方案尝试仍失败——向用户报告「已尝试清单 + 卡点 + 建议」，不静默放弃，也不原样重试复读。
+- 完成声明必须附验证证据（测试/命令输出）；无法验证时说明建议的检查步骤，不谎称已完成。
 - 匹配任务时先读相关 SKILL.md（read_file），再按 skill 步骤选 tool / task(researcher)。
 - eval / CodeInterpreter 仅用于代码计算与 fan-out，不用于读取系统环境。"""
 
@@ -63,6 +66,8 @@ TOOL_DESCRIPTION_OVERRIDES = {
     "execute": (
         "Run a shell command on the local machine. "
         "Use to inspect environment, run programs, or gather facts (time, paths, command output). "
+        "Check the command output before claiming success; on failure diagnose the cause, "
+        "fix it and re-run with a changed approach instead of repeating the same call. "
         "Do not use CodeInterpreter/eval for environment reads."
     ),
     "task": (
@@ -74,7 +79,8 @@ TOOL_DESCRIPTION_OVERRIDES = {
     "write_todos": (
         "Create or update a structured task list for multi-step work in this session. "
         "Use when the user request has 3+ distinct steps or asks for planning; "
-        "mark items in_progress before working and completed when done."
+        "give each item a verifiable completion criterion; "
+        "mark items in_progress before working and completed only after verifying."
     ),
 }
 
@@ -91,7 +97,7 @@ MAIN_SYSTEM_PROMPT = """你是 JARVIS，个人 AI 助手，专注扩展用户的
 接到提问或任务时，先弄清要交付什么，再选工具或子代理执行。
 **可直接文字作答的**仅限：今天日期/星期（见「当前会话」）、纯概念解释、用户已在本轮给出的信息。
 **其余**（实时事实、本机状态、vault 内容、需运行验证的任务）→ 先 read_file 匹配 skill、或 quick_search / execute / task(researcher)，再总结。
-多步任务：可用 write_todos 跟踪；某步失败则换合法手段，不要卡死。
+多步任务：先用 write_todos 分解，再逐项执行；每步核对结果，失败先诊断根因再修正重试，不卡死也不跳步。
 
 **环境与可核实事实：**
 - 本提示词「当前会话」仅提供今天日期与星期；精确时间/本机信息用 execute。
@@ -102,7 +108,7 @@ MAIN_SYSTEM_PROMPT = """你是 JARVIS，个人 AI 助手，专注扩展用户的
 - **事实**：有可靠来源再答；没有则说明不确定，不编造。
 - **调研**：需要联网或检索 vault 时用 quick_search 或 task(researcher)；覆盖用户原问题即可，不自动升级成报告或写入 vault。
 - **落盘**：仅当用户明确要求保存、沉淀或整理报告时，才写 `/vault/Inbox/` 或 `/vault/Reports/`。
-- **可验证任务**：能跑则跑（测试、命令输出）；无法验证时说明建议的检查步骤，不谎称已完成。
+- **可验证任务**：能跑则跑（测试、命令输出），声称完成前附上验证输出；无法验证时说明建议的检查步骤，不谎称已完成。
 
 ## 约束
 - 文件路径只用 `/workspace/`（项目）、`/vault/`（Obsidian）、`/memories/`（用户记忆）、`/skills/`（用户全局 skill）、`/builtin-skills/`（随安装包 skill）。
@@ -187,6 +193,9 @@ def _make_model(config: Config) -> BaseChatModel:
         api_key=SecretStr(config.api_key),
         model=config.model_id,
         temperature=0,
+        # HTTP 层瞬断自愈（流中断后的业务级重试在 src/resilience.py 决策表）。
+        max_retries=3,
+        timeout=120,
     )
 
 
@@ -305,6 +314,11 @@ def build_agent(
         system_context_enforcer,
         vault_guard,
     ]
+    # 执行韧性（对标 codex/opencode harness，见 .scratch/javis-execution-resilience/）
+    from src.resilience import DoomLoopMiddleware, StepBudgetMiddleware
+
+    middleware.append(StepBudgetMiddleware(config.execution_max_steps))
+    middleware.append(DoomLoopMiddleware())
     if inbox_snapshot is not None:
         middleware.append(inbox_snapshot)
 

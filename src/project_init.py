@@ -42,6 +42,9 @@ JAVIS_JSON_TEMPLATE: dict = {
         "ollama_base_url": "http://localhost:11434",
         "embed_model": "quentinz/bge-small-zh-v1.5",
     },
+    "execution": {
+        "max_steps": 200,
+    },
     "tui": {
         "copy_on_select": True,
     },

@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 from typing import Any
 
-from src import commands
+from src import commands, resilience
 
 REJECT_MESSAGE = "用户拒绝了该操作，请更换方案或询问用户。不要重试相同调用。"
 
@@ -298,8 +299,14 @@ def run_agent_turn(
     on_turn_incomplete: Callable[[], None] | None = None,
     permission_state: dict | None = None,
     project_root=None,
+    max_steps: int = 200,
 ) -> bool:
-    """跑一轮对话或 checkpoint 重跑（含 HITL resume 循环）。返回 True=正常结束，False=放弃/取消。"""
+    """跑一轮对话或 checkpoint 重跑（含 HITL resume 循环）。返回 True=正常结束，False=放弃/取消。
+
+    韧性：retryable API 错误按决策表退避重试（状态经 callbacks["on_status"] 可见），
+    步数超限软着陆收尾而非裸异常。
+    """
+    from langgraph.errors import GraphRecursionError
     from langgraph.types import Command
     from src.permissions import sync_permission_context
 
@@ -307,7 +314,8 @@ def run_agent_turn(
         permission_state, thread_id=thread_id, project_root=project_root
     )
 
-    base_config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 30}
+    max_steps = max(10, int(max_steps))
+    base_config = {"configurable": {"thread_id": thread_id}, "recursion_limit": max_steps}
     resume = None
     replay_pending = checkpoint_id is not None
     outcome = "complete"
@@ -316,6 +324,14 @@ def run_agent_turn(
         commands.finalize_turn(agent, thread_id)
         if on_turn_incomplete:
             on_turn_incomplete()
+
+    def _cancellable_sleep(seconds: float) -> bool:
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            if is_cancelled():
+                return False
+            time.sleep(min(0.2, max(0.0, end - time.monotonic())))
+        return True
 
     if replay_pending:
         saved = commands.completed_turn_checkpoint(agent, thread_id, checkpoint_id)
@@ -339,6 +355,36 @@ def run_agent_turn(
         )
         return consumed, stream
 
+    # 重试仅针对全新用户轮次与 checkpoint 重放（resume 语义不可安全重放）。
+    attempt = 0
+
+    def _stream_with_resilience(stream_input: Any, config: dict):
+        nonlocal attempt
+        while True:
+            try:
+                return _run_stream(stream_input, config)
+            except Exception as exc:
+                if (
+                    is_cancelled()
+                    or resume
+                    or resilience.classify_error(exc) != "retryable"
+                    or attempt >= resilience.RETRY_MAX_ATTEMPTS - 1
+                ):
+                    raise
+                commands.finalize_turn(agent, thread_id)
+                wait = resilience.backoff_delay(
+                    attempt, retry_after=resilience.extract_retry_after(exc)
+                )
+                status_cb = callbacks.get("on_status")
+                if status_cb:
+                    status_cb(
+                        f"API 中断（{type(exc).__name__}），{wait:.0f}s 后重试"
+                        f"（{attempt + 1}/{resilience.RETRY_MAX_ATTEMPTS}）"
+                    )
+                if not _cancellable_sleep(wait):
+                    raise
+                attempt += 1
+
     try:
         while not is_cancelled():
             if on_stream_start:
@@ -350,7 +396,7 @@ def run_agent_turn(
                 stream_input = None
                 config = {
                     "configurable": {"thread_id": thread_id, "checkpoint_id": checkpoint_id},
-                    "recursion_limit": 30,
+                    "recursion_limit": max_steps,
                 }
                 replay_pending = False
             else:
@@ -358,24 +404,19 @@ def run_agent_turn(
                 stream_input = {"messages": [{"role": "user", "content": user_input}]}
                 config = base_config
             try:
-                consumed, stream = _run_stream(stream_input, config)
-            except Exception as exc:
+                consumed, stream = _stream_with_resilience(stream_input, config)
+            except GraphRecursionError:
                 commands.finalize_turn(agent, thread_id)
-                if (
-                    not resume
-                    and not replay_pending
-                    and user_input
-                    and ("BadRequest" in type(exc).__name__ or "400" in str(exc))
-                ):
-                    try:
-                        consumed, stream = _run_stream(
-                            {"messages": [{"role": "user", "content": user_input}]},
-                            base_config,
-                        )
-                    except Exception:
-                        raise exc from None
-                else:
-                    raise
+                msg = (
+                    f"任务步数超过上限 {max_steps}，已强制收尾。"
+                    "可 /history 查看进度；如需更长执行，调高 javis.json 的 execution.max_steps。"
+                )
+                if callbacks.get("on_status"):
+                    callbacks["on_status"](msg)
+                elif on_fallback_message:
+                    on_fallback_message(msg)
+                outcome = "abandon"
+                return False
             if is_cancelled():
                 outcome = "cancel"
                 return False

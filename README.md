@@ -34,7 +34,7 @@ MODEL_ID=mimo-v2.5
 TAVILY_KEY=tvly-...
 ```
 
-2. 编辑 `javis.json`：知识库路径（`knowledge_base`，不同电脑可配不同路径或留空禁用）、`permissions`、`mcps.servers`、`schedules_dir` 等可变项均在此，不写死在代码里。
+2. 编辑 `javis.json`：知识库路径（`knowledge_base`，不同电脑可配不同路径或留空禁用）、`permissions`、`mcps.servers`、`schedules_dir`、`execution.max_steps`（单轮任务步数上限，默认 200，超限前会软着陆总结）等可变项均在此，不写死在代码里。
 
 **项目根**：在哪运行，哪就是 `/workspace/`。JARVIS 从 cwd 向上找 `javis.json` 确定项目根；也可设 `JARVIS_PROJECT_ROOT` 覆盖。在 `truly_Javis/` 内开发时行为与以前一致。
 

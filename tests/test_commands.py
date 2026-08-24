@@ -776,6 +776,7 @@ def test_format_doctor_report_healthy(tmp_path, monkeypatch):
         agents={},
         rag_ollama_base_url="http://localhost:11434",
         rag_embed_model="embed",
+        execution_max_steps=200,
         tui={"theme": "flexoki"},
     )
     from src.agent import _register_jarvis_harness
@@ -820,6 +821,7 @@ def test_format_doctor_report_stuck(tmp_path, monkeypatch):
         agents={},
         rag_ollama_base_url="http://localhost:11434",
         rag_embed_model="embed",
+        execution_max_steps=200,
         tui={},
     )
     agent = _FakeDoctorAgent(stuck=True)

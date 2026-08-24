@@ -30,6 +30,7 @@ def _cfg(tmp_path: Path) -> Config:
         agents={},
         rag_ollama_base_url="http://localhost:11434",
         rag_embed_model="embed",
+        execution_max_steps=200,
         tui={},
     )
 

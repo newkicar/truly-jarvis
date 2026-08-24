@@ -105,12 +105,18 @@ def _stream_replay(agent, thread_id: str, checkpoint_id: str, permission_state: 
                 name, args, err, output, depth
             ),
             "on_message_delta": lambda delta: print(delta, end="", flush=True),
+            "on_status": _cli_status_line,
         },
         on_fallback_message=lambda text: print(text),
         permission_state=permission_state,
         project_root=workspace_root,
+        max_steps=int(getattr(config, "execution_max_steps", 200)) if config else 200,
     )
     print("\n")
+
+
+def _cli_status_line(text: str) -> None:
+    print(f"\n  … {text}")
 
 
 def _stream_turn(agent, thread_id: str, user_input: str, permission_state: dict | None = None, config=None):
@@ -118,6 +124,7 @@ def _stream_turn(agent, thread_id: str, user_input: str, permission_state: dict 
     print()
     vault_path = getattr(config, "vault_path", None) if config else None
     workspace_root = config.project_root if config else None
+    max_steps = int(getattr(config, "execution_max_steps", 200)) if config else 200
 
     def on_always_approve(name: str) -> None:
         print(f"    已设置 {name} = allow（已写入 javis.json，以后自动放行）")
@@ -145,10 +152,12 @@ def _stream_turn(agent, thread_id: str, user_input: str, permission_state: dict 
                     name, args, err, output, depth
                 ),
                 "on_message_delta": lambda delta: print(delta, end="", flush=True),
+                "on_status": _cli_status_line,
             },
             on_fallback_message=lambda text: print(text),
             permission_state=permission_state,
             project_root=workspace_root,
+            max_steps=max_steps,
         )
     except Exception as exc:
         print(f"\n错误: {streaming.format_agent_error(exc)}\n")

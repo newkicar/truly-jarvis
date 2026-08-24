@@ -441,6 +441,7 @@ def format_doctor_report(config, agent, thread_id: str, *, mcp_tool_count: int |
         f"quick_search {tavily_label}"
     )
     lines.append(f"HarnessProfile: {profile_label} ({config.model_id})")
+    lines.append(f"步数预算:   {getattr(config, 'execution_max_steps', 200)}（execution.max_steps）")
     lines.append(f"  {hook_summary}")
     lines.append(f"  {skill_lines[0]}")
     for skill_line in skill_lines[1:]:

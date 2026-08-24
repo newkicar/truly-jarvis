@@ -25,5 +25,6 @@ def make_fake_config(tmp_path) -> Config:
         agents={},
         rag_ollama_base_url="http://localhost:11434",
         rag_embed_model="quentinz/bge-small-zh-v1.5",
+        execution_max_steps=200,
         tui={"copy_on_select": True},
     )
