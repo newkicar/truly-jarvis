@@ -19,6 +19,7 @@ from textual.worker import Worker, get_current_worker
 from src import commands, streaming
 from src.tui_completion import OverlayState, apply_suggestion, resolve_overlay_state
 from src.tui_log import CopyableRichLog
+from src import tui_format
 from src.tui_format import (
     DEFAULT_TUI_THEME,
     LEGACY_BAD_THEMES,
@@ -444,6 +445,17 @@ class JarvisApp(App):
         display: block;
     }
 
+    #status_spinner {
+        height: 1;
+        display: none;
+        margin: 0 1 0 2;
+        color: $warning;
+    }
+
+    #status_spinner.-active {
+        display: block;
+    }
+
     #editor_frame:focus-within {
         border: round $accent;
     }
@@ -496,6 +508,8 @@ class JarvisApp(App):
         self._completion_active = False
         self._overlay_state = OverlayState(kind="none", at_index=0, items=())
         self._sidebar_visible = True
+        self._spinner_timer = None
+        self._spinner_frame = 0
         self.title = "JARVIS"
         self._restore_theme()
         self._update_sub_title()
@@ -584,6 +598,7 @@ class JarvisApp(App):
                 with Horizontal(id="editor_frame"):
                     yield Static("›", id="prompt")
                     yield PasteInput(placeholder="输入消息，/ 开头为命令，@ 引用路径", id="input")
+                yield Static("", id="status_spinner")
         yield PathCompletionOverlay(id="path_completion")
         yield Footer()
 
@@ -607,6 +622,45 @@ class JarvisApp(App):
         stream = self.query_one("#ai_stream", Static)
         stream.remove_class("-active")
         stream.update("")
+
+    def _spinner_config(self) -> tuple[bool, str]:
+        """(animations, style)；config 缺失时默认开动画、braille。"""
+        tui = getattr(self.config, "tui", None) or {} if self.config else {}
+        return bool(tui.get("animations", True)), str(tui.get("spinner_style", "braille"))
+
+    def _show_spinner(self) -> None:
+        animations, style = self._spinner_config()
+        if style == "none":
+            return
+        spinner = self.query_one("#status_spinner", Static)
+        if not animations:
+            spinner.update(tui_format.spinner_line(0, animations=False))
+            spinner.add_class("-active")
+            return
+        self._spinner_frame = 0
+        spinner.update(tui_format.spinner_line(0, style=style))
+        spinner.add_class("-active")
+        if self._spinner_timer is None:
+            self._spinner_timer = self.set_interval(0.08, self._tick_spinner)
+
+    def _tick_spinner(self) -> None:
+        _, style = self._spinner_config()
+        try:
+            spinner = self.query_one("#status_spinner", Static)
+        except Exception:
+            return
+        if "-active" not in spinner.classes:
+            return
+        self._spinner_frame += 1
+        spinner.update(tui_format.spinner_line(self._spinner_frame, style=style))
+
+    def _hide_spinner(self) -> None:
+        if self._spinner_timer is not None:
+            self._spinner_timer.stop()
+            self._spinner_timer = None
+        spinner = self.query_one("#status_spinner", Static)
+        spinner.remove_class("-active")
+        spinner.update("")
 
     def _update_ai_stream(self, text: str) -> None:
         stream = self.query_one("#ai_stream", Static)
@@ -685,6 +739,7 @@ class JarvisApp(App):
                     log.write(err)
                     return
                 log.write(system_message_markup(f"正在重跑 checkpoint {parts[1]}…"))
+                self._show_spinner()
                 self._worker = self.run_worker(
                     partial(self._stream_agent, checkpoint_id=full_id), thread=True
                 )
@@ -693,6 +748,7 @@ class JarvisApp(App):
             log.write(system_message_markup(f"正在执行 {cmd}…"))
             self._worker = self.run_worker(partial(self._run_command_worker, text), thread=True)
             return
+        self._show_spinner()
         self._worker = self.run_worker(partial(self._stream_agent, user_input=text), thread=True)
 
     def _run_command_worker(self, text: str) -> None:
@@ -989,6 +1045,7 @@ class JarvisApp(App):
             elapsed = time() - started
             model = getattr(self.config, "model_id", "") or "model"
             self.call_from_thread(self._hide_ai_stream)
+            self.call_from_thread(self._hide_spinner)
             if cancelled() and not cancel_notified:
                 write_line("[i][dim]（已取消）[/dim][/i]")
             elif not ok and not cancelled():

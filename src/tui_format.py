@@ -49,6 +49,20 @@ def ai_typing_markup() -> str:
     return "[dim italic]▌ JARVIS 正在思考…[/dim italic]"
 
 
+SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+BLOCK_SPINNER_FRAMES = ("■", "⬝")
+SPINNER_TEXT = "思考中..."
+
+
+def spinner_line(frame_index: int, *, animations: bool = True, style: str = "braille") -> str:
+    """spinner 一行的 markup：帧轮播；animations=False 降级静态 ⋯。"""
+    if not animations:
+        return f"[warning]⋯[/warning] {SPINNER_TEXT}"
+    frames = BLOCK_SPINNER_FRAMES if style == "blocks" else SPINNER_FRAMES
+    frame = frames[frame_index % len(frames)]
+    return f"[warning]{frame}[/warning] {SPINNER_TEXT}"
+
+
 def ai_stream_renderable(body: str):
     """流式 AI 回答：标题 + 增量 Markdown（供 Static/RichLog 渲染）。"""
     from rich.console import Group
