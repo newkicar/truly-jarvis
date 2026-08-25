@@ -219,6 +219,127 @@ def test_doom_loop_different_args_are_different_signatures():
     assert "禁止原样重试" not in out.content
 
 
+def test_doom_loop_counts_execute_exit_code_failures():
+    """deepagents execute 失败时 status 仍是 success，失败只体现在内容尾部
+    "[Command failed with exit code N]"——doom loop 必须识别这种失败形态（坦克大战事故）。"""
+    mw = resilience.DoomLoopMiddleware(threshold=3)
+
+    def exit_fail_handler(req):
+        return ToolMessage(
+            content="[stderr] 命令语法不正确。\n\nExit code: 1\n[Command failed with exit code 1]",
+            name="execute",
+            tool_call_id="c1",
+        )  # status 默认 success
+
+    req = _tool_request("execute", {"command": "mkdir /workspace/tmp-javis-demo"})
+    mw.wrap_tool_call(req, exit_fail_handler)
+    mw.wrap_tool_call(req, exit_fail_handler)
+    out = mw.wrap_tool_call(req, exit_fail_handler)
+    assert "禁止原样重试" in out.content
+
+
+def test_doom_loop_command_succeeded_marker_is_success():
+    mw = resilience.DoomLoopMiddleware(threshold=2)
+
+    def exit_ok_handler(req):
+        return ToolMessage(content="done\n[Command succeeded with exit code 0]", name="execute", tool_call_id="c1")
+
+    req = _tool_request("execute", {"command": "echo ok"})
+    out = None
+    for _ in range(4):
+        out = mw.wrap_tool_call(req, exit_ok_handler)
+    assert out is not None and "禁止原样重试" not in out.content
+
+
+def test_doom_loop_exit_code_nonzero_triggers_at_threshold():
+    mw = resilience.DoomLoopMiddleware(threshold=2)
+
+    def exit_fail_handler(req):
+        return ToolMessage(content="boom\n[Command failed with exit code 2]", name="execute", tool_call_id="c1")
+
+    req = _tool_request("execute", {"command": "bad"})
+    mw.wrap_tool_call(req, exit_fail_handler)
+    out = mw.wrap_tool_call(req, exit_fail_handler)
+    assert "禁止原样重试" in out.content
+
+
+# ---------------------------------------------------------------- doom-loop 硬熔断
+
+
+def test_doom_loop_hard_break_at_limit():
+    """连续失败到 hard_limit：不再执行工具，返回 error ToolMessage（代码边界）。"""
+    mw = resilience.DoomLoopMiddleware(threshold=3, hard_limit=5)
+    calls = []
+
+    def exit_fail_handler(req):
+        calls.append(1)
+        return ToolMessage(content="boom\n[Command failed with exit code 1]", name="execute", tool_call_id="c1")
+
+    req = _tool_request("execute", {"command": "stuck"})
+    outs = [mw.wrap_tool_call(req, exit_fail_handler) for _ in range(4)]
+    assert len(calls) == 4, "前 4 次应真实执行"
+    assert "禁止原样重试" in outs[2].content, "第 3 次起软引导"
+    assert outs[3].status != "error"
+
+    out5 = mw.wrap_tool_call(req, exit_fail_handler)
+    assert len(calls) == 4, "第 5 次不应再执行工具（硬熔断）"
+    assert out5.status == "error"
+    assert "harness 拒绝执行" in out5.content
+    assert "换方法类别" in out5.content
+
+
+def test_doom_loop_hard_break_persists_until_args_change():
+    """熔断后同名同参调用持续被拒（不执行）；参数变化后恢复执行。"""
+    mw = resilience.DoomLoopMiddleware(threshold=2, hard_limit=3)
+    calls = []
+
+    def fail_handler(req):
+        calls.append(1)
+        return ToolMessage(content="fail\n[Command failed with exit code 1]", name="execute", tool_call_id="c1")
+
+    req = _tool_request("execute", {"command": "stuck"})
+    for _ in range(3):
+        mw.wrap_tool_call(req, fail_handler)
+    assert len(calls) == 2  # 第 3 次已被熔断拦截
+
+    out = mw.wrap_tool_call(req, fail_handler)
+    assert out.status == "error" and "harness 拒绝执行" in out.content
+    assert len(calls) == 2, "熔断后不再执行"
+
+    # 参数变化 = 新签名，恢复执行
+    out_new = mw.wrap_tool_call(_tool_request("execute", {"command": "changed"}), fail_handler)
+    assert len(calls) == 3
+    assert out_new.status != "error" or "harness 拒绝执行" not in str(out_new.content)
+
+
+def test_doom_loop_success_clears_hard_break():
+    """成功清零只对「还能执行」的签名生效；已达熔断线的签名被锁死（设计行为）。"""
+    mw = resilience.DoomLoopMiddleware(threshold=2, hard_limit=3)
+
+    def fail_handler(req):
+        return ToolMessage(content="fail\n[Command failed with exit code 1]", name="execute", tool_call_id="c1")
+
+    def ok_handler(req):
+        return ToolMessage(content="done\n[Command succeeded with exit code 0]", name="execute", tool_call_id="c1")
+
+    req = _tool_request("execute", {"command": "x"})
+    mw.wrap_tool_call(req, fail_handler)
+    mw.wrap_tool_call(req, fail_handler)  # streak=2 = hard_limit-1 → 签名锁定
+    out_locked = mw.wrap_tool_call(req, ok_handler)
+    assert out_locked.status == "error" and "harness 拒绝执行" in out_locked.content
+
+    # 换参数 = 新签名，正常执行且成功清零自己的计数
+    other = _tool_request("execute", {"command": "y"})
+    out_ok = mw.wrap_tool_call(other, ok_handler)
+    assert out_ok.content.startswith("done")
+    out_ok2 = mw.wrap_tool_call(other, ok_handler)
+    assert out_ok2.content.startswith("done"), "新签名不受旧签名熔断影响"
+
+    # 锁定的签名持续被拒
+    out_again = mw.wrap_tool_call(req, ok_handler)
+    assert "harness 拒绝执行" in out_again.content
+
+
 # ---------------------------------------------------------------- run_agent_turn 重试集成
 
 class _Stream:
@@ -475,3 +596,79 @@ def test_run_agent_turn_finalize_on_fatal():
             )
         # 两次调用：①新轮次开始前清理上一轮 ②fatal 异常兜底
         assert mock_fin.call_count == 2
+
+
+# ---------------------------------------------------------------- 步数上限强制交接
+
+
+def test_run_agent_turn_force_handoff_on_recursion_error():
+    """到顶不许摆烂：GraphRecursionError 时用 _jarvis_model 生成结构化交接。"""
+    from langgraph.errors import GraphRecursionError
+
+    class HandoffModel:
+        def invoke(self, messages):
+            last = messages[-1].content
+            assert "结构化交接" in last
+            return type("Resp", (), {"content": "1) 已完成 X\n2) 未完成 Y\n3) 建议 Z"})()
+
+    class RecursionAgent:
+        checkpointer = None
+
+        def __init__(self):
+            self.calls = 0
+            self._jarvis_model = HandoffModel()
+
+        def get_state(self, config):
+            return type(
+                "State",
+                (),
+                {"values": {"messages": [{"role": "user", "content": "task"}]}},
+            )()
+
+        def stream_events(self, payload, *, version, config):
+            self.calls += 1
+            raise GraphRecursionError("limit")
+
+    agent = RecursionAgent()
+    fallbacks = []
+    statuses = []
+    cb = {**_CB, "on_status": statuses.append, "on_message_delta": lambda d: None}
+    ok = streaming.run_agent_turn(
+        agent,
+        "t",
+        "hi",
+        handle_interrupts=lambda _: None,
+        callbacks=cb,
+        on_fallback_message=fallbacks.append,
+        max_steps=50,
+    )
+    assert ok is False
+    joined = "\n".join(fallbacks)
+    assert "已完成 X" in joined and "建议 Z" in joined, "交接文本应输出给用户"
+    assert any("步数超过上限 50" in s for s in statuses), "状态行提示上限"
+
+
+def test_run_agent_turn_handoff_falls_back_without_model():
+    """无 _jarvis_model（如旧测试桩）：回落到原提示，不崩。"""
+    from langgraph.errors import GraphRecursionError
+
+    class BareAgent:
+        checkpointer = None
+
+        def stream_events(self, payload, *, version, config):
+            raise GraphRecursionError("limit")
+
+    fallbacks = []
+    statuses = []
+    cb = {**_CB, "on_status": statuses.append, "on_message_delta": lambda d: None}
+    ok = streaming.run_agent_turn(
+        BareAgent(),
+        "t",
+        "hi",
+        handle_interrupts=lambda _: None,
+        callbacks=cb,
+        on_fallback_message=fallbacks.append,
+        max_steps=15,
+    )
+    assert ok is False
+    assert any("步数超过上限 15" in s for s in statuses + fallbacks)

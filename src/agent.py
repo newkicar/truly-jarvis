@@ -43,16 +43,19 @@ _WEEKDAYS = ("星期一", "星期二", "星期三", "星期四", "星期五", "�
 
 _HARNESS_REGISTERED: set[str] = set()
 
-# deepagents HarnessProfile：通用推理约束，不写场景菜谱（对标 profile system_prompt_suffix）
+# deepagents HarnessProfile：对抗性推理约束（对标 opencode beast.txt——
+# 逐条打击模型已知弱点，不是语气加强；见 .scratch 教程笔记 0002 课）
 JARVIS_HARNESS_SUFFIX = """\
-## Harness
+## Harness（执行纪律，逐条强制）
 - 先弄清本轮交付物；≥3 步的任务先用 write_todos 分解（每项带可核对的完成标准），执行中随进度更新状态。
-- **执行循环**（任务类工作）：执行 → 核对输出 → 失败即诊断根因 → 修正 → 再执行，直到完成标准满足。报错不是终点，是待处理的数据。
-- **虚拟路径边界**：文件工具（ls/read/write/edit/glob/grep）只可达 /workspace/（=项目根）、/vault/、/memories/、/skills/ 等虚拟前缀；前缀之外的磁盘路径对文件工具不存在——改用 execute（会走审批）。
-- 可验证的事实：先工具、后结论；某工具失败则换合法手段，都失败则说明不确定——不凭训练记忆硬答，也不在能自行获取时先反问用户。
-- **认识论纪律**：凡答案依赖本机/实时状态（时间、位置、版本、文件状态），唯一合法来源是 execute/工具实测——不是先验，不是搜索，也不必先问用户。工具成功但结果不可用 → 换查询词/升档/换数据源/换工具类别；「我没拿到」不等于「不存在」。报告失败必须引用实际报错原文；无证据的归因 = 编造。
-- **唯一停下条件**：同一目标已用 ≥3 种不同方案尝试仍失败——向用户报告「已尝试清单 + 卡点 + 建议」，不静默放弃，也不原样重试复读。
-- 完成声明必须附验证证据（测试/命令输出）；无法验证时说明建议的检查步骤，不谎称已完成。
+- 当你说「接下来我会运行/创建/检查 X」时，必须真的调用工具完成 X，再进入下一句——只说不做等于没做。
+- **报错原文里写着根因**：工具失败后，先引用报错原文的关键行，再决定动作。路径被空格劈断、文件不存在、权限拒绝、语法错误，各有不同解法。没读报错就重试 = 瞎撞。
+- **同一方案失败 2 次 = 方案错误**。第 3 次必须换**方法类别**（换工具 / 换路径形态 / 换入口 / 换数据源）——只微调参数、引号、斜杠方向不算换方案。
+- **虚拟路径边界**：文件工具（ls/read/write/edit/glob/grep）只可达 /workspace/（=项目根）、/vault/、/memories/、/skills/ 等虚拟前缀；前缀之外的磁盘路径对文件工具不存在——改用 execute（会走审批）。execute 的 shell 工作目录就是项目根本身——shell 命令里用真实/相对路径，**禁止**带 /workspace/ 等虚拟前缀（shell 不认识，cmd 会把它当开关静默忽略）。
+- 可验证的事实：先工具、后结论。不凭训练记忆硬答，不在能自行获取时先反问用户，不问「是否需要我查询」——直接查。
+- **认识论纪律**：凡答案依赖本机/实时状态（时间、位置、版本、文件状态），唯一合法来源是 execute/工具实测。工具成功但结果不可用 → 换查询词/升档/换数据源/换工具类别；「我没拿到」不等于「不存在」。报告失败必须引用实际报错原文；无证据的归因 = 编造。
+- **唯一停下条件**：同一目标已用 ≥3 种**不同方法类别**尝试仍失败——向用户报告「已尝试清单 + 报错原文 + 卡点 + 建议」。被 harness 熔断的工具调用不许再发。
+- 完成声明必须附验证证据（测试/命令输出原文）；无法验证时明确说明未验证，不谎称已完成。
 - 匹配任务时先读相关 SKILL.md（read_file），再按 skill 步骤选 tool / task(researcher)。
 - eval / CodeInterpreter 仅用于代码计算与 fan-out，不用于读取系统环境。"""
 
@@ -157,12 +160,18 @@ def build_environment_block(config: Config) -> str:
 
 
 def build_main_prompt(*, config: Config | None = None, now: datetime | None = None) -> str:
-    """主系统提示词：会话日期 + 可选环境块 + 正文。"""
+    """主系统提示词：会话日期 + 可选环境块 + 正文 + 可选项目指令（JARVIS.md）。"""
     date_line = session_date_line(now=now)
     parts = [f"## 当前会话\n{date_line}"]
     if config is not None:
         parts.append(build_environment_block(config))
     parts.append(MAIN_SYSTEM_PROMPT)
+    if config is not None:
+        from src.project_paths import load_project_instructions
+
+        instructions = load_project_instructions(config.project_root)
+        if instructions:
+            parts.append(f"## 项目指令（JARVIS.md，优先级高于你的默认习惯）\n{instructions}")
     return "\n\n".join(parts)
 
 
@@ -205,9 +214,9 @@ def _make_model(config: Config) -> BaseChatModel:
 
 
 def _make_backend(config: Config) -> CompositeBackend:
-    workspace = LocalShellBackend(root_dir=str(config.project_root), virtual_mode=True)
+    from src.shell_backend import InheritedEnvShellBackend
+
     routes: dict[str, FilesystemBackend | LocalShellBackend] = {
-        "/workspace/": workspace,
         "/memories/": FilesystemBackend(root_dir=str(config.memory_dir), virtual_mode=True),
     }
     if config.vault_path is not None:
@@ -216,6 +225,13 @@ def _make_backend(config: Config) -> CompositeBackend:
         )
     for vpath, fs_path in skill_backend_routes(config).items():
         routes[vpath] = FilesystemBackend(root_dir=str(fs_path), virtual_mode=True)
+    # 虚拟前缀守卫：execute 收到这些前缀时执行前拦截（shell 不认识虚拟路径）。
+    workspace = InheritedEnvShellBackend(
+        root_dir=str(config.project_root),
+        virtual_mode=True,
+        virtual_prefixes=("/workspace/", *routes.keys()),
+    )
+    routes["/workspace/"] = workspace
     return CompositeBackend(default=workspace, routes=routes)
 
 
@@ -335,7 +351,7 @@ def build_agent(
     if inbox_snapshot is not None:
         middleware.append(inbox_snapshot)
 
-    return create_deep_agent(
+    compiled = create_deep_agent(
         model=model,
         backend=_make_backend(config),
         subagents=[researcher, knowledge_keeper, *config_subagents],  # type: ignore[list-item]
@@ -349,3 +365,7 @@ def build_agent(
         store=store,
         name="javis",
     )
+    # 步数上限强制交接（streaming.force_handoff）复用同一模型实例；
+    # 不进 graph 状态，不污染历史。
+    setattr(compiled, "_jarvis_model", model)
+    return compiled

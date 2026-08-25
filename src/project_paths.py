@@ -87,3 +87,30 @@ def ensure_user_home() -> Path:
 def resolve_user_javis_json() -> Path:
     """用户全局 javis.json 路径（~/.javis/javis.json）。"""
     return user_home() / JAVIS_JSON
+
+
+INSTRUCTIONS_FILENAME = "JARVIS.md"
+
+
+def load_project_instructions(project_root: Path | None = None) -> str:
+    """发现并读取项目指令文件（对标 AGENTS.md 分层：全局 + 项目级）。
+
+    - 全局：~/.javis/JARVIS.md（用户跨项目约定）
+    - 项目级：{project_root}/JARVIS.md（本项目技术约定）
+
+    两级都可选；都存在则拼接（全局在前）。文件缺失返回空串。
+    build_agent 启动时调用一次（会话中途编辑文件需重启生效）。
+    """
+    sections: list[str] = []
+    global_file = user_home() / INSTRUCTIONS_FILENAME
+    if global_file.is_file():
+        text = global_file.read_text(encoding="utf-8", errors="replace").strip()
+        if text:
+            sections.append(f"### 全局用户约定（{global_file}）\n{text}")
+    root = (project_root or get_project_root()).resolve()
+    project_file = root / INSTRUCTIONS_FILENAME
+    if project_file.is_file():
+        text = project_file.read_text(encoding="utf-8", errors="replace").strip()
+        if text:
+            sections.append(f"### 本项目约定（{project_file}）\n{text}")
+    return "\n\n".join(sections)

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import time
 from collections import deque
 from collections.abc import Callable
@@ -217,11 +218,19 @@ class StepBudgetMiddleware(AgentMiddleware):
 
 
 DOOM_LOOP_THRESHOLD = 3
+DOOM_LOOP_HARD_LIMIT = 5
 
 DOOM_LOOP_GUIDANCE = (
     "\n\n[系统提示] 该调用已连续 {n} 次以相同参数失败。禁止原样重试。"
     "请先诊断根因（读报错信息、检查前置条件），再换一种方案；"
     "若连续换方案仍失败，停下向用户报告已尝试清单与卡点。"
+)
+
+DOOM_LOOP_HARD_BREAK = (
+    "[harness 拒绝执行] 该调用已连续 {n} 次以相同参数失败，本次调用在执行前已被 harness 拦截。"
+    "同名同参的后续调用同样会被拒绝——继续原样重试只会得到本消息。\n"
+    "必须换方法类别（换工具 / 换路径形态 / 换入口；微调参数或引号不算），"
+    "或立即停下向用户报告「已尝试清单 + 报错原文 + 卡点」。"
 )
 
 TOOL_ERROR_GUIDANCE = (
@@ -285,26 +294,71 @@ class DoomLoopMiddleware(AgentMiddleware):
     """复读机防御（对标 opencode doom_loop）：同名同参且失败连续 N 次 → 注入引导。
 
     检测器保持愚蠢：只认「完全相同的失败调用」；成功或参数变化即清零，
-    不误伤合法轮询。处置是附加引导文本（失败是数据），不擅自中断回合。
+    不误伤合法轮询。
+
+    两级处置（0006 课原则：提示词是建议，代码才是边界）：
+    - threshold（默认 3）：软引导——失败结果后附加换方案提示；
+    - hard_limit（默认 5）：硬熔断——**不再执行工具**，直接返回 error ToolMessage，
+      物理切断原样重试路径。弱模型无视软引导时由代码强制刹车。
+
+    失败判定有两类信号：
+    - ToolMessage.status == "error"（工具层错误）；
+    - execute 类工具的 exit code（deepagents execute 失败时 status 仍是
+      success，退出码体现在内容尾部状态行
+      "[Command failed with exit code N]" / "[Command succeeded with exit code 0]"）。
     """
 
-    def __init__(self, threshold: int = DOOM_LOOP_THRESHOLD):
+    _CMD_STATUS_RE = re.compile(r"\[Command (succeeded|failed) with exit code (\d+)\]")
+
+    def __init__(
+        self,
+        threshold: int = DOOM_LOOP_THRESHOLD,
+        hard_limit: int = DOOM_LOOP_HARD_LIMIT,
+    ):
         super().__init__()
         self.threshold = max(2, int(threshold))
+        self.hard_limit = max(self.threshold + 1, int(hard_limit))
         self._streaks: dict[tuple[str, str], int] = {}
 
     @property
     def name(self) -> str:
         return "doom-loop"
 
+    @staticmethod
+    def _is_failure(result) -> bool:
+        if getattr(result, "status", None) == "error":
+            return True
+        content = getattr(result, "content", "")
+        if not isinstance(content, str):
+            return False
+        matches = DoomLoopMiddleware._CMD_STATUS_RE.findall(content)
+        if matches:
+            cmd_status, code = matches[-1]
+            return cmd_status == "failed" or code != "0"
+        return False
+
+    def _hard_break(self, request):
+        from langchain_core.messages import ToolMessage
+
+        tool_call = getattr(request, "tool_call", None) or {}
+        sig = _tool_signature(request)
+        return ToolMessage(
+            content=DOOM_LOOP_HARD_BREAK.format(n=self._streaks.get(sig, 0) + 1),
+            name=str(tool_call.get("name", "?")),
+            tool_call_id=str(tool_call.get("id", "")),
+            status="error",
+        )
+
     def _augment(self, request, result):
         sig = _tool_signature(request)
-        failed = getattr(result, "status", None) == "error"
-        if not failed:
+        if not self._is_failure(result):
             self._streaks.pop(sig, None)
             return result
         count = self._streaks.get(sig, 0) + 1
         self._streaks[sig] = count
+        if count >= self.hard_limit:
+            # 兜底（正常路径在 wrap_tool_call 预检已拦截）：结果替换为硬熔断。
+            return self._hard_break(request)
         if count < self.threshold:
             return result
         content = getattr(result, "content", "")
@@ -312,9 +366,14 @@ class DoomLoopMiddleware(AgentMiddleware):
         return result
 
     def wrap_tool_call(self, request, handler):
+        # 预检提前一档：第 hard_limit 次尝试在执行前拦截（工具总共最多执行 hard_limit-1 次）。
+        if self._streaks.get(_tool_signature(request), 0) >= self.hard_limit - 1:
+            return self._hard_break(request)
         return self._augment(request, handler(request))
 
     async def awrap_tool_call(self, request, handler):
+        if self._streaks.get(_tool_signature(request), 0) >= self.hard_limit - 1:
+            return self._hard_break(request)
         return self._augment(request, await handler(request))
 
     def reset(self) -> None:

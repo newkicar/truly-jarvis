@@ -411,14 +411,27 @@ def run_agent_turn(
                 consumed, stream = _stream_with_resilience(stream_input, config)
             except GraphRecursionError:
                 commands.finalize_turn(agent, thread_id)
-                msg = (
-                    f"任务步数超过上限 {max_steps}，已强制收尾。"
-                    "可 /history 查看进度；如需更长执行，调高 javis.json 的 execution.max_steps。"
-                )
-                if callbacks.get("on_status"):
-                    callbacks["on_status"](msg)
-                elif on_fallback_message:
-                    on_fallback_message(msg)
+                # 到顶不许摆烂（对标 opencode）：强制一次结构化交接（不写历史）。
+                handoff = commands.force_handoff(agent, thread_id, max_steps)
+                if handoff:
+                    if on_fallback_message:
+                        on_fallback_message(handoff)
+                    else:
+                        print(handoff)
+                    if callbacks.get("on_status"):
+                        callbacks["on_status"](
+                            f"任务步数超过上限 {max_steps}，已生成交接摘要。"
+                            "如需继续，调高 javis.json 的 execution.max_steps 或开新会话。"
+                        )
+                else:
+                    msg = (
+                        f"任务步数超过上限 {max_steps}，已强制收尾。"
+                        "可 /history 查看进度；如需更长执行，调高 javis.json 的 execution.max_steps。"
+                    )
+                    if callbacks.get("on_status"):
+                        callbacks["on_status"](msg)
+                    elif on_fallback_message:
+                        on_fallback_message(msg)
                 outcome = "abandon"
                 return False
             if is_cancelled():

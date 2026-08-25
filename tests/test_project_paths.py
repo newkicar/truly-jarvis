@@ -57,3 +57,40 @@ def test_resolve_env_file_project_before_install(tmp_path):
     project.mkdir()
     (project / ".env").write_text("BASE_URL:https://x.com\n", encoding="utf-8")
     assert resolve_env_file(project) == project / ".env"
+
+
+# ---------------------------------------------------------------- JARVIS.md 项目指令层
+
+
+def test_load_project_instructions_empty_when_missing(tmp_path, monkeypatch):
+    from src.project_paths import load_project_instructions
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+    assert load_project_instructions(tmp_path) == ""
+
+
+def test_load_project_instructions_project_level(tmp_path, monkeypatch):
+    from src.project_paths import load_project_instructions
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("JARVIS_HOME", str(home))
+    (tmp_path / "JARVIS.md").write_text("测试命令是 pytest -q\n", encoding="utf-8")
+    text = load_project_instructions(tmp_path)
+    assert "pytest -q" in text
+    assert "本项目约定" in text
+    assert "全局用户约定" not in text
+
+
+def test_load_project_instructions_global_plus_project(tmp_path, monkeypatch):
+    from src.project_paths import load_project_instructions
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("JARVIS_HOME", str(home))
+    (home / "JARVIS.md").write_text("全局：回复用中文\n", encoding="utf-8")
+    (tmp_path / "JARVIS.md").write_text("项目：包管理器用 pnpm\n", encoding="utf-8")
+    text = load_project_instructions(tmp_path)
+    assert text.index("全局用户约定") < text.index("本项目约定"), "全局在前"
+    assert "回复用中文" in text and "pnpm" in text

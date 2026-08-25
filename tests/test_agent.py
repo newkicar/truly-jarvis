@@ -424,3 +424,35 @@ def test_build_agent_registers_provider_qualified_harness_profile(tmp_path, monk
     assert cfg.model_id in agent_mod._HARNESS_REGISTERED
     assert f"openai:{cfg.model_id}" in agent_mod._HARNESS_REGISTERED
     assert agent_mod.harness_profile_loaded(cfg.model_id)
+
+
+# ---------------------------------------------------------------- 对抗性 harness suffix（0002 课 beast.txt 原则）
+
+
+def test_harness_suffix_has_adversarial_clauses():
+    from src.agent import JARVIS_HARNESS_SUFFIX
+
+    # 针对本模型已观察到的弱点，逐条打击
+    assert "必须真的调用工具" in JARVIS_HARNESS_SUFFIX, "光说不做条款"
+    assert "报错原文里写着根因" in JARVIS_HARNESS_SUFFIX, "读报错条款"
+    assert "方法类别" in JARVIS_HARNESS_SUFFIX, "换方案=换类别条款"
+    assert "harness 熔断" in JARVIS_HARNESS_SUFFIX, "熔断配合条款"
+    assert "禁止" in JARVIS_HARNESS_SUFFIX and "虚拟前缀" in JARVIS_HARNESS_SUFFIX, "shell 路径条款"
+
+
+def test_build_main_prompt_includes_project_instructions(tmp_path):
+    from src.agent import build_main_prompt
+    from tests.conftest import make_fake_config
+
+    (tmp_path / "JARVIS.md").write_text("项目专属规则：永远用 bun\n", encoding="utf-8")
+    cfg = make_fake_config(tmp_path)
+    prompt = build_main_prompt(config=cfg)
+    assert "项目指令（JARVIS.md" in prompt
+    assert "永远用 bun" in prompt
+
+    # 无文件时不出现该段
+    empty_root = tmp_path / "empty"
+    empty_root.mkdir()
+    cfg2 = make_fake_config(empty_root)
+    prompt2 = build_main_prompt(config=cfg2)
+    assert "项目指令" not in prompt2

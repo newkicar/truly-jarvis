@@ -302,6 +302,42 @@ def finalize_turn(agent, thread_id: str) -> bool:
     return _rollback_thread_to_last_usable_checkpoint(agent, thread_id)
 
 
+HANDOFF_PROMPT = (
+    "任务执行步数已达上限，被 harness 强制收尾。现在立即输出结构化交接，"
+    "禁止再调用任何工具：\n"
+    "1) 已完成——逐条列出，附证据（文件路径/命令输出原文）\n"
+    "2) 未完成——逐条列出，附卡点与最后一条报错原文\n"
+    "3) 建议的下一步——给用户可执行的具体动作"
+)
+
+
+def force_handoff(agent, thread_id: str, max_steps: int, *, history_tail: int = 30) -> str | None:
+    """步数上限到顶时的结构化交接（对标 opencode「到顶不许摆烂」）。
+
+    从 checkpoint 取最近消息尾部，直接调模型（不进 graph、不写历史）生成
+    「已完成/未完成/下一步」交接文本；失败返回 None（调用方回落到原提示）。
+    """
+    model = getattr(agent, "_jarvis_model", None)
+    if model is None:
+        return None
+    try:
+        state = agent.get_state({"configurable": {"thread_id": thread_id}})
+        messages = (state.values or {}).get("messages", []) if state else []
+        tail = [
+            m for m in messages[-history_tail:]
+            if type(m).__name__ != "SystemMessage"
+        ]
+        if not tail:
+            return None
+        from langchain_core.messages import HumanMessage
+
+        response = model.invoke([*tail, HumanMessage(content=HANDOFF_PROMPT)])
+        text = str(getattr(response, "content", "") or "").strip()
+        return text or None
+    except Exception:
+        return None
+
+
 def repair_stuck_thread(agent, thread_id: str) -> bool:
     """把卡在 __pregel_tasks / branch:to:* 的会话回退到最近可用 checkpoint。"""
     checkpointer = getattr(agent, "checkpointer", None)
