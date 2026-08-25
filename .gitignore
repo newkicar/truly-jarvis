@@ -25,3 +25,4 @@ Thumbs.db
 # JARVIS 运行产物
 *.log
 memory/rag-index/
+tmp/
