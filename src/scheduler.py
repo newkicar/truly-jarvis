@@ -22,6 +22,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from src.config import Config
 from src import inbox_snapshots
+from src import commands
 from src.commands import project_root
 
 
@@ -126,7 +127,7 @@ def _run_task(agent, config: Config, task: dict):
         result = agent.invoke(
             {"messages": [{"role": "user", "content": prompt}]},
             config={
-                "configurable": {"thread_id": f"sched-{task['id']}"},
+                **commands.thread_config(f"sched-{task['id']}"),
                 "recursion_limit": max(10, int(getattr(config, "execution_max_steps", 200))),
             },
         )

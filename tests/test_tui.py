@@ -441,6 +441,7 @@ async def test_theme_persistence(tmp_path):
     app2._restore_theme()
     assert app2.theme == "monokai"
 
+
 @pytest.mark.asyncio
 async def test_switch_session_finalizes_old_thread(monkeypatch):
     """switch_session 原语契约：离开旧会话前必须 cancel worker + finalize_turn。"""

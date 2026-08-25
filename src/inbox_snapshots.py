@@ -119,7 +119,7 @@ def delete_writes_for_thread(project_root: Path, thread_id: str) -> int:
 
 def _checkpoints_newer_than(agent, thread_id: str, target_checkpoint_id: str) -> set[str] | None:
     """返回严格新于 target 的 checkpoint_id 集合；target 不存在则 None。"""
-    from src.commands import thread_config  # 延迟 import：commands 反向延迟引用本模块
+    from src.commands import thread_config  # 与 commands.py 的延迟引用惯例保持一致
 
     newer: set[str] = set()
     found = False

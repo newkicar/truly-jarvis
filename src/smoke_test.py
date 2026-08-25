@@ -34,6 +34,7 @@ from src import scheduler, startup
 from src.agent import build_agent
 from src.config import ensure_utf8_stdout, load_config
 from src.mcps import load_mcp_tools
+from src.commands import thread_config
 from src.permissions import build_permission_interrupts
 
 ensure_utf8_stdout()
@@ -125,7 +126,7 @@ def main() -> int:
             print(f"\n=== 提问: {final_question} ===\n")
             result = agent.invoke(
                 {"messages": [{"role": "user", "content": final_question}]},
-                config={"configurable": {"thread_id": "smoke"}, "recursion_limit": 30},
+                config={**thread_config("smoke"), "recursion_limit": 30},
             )
             for msg in result["messages"]:
                 if msg.type == "ai":
