@@ -210,6 +210,9 @@ def permission_preview(
     args = inv.args or {}
     if inv.name == "execute":
         cmd = inv.path or str(args.get("command", args.get("cmd", "")))
+        # 长命令按字符截断（`python -c "..."` 可能少行但极长，终端换行后溢出 modal）
+        if len(cmd) > 500:
+            cmd = cmd[:497] + "..."
         return truncate_lines(cmd, max_lines=20)
 
     if inv.name in ("write_file", "edit_file", "delete"):

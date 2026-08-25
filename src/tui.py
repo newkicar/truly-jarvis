@@ -153,6 +153,8 @@ class PermissionModal(ModalScreen):
     }
     #perm_preview {
         height: 1fr;
+        max-height: 12;
+        overflow-y: auto;
         border: round $surface;
         background: $surface;
         margin: 1 0;
