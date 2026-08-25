@@ -4,11 +4,11 @@
 state 引用的既有惯例）——TUI 切换只改 state，无需重建 agent。
 
 Plan 模式两道闸：
-1. wrap_tool_call：写类工具（write_file/edit_file/delete）执行前拦截，返回
-   error ToolMessage 引导先完成规划；读类工具与 execute 不拦（execute 的写
-   行为靠系统提示约束，不做命令级解析）。
+1. wrap_tool_call：写类工具与 execute 执行前拦截，返回 error ToolMessage
+   引导先完成规划；读类文件工具放行。execute 曾按原 brief 留给提示词约束，
+   2026-08-25 实测约束不住（弱模型仍发起执行触发 HITL 弹窗），改为硬边界。
 2. wrap_model_call：往当轮 system 尾部追加规划约束提示词（StepBudgetMiddleware
-   手法），不写入持久历史。
+   手法），不写入持久历史；其中同步声明 execute 已禁用，双保险引导模型改道。
 """
 from __future__ import annotations
 
@@ -16,7 +16,10 @@ from langchain.agents.middleware.types import AgentMiddleware
 
 MODE_KEY = "mode"
 MODES = ("act", "plan")
-PLAN_TOOLS = frozenset({"write_file", "edit_file", "delete"})
+# execute 一并硬拦（2026-08-25 用户实测：提示词约束不住弱模型，仍发起
+# execute 触发 HITL 弹窗——「提示词是建议，代码才是边界」）。Plan 的只读
+# 探索由文件工具（ls/read_file/grep/glob）覆盖，shell 整体留待 Act。
+PLAN_TOOLS = frozenset({"write_file", "edit_file", "delete", "execute"})
 
 PLAN_MODE_PROMPT = (
     "\n\n[Plan 模式]\n"
