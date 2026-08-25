@@ -935,3 +935,11 @@ def test_list_sessions_shows_summary():
     text = commands.list_sessions(FakeAgent3())
     assert "帮我写个 fizzbuzz" in text
     assert "empty-thread" in text
+
+
+def test_thread_config_literal_single_source():
+    """⑥: checkpoint 配置字面量的唯一出处。"""
+    assert commands.thread_config("t1") == {"configurable": {"thread_id": "t1"}}
+    assert commands.thread_config("t1", "c9") == {
+        "configurable": {"thread_id": "t1", "checkpoint_id": "c9"}
+    }

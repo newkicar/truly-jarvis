@@ -696,7 +696,7 @@ class JarvisApp(App):
 
     def _fetch_agent_todos(self) -> list[dict]:
         try:
-            state = self.agent.get_state({"configurable": {"thread_id": self.thread_id}})
+            state = self.agent.get_state(commands.thread_config(self.thread_id))
             values = getattr(state, "values", None) or {}
             raw = values.get("todos") or []
             return [t for t in raw if isinstance(t, dict)]

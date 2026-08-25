@@ -17,6 +17,14 @@ from src.project_paths import (
     user_home,
 )
 
+
+def thread_config(thread_id: str, checkpoint_id: str | None = None) -> dict:
+    """LangGraph checkpoint 配置字面量的唯一出处（消掉散落各处的重复）。"""
+    configurable: dict = {"thread_id": thread_id}
+    if checkpoint_id:
+        configurable["checkpoint_id"] = checkpoint_id
+    return {"configurable": configurable}
+
 _HELP_COMMANDS = """\
 命令：
   /exit           退出
@@ -125,7 +133,7 @@ def boundary_checkpoints(agent, thread_id: str):
     keep_sources = {"input", "fork", "update"}
     out = []
     try:
-        for s in agent.get_state_history(config={"configurable": {"thread_id": thread_id}}):
+        for s in agent.get_state_history(config=thread_config(thread_id)):
             if (s.metadata or {}).get("source") in keep_sources:
                 out.append(s)
     except Exception:
@@ -149,7 +157,7 @@ def resolve_checkpoint_id(agent, thread_id: str, raw: str):
             return checkpoints[idx - 1].config.get("configurable", {}).get("checkpoint_id")
         return None
     prefix_matches: list[str] = []
-    for s in agent.get_state_history(config={"configurable": {"thread_id": thread_id}}):
+    for s in agent.get_state_history(config=thread_config(thread_id)):
         cid = s.config.get("configurable", {}).get("checkpoint_id")
         if cid == raw:
             return cid
@@ -177,7 +185,7 @@ def first_human_text(agent, thread_id: str, limit: int = 18) -> str:
     当前会话行还需容纳 `▸ ` 前缀 2 字符。
     """
     try:
-        state = agent.get_state({"configurable": {"thread_id": thread_id}})
+        state = agent.get_state(thread_config(thread_id))
     except Exception:
         return ""
     messages = (getattr(state, "values", None) or {}).get("messages") or []
@@ -272,11 +280,8 @@ def checkpoint_config_stuck(checkpointer, thread_id: str, *, checkpoint_id: str 
     """读取 checkpointer 最新（或指定）checkpoint 是否处于中断态。"""
     if checkpointer is None or not hasattr(checkpointer, "get_tuple"):
         return False
-    config = {"configurable": {"thread_id": thread_id}}
-    if checkpoint_id:
-        config["configurable"]["checkpoint_id"] = checkpoint_id
     try:
-        tup = checkpointer.get_tuple(config)
+        tup = checkpointer.get_tuple(thread_config(thread_id, checkpoint_id))
     except Exception:
         return False
     if not tup:
@@ -288,7 +293,7 @@ def checkpoint_config_stuck(checkpointer, thread_id: str, *, checkpoint_id: str 
 def _rollback_thread_to_last_usable_checkpoint(agent, thread_id: str) -> bool:
     """回退到最近已完成（无 next、非 stuck）的 checkpoint；失败则删 thread。"""
     checkpointer = getattr(agent, "checkpointer", None)
-    base_config = {"configurable": {"thread_id": thread_id}}
+    base_config = thread_config(thread_id)
     try:
         for state in agent.get_state_history(base_config):
             cid = state.config.get("configurable", {}).get("checkpoint_id")
@@ -298,7 +303,7 @@ def _rollback_thread_to_last_usable_checkpoint(agent, thread_id: str) -> bool:
                 continue
             if getattr(state, "next", None):
                 continue
-            agent.update_state({"configurable": {"thread_id": thread_id, "checkpoint_id": cid}}, None)
+            agent.update_state(thread_config(thread_id, cid), None)
             return True
     except Exception:
         pass
@@ -315,7 +320,7 @@ def turn_needs_finalize(agent, thread_id: str) -> bool:
     if checkpoint_config_stuck(checkpointer, thread_id):
         return True
     try:
-        state = agent.get_state({"configurable": {"thread_id": thread_id}})
+        state = agent.get_state(thread_config(thread_id))
         return bool(getattr(state, "next", None))
     except Exception:
         return False
@@ -347,7 +352,7 @@ def force_handoff(agent, thread_id: str, max_steps: int, *, history_tail: int = 
     if model is None:
         return None
     try:
-        state = agent.get_state({"configurable": {"thread_id": thread_id}})
+        state = agent.get_state(thread_config(thread_id))
         messages = (state.values or {}).get("messages", []) if state else []
         tail = [
             m for m in messages[-history_tail:]
@@ -436,7 +441,7 @@ def _checkpoint_thread_stats(agent, thread_id: str) -> tuple[int | None, int | N
 
 def _session_message_count(agent, thread_id: str) -> int | None:
     try:
-        state = agent.get_state({"configurable": {"thread_id": thread_id}})
+        state = agent.get_state(thread_config(thread_id))
         messages = (state.values or {}).get("messages") or []
         return len(messages)
     except Exception:
@@ -616,7 +621,7 @@ def completed_turn_checkpoint(agent, thread_id: str, checkpoint_id: str):
     """
     try:
         newest_first = list(
-            agent.get_state_history(config={"configurable": {"thread_id": thread_id}})
+            agent.get_state_history(config=thread_config(thread_id))
         )
     except Exception:
         return None
@@ -640,7 +645,7 @@ def completed_turn_checkpoint(agent, thread_id: str, checkpoint_id: str):
 
 def fork(agent, thread_id: str, checkpoint_id: str):
     """从指定 checkpoint 分叉出新分支，返回 (提示文本, 新 thread_id 或 None)。"""
-    base = {"configurable": {"thread_id": thread_id}}
+    base = thread_config(thread_id)
     full_id = resolve_checkpoint_id(agent, thread_id, checkpoint_id)
     if full_id is None:
         if checkpoint_id.strip().isdigit():
@@ -677,7 +682,7 @@ def fork(agent, thread_id: str, checkpoint_id: str):
 
 
 def snapshot(agent, thread_id: str) -> str:
-    state = agent.get_state({"configurable": {"thread_id": thread_id}})
+    state = agent.get_state(thread_config(thread_id))
     cid = state.config.get("configurable", {}).get("checkpoint_id")
     if not cid:
         return "快照失败: 无法确定当前 checkpoint"

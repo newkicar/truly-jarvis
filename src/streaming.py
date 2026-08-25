@@ -315,7 +315,7 @@ def run_agent_turn(
     )
 
     max_steps = max(10, int(max_steps))
-    base_config = {"configurable": {"thread_id": thread_id}, "recursion_limit": max_steps}
+    base_config = {**commands.thread_config(thread_id), "recursion_limit": max_steps}
     resume = None
     replay_pending = checkpoint_id is not None
     outcome = "complete"
@@ -399,7 +399,7 @@ def run_agent_turn(
             elif replay_pending:
                 stream_input = None
                 config = {
-                    "configurable": {"thread_id": thread_id, "checkpoint_id": checkpoint_id},
+                    **commands.thread_config(thread_id, checkpoint_id),
                     "recursion_limit": max_steps,
                 }
                 replay_pending = False
