@@ -34,6 +34,86 @@ from src.tui_format import (
 )
 
 
+def read_os_clipboard() -> str:
+    """读 OS 剪贴板文本。
+
+    终端协议不提供读通道（Textual 的 app.clipboard 只含 app 内复制的内容），
+    Windows 走 PowerShell Get-Clipboard（UTF-8 输出防 GBK 乱码）；
+    macOS/Linux 尽力而为。失败返回空串，不抛异常。
+    """
+    import subprocess
+
+    if sys.platform == "win32":
+        try:
+            result = subprocess.run(  # noqa: S603
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-Clipboard -Raw",
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=3,
+                creationflags=subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
+            )
+            return (result.stdout or "").rstrip("\r\n")
+        except Exception:  # noqa: BLE001
+            return ""
+    for cmd in (["pbpaste"], ["wl-paste", "--no-newline"], ["xclip", "-selection", "clipboard", "-o"]):
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3)  # noqa: S603
+            if result.returncode == 0 and result.stdout:
+                return result.stdout.rstrip("\r\n")
+        except Exception:  # noqa: BLE001
+            continue
+    return ""
+
+
+class PasteInput(Input):
+    """支持系统剪贴板粘贴的输入框。
+
+    三个粘贴入口各自的病因与对策：
+    - ctrl+v：Textual 默认 action_paste 读 app.clipboard（只含 app 内复制的内容），
+      对外部复制的文本永远粘贴空 → 覆盖为读 OS 剪贴板；
+    - ctrl+shift+v：终端若把它当普通按键透传，Textual 无此绑定 → 显式补绑定；
+    - 右键/中键：Textual 鼠标捕获使终端级右键粘贴失效 → 绑定鼠标键触发粘贴
+      （button 2/3 覆盖 win32 驱动的右/中键，不碰左键选区）。
+    """
+
+    BINDINGS = [
+        Binding("ctrl+shift+v", "paste", "粘贴", show=False),
+    ]
+
+    def action_paste(self) -> None:
+        self.run_worker(self._read_clipboard_worker, thread=True, exclusive=True)
+
+    def _read_clipboard_worker(self) -> None:
+        text = read_os_clipboard()
+        if text:
+            self.app.call_from_thread(self._apply_paste, text)
+
+    def _apply_paste(self, text: str) -> None:
+        line = text.splitlines()[0] if text else ""
+        if not line:
+            return
+        selection = self.selection
+        if selection.is_empty:
+            self.insert_text_at_cursor(line)
+        else:
+            self.replace(line, *selection)
+
+    async def _on_mouse_down(self, event: events.MouseDown) -> None:
+        if event.button in (2, 3):
+            event.stop()
+            event.prevent_default()
+            self.action_paste()
+            return
+        await super()._on_mouse_down(event)
+
+
 class PermissionModal(ModalScreen):
     """HITL 审批覆盖层（对标 opencode permission dialog）。
 
@@ -502,7 +582,7 @@ class JarvisApp(App):
                 yield Static("", id="todo_panel")
                 with Horizontal(id="editor_frame"):
                     yield Static("›", id="prompt")
-                    yield Input(placeholder="输入消息，/ 开头为命令，@ 引用路径", id="input")
+                    yield PasteInput(placeholder="输入消息，/ 开头为命令，@ 引用路径", id="input")
         yield PathCompletionOverlay(id="path_completion")
         yield Footer()
 
