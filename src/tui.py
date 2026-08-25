@@ -5,8 +5,6 @@ from collections import defaultdict
 from functools import partial
 from pathlib import Path
 from time import time
-from typing import cast
-
 from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -14,19 +12,18 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Footer, Header, Input, Label, OptionList, RichLog, Static
 from textual.widgets.option_list import Option
-from textual.worker import Worker, get_current_worker
+from textual.worker import Worker
 
-from src import commands, streaming
+from src import commands
 from src.tui_completion import OverlayState, apply_suggestion, resolve_overlay_state
 from src.tui_log import CopyableRichLog
 from src import tui_format
+from src.tui_turn import TurnPresenter
 from src.tui_format import (
     DEFAULT_TUI_THEME,
     LEGACY_BAD_THEMES,
-    AiStreamThrottler,
     ai_message_header_markup,
     ai_stream_renderable,
-    format_tool_call,
     format_todos_panel,
     permission_preview,
     render_markdown,
@@ -977,155 +974,8 @@ class JarvisApp(App):
         *,
         checkpoint_id: str | None = None,
     ) -> None:
-        """后台线程消费 stream_events(v3)，逐字写入 RichLog。"""
-        from src.plan_mode import current_mode
-
-        worker = get_current_worker()
-        started = time()
-        # 模式标注取流开始时的快照（中途 Tab 切换不改变本轮回复的归属）
-        start_mode = current_mode(self.permission_state)
-        log = cast(RichLog, self.call_from_thread(self.query_one, "#messages", RichLog))
-        throttler = AiStreamThrottler()
-        stream_active = False
-        cancel_notified = False
-
-        def cancelled() -> bool:
-            return worker.is_cancelled
-
-        def write_line(text: str) -> None:
-            if not cancelled():
-                self.call_from_thread(log.write, text)
-
-        def reset_header() -> None:
-            nonlocal stream_active
-            throttler.reset()
-            stream_active = False
-            self.call_from_thread(self._hide_ai_stream)
-
-        def refresh_stream(force: bool = False) -> None:
-            nonlocal stream_active
-            if cancelled() or not throttler.buffer:
-                return
-            if not stream_active:
-                self.call_from_thread(self._show_ai_stream)
-                stream_active = True
-            if force or throttler.due():
-                throttler.mark_refreshed()
-                self.call_from_thread(self._update_ai_stream, throttler.buffer)
-
-        def on_message_end(segment: str) -> None:
-            if not isinstance(segment, str):
-                segment = commands.content_to_text(segment)
-            if cancelled() or not segment.strip():
-                return
-            refresh_stream(force=True)
-            self.call_from_thread(self._finalize_ai_stream, log, segment, start_mode)
-            throttler.reset()
-            nonlocal stream_active
-            stream_active = False
-
-        def on_message_delta(delta: str) -> None:
-            nonlocal cancel_notified
-            if cancelled():
-                if not cancel_notified:
-                    on_cancelled()
-                return
-            if not isinstance(delta, str):
-                return
-            throttler.append(delta)
-            refresh_stream()
-
-        def on_subagent(name: str, status: str, depth: int) -> None:
-            indent = max(0, depth - 1)
-            prefix = "  " * indent
-            write_line(f"{prefix}[yellow]▌ [{name}] {status}[/yellow]")
-
-        def on_tool_call(name: str, args: str, err: bool, output: str | None, depth: int) -> None:
-            write_line(format_tool_call(name, args, error=err, output=output, indent=depth))
-            if name == "write_todos" and not cancelled():
-                self.call_from_thread(self._refresh_todos_panel)
-
-        def on_status(text: str) -> None:
-            write_line(f"[i][dim]… {text}[/dim][/i]")
-
-        def on_cancelled() -> None:
-            nonlocal cancel_notified, stream_active
-            cancel_notified = True
-            stream_active = False
-            self.call_from_thread(self._hide_ai_stream)
-            write_line("[i][dim]（已取消）[/dim][/i]")
-
-        def handle_interrupts(interrupts):
-            filtered = streaming.filter_pending_interrupts(
-                interrupts,
-                self._resolved_hitl.get(self.thread_id, set()),
-            )
-            if not filtered:
-                return None
-            self._pending_hitl_keys = {
-                streaming.interrupt_action_key(action)
-                for interrupt in filtered
-                for action in (getattr(interrupt, "value", None) or {}).get("action_requests", [])
-            }
-
-            def ask_action(inv):
-                return self.call_from_thread(self._wait_modal_dismiss, inv)
-
-            return streaming.collect_interrupt_decisions(
-                filtered,
-                ask_action,
-                permission_state=self.permission_state,
-                on_always_approve=lambda name: self.call_from_thread(
-                    log.write, f"[b]已设置 {name} = allow（已写入 javis.json）[/b]"
-                ),
-            )
-
-        def on_turn_incomplete() -> None:
-            self.call_from_thread(self._on_turn_incomplete, self.thread_id)
-
-        ok = False
-        try:
-            ok = streaming.run_agent_turn(
-                self.agent,
-                self.thread_id,
-                user_input,
-                checkpoint_id=checkpoint_id,
-                handle_interrupts=handle_interrupts,
-                callbacks={
-                    "on_subagent": on_subagent,
-                    "on_tool_call": on_tool_call,
-                    "on_message_delta": on_message_delta,
-                    "on_message_end": on_message_end,
-                    "on_status": on_status,
-                },
-                is_cancelled=cancelled,
-                on_fallback_message=lambda text: self.call_from_thread(
-                    self._finalize_ai_stream, log, text or throttler.buffer, start_mode
-                ),
-                on_stream_start=reset_header,
-                on_cancelled=on_cancelled,
-                on_turn_incomplete=on_turn_incomplete,
-                permission_state=self.permission_state,
-                project_root=self._workspace_root(),
-                max_steps=int(getattr(self.config, "execution_max_steps", 200)),
-            )
-        except Exception as exc:
-            reset_header()
-            write_line(f"[bold red]错误[/bold red] {streaming.format_agent_error(exc)}")
-            ok = False
-        finally:
-            elapsed = time() - started
-            model = getattr(self.config, "model_id", "") or "model"
-            self.call_from_thread(self._hide_ai_stream)
-            self.call_from_thread(self._hide_spinner)
-            if cancelled() and not cancel_notified:
-                write_line("[i][dim]（已取消）[/dim][/i]")
-            elif not ok and not cancelled():
-                write_line("[i][dim]（已放弃本轮）[/dim][/i]")
-            elif ok:
-                write_line(f"[dim]▌ {model} ({elapsed:.1f}s)[/dim]")
-            self.call_from_thread(self._refresh_todos_panel)
-            write_line("")
+        """后台线程入口：组装 TurnPresenter 并驱动本轮（编排细节见 tui_turn.py）。"""
+        TurnPresenter(self, user_input, checkpoint_id).run()
 
     async def _wait_modal_dismiss(self, inv: commands.ToolInvocation):
         """push PermissionModal 并等待 dismiss 结果（在 UI 线程执行）。"""
