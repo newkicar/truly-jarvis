@@ -111,7 +111,8 @@ def test_list_sessions_filters_sched_threads():
             return self
 
         def fetchall(self):
-            return [("default",), ("sched-tech-daily",), ("session-abc",)]
+            # SQL 已含 WHERE NOT LIKE 'sched-%'，实际只返回非 sched 线程
+            return [("default",), ("session-abc",)]
 
     class FakeCp:
         conn = FakeConn()
@@ -271,12 +272,14 @@ def test_dispatch_delete_session_command(monkeypatch, tmp_path):
 
 
 def test_session_thread_ids_filters_sched_threads():
+    """sched-* 线程被 SQL WHERE 过滤，不返回。"""
     class FakeConn:
         def execute(self, sql):
             return self
 
         def fetchall(self):
-            return [("default",), ("sched-tech-daily",), ("session-abc",)]
+            # SQL 已含 WHERE NOT LIKE 'sched-%'，实际只返回非 sched 线程
+            return [("default",), ("session-abc",)]
 
     class FakeCp:
         conn = FakeConn()

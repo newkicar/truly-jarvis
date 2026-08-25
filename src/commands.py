@@ -241,13 +241,23 @@ def session_label(agent, thread_id: str) -> str:
 
 
 def session_thread_ids(agent) -> list[str]:
-    """从 checkpointer 拉取非 sched-* 的 thread_id 列表（供 TUI 侧边栏等）。"""
+    """从 checkpointer 拉取非 sched-* 的 thread_id 列表（供 TUI 侧边栏等）。
+
+    按最新 checkpoint 时间降序（最新会话在最上面）。
+    LangGraph checkpoint_id 内含时间戳，天然有序。
+    """
     checkpointer = getattr(agent, "checkpointer", None)
     conn = getattr(checkpointer, "conn", None)
     if conn is None:
         return []
-    rows = conn.execute("SELECT DISTINCT thread_id FROM checkpoints ORDER BY thread_id").fetchall()
-    return [str(r[0]) for r in rows if not str(r[0]).startswith("sched-")]
+    rows = conn.execute(
+        """SELECT thread_id
+           FROM checkpoints
+           WHERE thread_id NOT LIKE 'sched-%'
+           GROUP BY thread_id
+           ORDER BY MAX(checkpoint_id) DESC"""
+    ).fetchall()
+    return [str(r[0]) for r in rows]
 
 
 def list_sessions(agent) -> str:
