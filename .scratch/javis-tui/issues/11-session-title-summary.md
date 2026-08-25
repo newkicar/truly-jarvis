@@ -4,7 +4,7 @@
 
 **Type:** task
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Blocked by:** 无
 
@@ -115,3 +115,4 @@
 **Out of scope:**
 - 不做 AI 自动摘要、不做对话中途的实时标题更新
 - 不改侧边栏宽度、折叠逻辑与选择交互
+- 2026-08-25：实现完成，commit c1adcaf；单测 380 绿。TUI 手动冒烟项待用户验证。

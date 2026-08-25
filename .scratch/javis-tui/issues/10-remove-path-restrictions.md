@@ -4,7 +4,7 @@
 
 **Type:** task
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Blocked by:** 无
 
@@ -125,3 +125,4 @@
 - 不给项目外的「读」操作加审批（opencode 有 external_directory 读询问，本票明确不做）
 - 不改 execute 工具行为、不做路径白名单/黑名单
 - 不移除 vault 写保护与 shell 前缀拦截
+- 2026-08-25：实现完成，commit 9d13b16；单测 380 绿。TUI 手动冒烟项待用户验证。

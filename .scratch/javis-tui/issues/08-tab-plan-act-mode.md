@@ -4,7 +4,7 @@
 
 **Type:** task
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Blocked by:** 无
 
@@ -126,3 +126,4 @@ TUI 只有一个主代理模式。Tab 键当前仅用于「补全 overlay 活跃
 - 不做 execute 命令级的读写分类解析（靠提示词约束）
 - 不要求与 opencode 像素级一致（动画时长/配色可微调）
 - CLI（--cli 回退路径）不需要实现模式切换 UI
+- 2026-08-25：实现完成，commit 0f91964（+1fafe05 评审修复）；单测 380 绿。TUI 手动冒烟项待用户验证。

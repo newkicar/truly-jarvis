@@ -4,7 +4,7 @@
 
 **Type:** task
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Blocked by:** 无
 
@@ -104,3 +104,4 @@
 - 不实现 opencode 的 Knight Rider 扫描条（blocks 渐变引擎）
 - 不做子代理独立 spinner 或每工具粒度的进度显示（工具行已有 ✓/✗）
 - 不改 CLI 路径
+- 2026-08-25：实现完成，commit a79da22；单测 380 绿。TUI 手动冒烟项待用户验证。
