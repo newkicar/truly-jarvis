@@ -858,3 +858,80 @@ def test_dispatch_doctor(monkeypatch, tmp_path):
     assert text == "doctor-ok"
     assert new_thread is None
     assert replay is None
+
+class _FakeSnapshot:
+    def __init__(self, values):
+        self.values = values
+
+
+def _agent_with_thread(thread_id, messages):
+    class FakeAgent:
+        def get_state(self, config):
+            assert config == {"configurable": {"thread_id": thread_id}}
+            return _FakeSnapshot({"messages": messages})
+
+    return FakeAgent()
+
+
+class _Msg:
+    def __init__(self, type_, content):
+        self.type = type_
+        self.content = content
+
+
+def test_first_human_text_extracts_first_human():
+    agent = _agent_with_thread(
+        "t1",
+        [_Msg("ai", "回复"), _Msg("human", "第一个问题"), _Msg("human", "第二个问题")],
+    )
+    assert commands.first_human_text(agent, "t1") == "第一个问题"
+
+
+def test_first_human_text_truncates_and_flattens_newlines():
+    long = "这是一个超过十八个字符的很长很长的中文问题内容继续继续"
+    agent = _agent_with_thread("t1", [_Msg("human", f"  {long}\n第二行  ")])
+    result = commands.first_human_text(agent, "t1")
+    assert "\n" not in result
+    assert len(result) <= 18
+    assert result.startswith("这是")
+
+
+def test_first_human_text_empty_falls_back_to_empty():
+    agent = _agent_with_thread("t1", [_Msg("ai", "只有 ai 消息")])
+    assert commands.first_human_text(agent, "t1") == ""
+
+
+def test_first_human_text_state_error_returns_empty():
+    class BoomAgent:
+        def get_state(self, config):
+            raise RuntimeError("boom")
+
+    assert commands.first_human_text(BoomAgent(), "t1") == ""
+
+
+def test_session_label_prefers_summary_falls_back_to_id():
+    agent = _agent_with_thread("t1", [_Msg("human", "帮我写个 fizzbuzz 测试")])
+    empty_agent = _agent_with_thread("t2", [])
+    assert commands.session_label(agent, "t1") == "帮我写个 fizzbuzz 测试"[:18]
+    assert commands.session_label(empty_agent, "t2") == "t2"
+
+
+def test_list_sessions_shows_summary():
+    class FakeConn:
+        def execute(self, sql):
+            return self
+
+        def fetchall(self):
+            return [("with-msg",), ("empty-thread",)]
+
+    class FakeAgent3:
+        checkpointer = type("Cp", (), {"conn": FakeConn()})()
+
+        def get_state(self, config):
+            tid = config["configurable"]["thread_id"]
+            msgs = [] if tid == "empty-thread" else [_Msg("human", "帮我写个 fizzbuzz")]
+            return _FakeSnapshot({"messages": msgs})
+
+    text = commands.list_sessions(FakeAgent3())
+    assert "帮我写个 fizzbuzz" in text
+    assert "empty-thread" in text

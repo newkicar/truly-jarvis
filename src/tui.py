@@ -321,7 +321,8 @@ class SessionSidebar(OptionList):
             threads = [current, *threads]
         self.clear_options()
         for thread_id in threads:
-            label = f"▸ {thread_id}" if thread_id == current else thread_id
+            label_text = commands.session_label(agent, thread_id)
+            label = f"▸ {label_text}" if thread_id == current else label_text
             self.add_option(Option(label, id=thread_id))
         if threads:
             try:

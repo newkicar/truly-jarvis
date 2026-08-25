@@ -170,6 +170,30 @@ def last_human_text(values) -> str:
     return ""
 
 
+def first_human_text(agent, thread_id: str, limit: int = 18) -> str:
+    """取指定 thread 首条人类消息文本（压单行、截断 limit 字）；无消息或出错返回空串。
+
+    limit 默认 18：侧边栏 width=22 减去左右 padding 各 1 后内容宽 20，
+    当前会话行还需容纳 `▸ ` 前缀 2 字符。
+    """
+    try:
+        state = agent.get_state({"configurable": {"thread_id": thread_id}})
+    except Exception:
+        return ""
+    messages = (getattr(state, "values", None) or {}).get("messages") or []
+    for msg in messages:
+        if getattr(msg, "type", "") == "human":
+            content = getattr(msg, "content", "") or ""
+            if isinstance(content, str) and content.strip():
+                return content.strip().replace("\n", " ")[:limit]
+    return ""
+
+
+def session_label(agent, thread_id: str) -> str:
+    """侧边栏显示标签：首条用户消息摘要优先，空则回落 thread_id。"""
+    return first_human_text(agent, thread_id) or thread_id
+
+
 def session_thread_ids(agent) -> list[str]:
     """从 checkpointer 拉取非 sched-* 的 thread_id 列表（供 TUI 侧边栏等）。"""
     checkpointer = getattr(agent, "checkpointer", None)
@@ -189,7 +213,9 @@ def list_sessions(agent) -> str:
         return "（暂无历史会话）"
     lines = ["历史会话:"]
     for i, t in enumerate(threads, 1):
-        lines.append(f"  {i}. {t}")
+        summary = first_human_text(agent, t)
+        label = f"{t} — {summary}" if summary and summary != t else t
+        lines.append(f"  {i}. {label}")
     lines.append(
         "删除: /delete-session <序号或 thread_id>（省略 id 删当前；序号见上表）"
     )
