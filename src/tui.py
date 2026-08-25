@@ -802,10 +802,11 @@ class JarvisApp(App):
         log = self.query_one("#messages", RichLog)
         log.write(result)
         if new_thread:
-            self.thread_id = new_thread
-            self._update_sub_title()
-            log.write(f"[b]已切换到会话 {new_thread}[/b]")
-        self._refresh_session_sidebar()
+            # 命令驱动的轻量切换（/delete-session、/fork）：不走
+            # _leave_current_thread——命令层语义已定，此处仅接管新 id。
+            self._adopt_thread(new_thread, f"[b]已切换到会话 {new_thread}[/b]")
+        else:
+            self._refresh_session_sidebar()
         self.query_one("#input", Input).focus()
 
     def _session_sidebar(self) -> SessionSidebar:
@@ -814,20 +815,32 @@ class JarvisApp(App):
     def _refresh_session_sidebar(self) -> None:
         self._session_sidebar().refresh_sessions(self.agent, self.thread_id)
 
-    def _switch_session(self, thread_id: str) -> None:
-        if not thread_id or thread_id == self.thread_id:
-            return
-        old_thread = self.thread_id
+    def _leave_current_thread(self, old_thread: str) -> None:
+        """离开当前会话前的固定 choreography（会话切换的唯一出口）。
+
+        cancel 流式 worker → 记 HITL 已决 → 清 pending → bump 代数 → finalize。
+        任何要更换 self.thread_id 的路径都必须先走这里。
+        """
         self._cancel_stream_worker()
         self._mark_hitl_resolved(old_thread, set(self._pending_hitl_keys))
         self._pending_hitl_keys.clear()
         self._bump_hitl_generation()
         commands.finalize_turn(self.agent, old_thread)
+
+    def _adopt_thread(self, thread_id: str, message: str) -> None:
+        """接管新会话：换 id → 副标题 → 侧边栏 → 欢迎行。"""
         self.thread_id = thread_id
         self._update_sub_title()
         self._refresh_session_sidebar()
         log = self.query_one("#messages", RichLog)
-        log.write(f"[b]已切换到会话 {thread_id}[/b]")
+        log.write(message)
+
+    def _switch_session(self, thread_id: str) -> None:
+        if not thread_id or thread_id == self.thread_id:
+            return
+        old_thread = self.thread_id
+        self._leave_current_thread(old_thread)
+        self._adopt_thread(thread_id, f"[b]已切换到会话 {thread_id}[/b]")
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option_list.id != "session_sidebar":
@@ -1207,13 +1220,6 @@ class JarvisApp(App):
         import uuid
 
         old_thread = self.thread_id
-        self._cancel_stream_worker()
-        self._mark_hitl_resolved(old_thread, set(self._pending_hitl_keys))
-        self._pending_hitl_keys.clear()
-        self._bump_hitl_generation()
-        commands.finalize_turn(self.agent, old_thread)
-        self.thread_id = f"session-{uuid.uuid4().hex[:8]}"
-        self._update_sub_title()
-        self._refresh_session_sidebar()
-        log = self.query_one("#messages", CopyableRichLog)
-        log.write(f"[b]已开启新会话 {self.thread_id}[/b]")
+        self._leave_current_thread(old_thread)
+        new_thread = f"session-{uuid.uuid4().hex[:8]}"
+        self._adopt_thread(new_thread, f"[b]已开启新会话 {new_thread}[/b]")

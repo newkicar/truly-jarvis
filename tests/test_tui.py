@@ -440,3 +440,27 @@ async def test_theme_persistence(tmp_path):
     app2._config_path = lambda: config_file
     app2._restore_theme()
     assert app2.theme == "monokai"
+
+@pytest.mark.asyncio
+async def test_switch_session_finalizes_old_thread(monkeypatch):
+    """switch_session 原语契约：离开旧会话前必须 cancel worker + finalize_turn。"""
+    from unittest.mock import patch
+
+    app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        calls: list[str] = []
+        monkeypatch.setattr(
+            commands, "finalize_turn",
+            lambda agent, tid: calls.append(f"finalize:{tid}"),
+        )
+        with patch.object(app, "_cancel_stream_worker") as mock_cancel:
+            await pilot.pause()
+            app._switch_session("other-thread")
+            await pilot.pause()
+            mock_cancel.assert_called_once()
+        assert "finalize:default" in calls
+        assert app.thread_id == "other-thread"
+        # 同 id 幂等：不再触发 leave 流程
+        with patch.object(app, "_cancel_stream_worker") as mock_cancel2:
+            app._switch_session("other-thread")
+            mock_cancel2.assert_not_called()
