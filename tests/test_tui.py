@@ -506,7 +506,7 @@ async def test_switch_session_loads_last_ai_reply(monkeypatch):
         def get_state(self, cfg):
             return _FakeState()
         def get_state_history(self, config=None):
-            return iter([])
+            return iter([_FakeState()])
         def stream_events(self, *args, **kwargs):
             return iter([])
 

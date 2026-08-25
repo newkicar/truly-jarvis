@@ -178,22 +178,41 @@ def last_human_text(values) -> str:
     return ""
 
 
-def last_ai_text(agent, thread_id: str, limit: int = 300) -> str:
-    """取指定 thread 最后一条 AI 回复全文（供切换会话时加载到显示栏）。
+def thread_history_text(agent, thread_id: str, max_messages: int = 20) -> list[tuple[str, str]]:
+    """取指定 thread 的对话历史（供切换会话时加载到显示栏）。
 
-    返回纯文本（含多行原样），截断至 limit 字防止炸上下文；
-    无消息或出错返回空串。
+    返回 [(role, content), ...] 列表（从旧到新），role 为 "user" 或 "ai"。
+    用 get_state_history 取最新 checkpoint 的重建状态。
+    最多返回 max_messages 条（从末尾截取）。
     """
     try:
-        state = agent.get_state(thread_config(thread_id))
+        history = list(agent.get_state_history(config=thread_config(thread_id)))
     except Exception:
-        return ""
-    messages = (getattr(state, "values", None) or {}).get("messages") or []
-    for msg in reversed(messages):
-        if getattr(msg, "type", "") == "ai":
-            content = getattr(msg, "content", "") or ""
-            if isinstance(content, str) and content.strip():
-                return content.strip()[:limit]
+        return []
+    if not history:
+        return []
+    messages = (history[0].values or {}).get("messages") or []
+    result: list[tuple[str, str]] = []
+    for msg in messages:
+        role = getattr(msg, "type", "")
+        if role not in ("human", "ai"):
+            continue
+        content = getattr(msg, "content", "")
+        # deepagents 消息 content 可能是 list[dict]（多模态块），取 text
+        if isinstance(content, list) and content:
+            first = content[0]
+            content = first.get("text", "") if isinstance(first, dict) else str(first)
+        if isinstance(content, str) and content.strip():
+            display_role = "user" if role == "human" else "ai"
+            result.append((display_role, content.strip()))
+    return result[-max_messages:]
+
+
+def last_ai_text(agent, thread_id: str, limit: int = 300) -> str:
+    """取指定 thread 最后一条 AI 回复全文（向后兼容）。"""
+    pairs = thread_history_text(agent, thread_id, max_messages=1)
+    if pairs and pairs[-1][0] == "ai":
+        return pairs[-1][1][:limit]
     return ""
 
 
@@ -310,15 +329,14 @@ def checkpoint_config_stuck(checkpointer, thread_id: str, *, checkpoint_id: str 
 
 
 def _rollback_thread_to_last_usable_checkpoint(agent, thread_id: str) -> bool:
-    """回退到最近已完成（无 next、非 stuck）的 checkpoint；失败则删 thread。"""
-    checkpointer = getattr(agent, "checkpointer", None)
+    """回退到最近已完成（无 next、非 stuck）的 checkpoint；找不到则保留原样。"""
     base_config = thread_config(thread_id)
     try:
         for state in agent.get_state_history(base_config):
             cid = state.config.get("configurable", {}).get("checkpoint_id")
             if not cid:
                 continue
-            if checkpoint_config_stuck(checkpointer, thread_id, checkpoint_id=cid):
+            if checkpoint_config_stuck(getattr(agent, "checkpointer", None), thread_id, checkpoint_id=cid):
                 continue
             if getattr(state, "next", None):
                 continue
@@ -326,10 +344,6 @@ def _rollback_thread_to_last_usable_checkpoint(agent, thread_id: str) -> bool:
             return True
     except Exception:
         pass
-
-    if checkpointer is not None and hasattr(checkpointer, "delete_thread"):
-        checkpointer.delete_thread(thread_id)
-        return True
     return False
 
 

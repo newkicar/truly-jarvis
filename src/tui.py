@@ -842,16 +842,21 @@ class JarvisApp(App):
             return
         old_thread = self.thread_id
         self._leave_current_thread(old_thread)
-        # #13: 清空旧内容，加载目标会话最后一条 AI 回复
+        # #13: 清空旧内容，加载目标会话完整对话历史
         log = self.query_one("#messages", RichLog)
         log.clear()
-        last_ai = commands.last_ai_text(self.agent, thread_id)
-        if last_ai:
-            self._write_ai(log, last_ai)
-        # 接管新 id（清空+加载完成后设置，避免 _adopt_thread 再次清空）
+        pairs = commands.thread_history_text(self.agent, thread_id)
+        for role, content in pairs:
+            if role == "user":
+                log.write(user_message_markup(content))
+            else:
+                self._write_ai(log, content)
+        # 接管新 id
         self.thread_id = thread_id
         self._update_sub_title()
         self._refresh_session_sidebar()
+        if not pairs:
+            log.write("[i][dim]（暂无历史）[/dim][/i]")
         log.write(f"[b]已切换到会话 {thread_id}[/b]")
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:

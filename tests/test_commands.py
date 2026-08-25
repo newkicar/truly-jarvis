@@ -945,45 +945,85 @@ def test_thread_config_literal_single_source():
     }
 
 
-def test_last_ai_text_extracts_final_reply():
-    """#13: last_ai_text 取最后一条 AI 回复（用于切换会话时加载历史）。"""
+def test_thread_history_text_extracts_all_messages():
+    """#13: thread_history_text 返回全部消息（用户+AI）带角色标注。"""
     class _M:
         def __init__(self, type_, content):
             self.type = type_
             self.content = content
 
+    class _Snap:
+        def __init__(self, msgs):
+            self.values = {"messages": msgs}
+
     agent = type("A", (), {
-        "get_state": lambda self, cfg: type("S", (), {
-            "values": {"messages": [
-                _M("human", "你好"), _M("ai", "第一次回复"),
-                _M("human", "继续"), _M("ai", "第二次回复"),
-            ]},
-        })(),
+        "get_state_history": lambda self, config: iter([
+            _Snap([_M("human", "你好"), _M("ai", "第一次回复"),
+                   _M("human", "继续"), _M("ai", "第二次回复")]),
+        ]),
     })()
-    text = commands.last_ai_text(agent, "t1")
-    assert text == "第二次回复"
+    pairs = commands.thread_history_text(agent, "t1")
+    assert pairs == [
+        ("user", "你好"), ("ai", "第一次回复"),
+        ("user", "继续"), ("ai", "第二次回复"),
+    ]
 
 
-def test_last_ai_text_empty_messages():
+def test_thread_history_text_empty():
+    class _Snap:
+        values = {"messages": []}
     agent = type("A", (), {
-        "get_state": lambda self, cfg: type("S", (), {"values": {"messages": []}})(),
+        "get_state_history": lambda self, config: iter([_Snap()]),
     })()
-    assert commands.last_ai_text(agent, "t1") == ""
+    assert commands.thread_history_text(agent, "t1") == []
 
 
-def test_last_ai_text_state_error():
-    agent = type("A", (), {"get_state": lambda self, cfg: (_ for _ in ()).throw(RuntimeError("boom"))})()
-    assert commands.last_ai_text(agent, "t1") == ""
+def test_thread_history_text_max_messages():
+    class _M:
+        def __init__(self, t, c): self.type, self.content = t, c
+    class _Snap:
+        def __init__(self, msgs): self.values = {"messages": msgs}
+
+    msgs = [_M("human", f"q{i}") if i % 2 == 0 else _M("ai", f"a{i}") for i in range(10)]
+    agent = type("A", (), {
+        "get_state_history": lambda self, config: iter([_Snap(msgs)]),
+    })()
+    pairs = commands.thread_history_text(agent, "t1", max_messages=4)
+    assert len(pairs) == 4
+    assert pairs[0] == ("user", "q6")
 
 
-def test_last_ai_text_truncates():
+def test_thread_history_text_handles_list_content():
+    """deepagents 消息 content 为 list[dict]（多模态块）。"""
+    class _Snap:
+        def __init__(self, msgs): self.values = {"messages": msgs}
     class _M:
         def __init__(self, t, c): self.type, self.content = t, c
 
     agent = type("A", (), {
-        "get_state": lambda self, cfg: type("S", (), {
-            "values": {"messages": [_M("ai", "长" * 200)]},
-        })(),
+        "get_state_history": lambda self, config: iter([
+            _Snap([_M("ai", [{"type": "text", "text": "块格式回复"}])]),
+        ]),
     })()
-    text = commands.last_ai_text(agent, "t1", limit=50)
-    assert len(text) <= 50
+    pairs = commands.thread_history_text(agent, "t1")
+    assert pairs == [("ai", "块格式回复")]
+
+
+def test_thread_history_text_state_error():
+    agent = type("A", (), {"get_state_history": lambda self, config: (_ for _ in ()).throw(RuntimeError("boom"))})()
+    assert commands.thread_history_text(agent, "t1") == []
+
+
+def test_last_ai_text_compat():
+    """向后兼容：last_ai_text 取最后一条 AI 回复。"""
+    class _M:
+        def __init__(self, t, c): self.type, self.content = t, c
+    class _Snap:
+        def __init__(self, msgs): self.values = {"messages": msgs}
+
+    agent = type("A", (), {
+        "get_state_history": lambda self, config: iter([
+            _Snap([_M("human", "q"), _M("ai", "最后回复")]),
+        ]),
+    })()
+    assert commands.last_ai_text(agent, "t1") == "最后回复"
