@@ -107,7 +107,9 @@ def build_knowledge_keeper(deny_middleware=None, project_root=None, vault_path=N
     工具继承主代理后端默认的 write_file（可写 /vault/Inbox/），无需显式声明。
     deny_middleware: 权限 deny 拦截 middleware（命中 deny 的工具不执行）。
     """
-    middlewares: list = [VaultWriteGuardMiddleware(actor="knowledge_keeper")]
+    middlewares: list = [
+        VaultWriteGuardMiddleware(actor="knowledge_keeper", vault_path=vault_path)
+    ]
     if project_root is not None and vault_path is not None:
         middlewares.append(InboxSnapshotMiddleware(project_root, vault_path))
     if deny_middleware is not None:

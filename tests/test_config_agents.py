@@ -5,6 +5,7 @@ import pytest
 
 from tests.conftest import make_fake_config
 from src.config_agents import build_config_subagents
+from src.resilience import ToolErrorBoundaryMiddleware
 from src.permissions import (
     PermissionDenyMiddleware,
     build_permission_deny_middleware,
@@ -33,7 +34,10 @@ def test_build_config_subagents_appends_valid_agent(deny_mw):
     assert specs[0]["name"] == "reviewer"
     assert specs[0]["description"] == "只读代码审查"
     assert "审查员" in specs[0]["system_prompt"]
-    assert specs[0]["middleware"] == [deny_mw]
+    # 契约：ToolErrorBoundary 在最外层（异常→数据），deny 在内层
+    assert len(specs[0]["middleware"]) == 2
+    assert isinstance(specs[0]["middleware"][0], ToolErrorBoundaryMiddleware)
+    assert specs[0]["middleware"][1] is deny_mw
 
 
 def test_build_config_subagents_skips_reserved_names(deny_mw):
@@ -72,9 +76,10 @@ def test_build_config_subagents_per_agent_permissions(deny_mw):
     )
     assert len(specs) == 1
     assert "interrupt_on" in specs[0]
-    mw = specs[0]["middleware"][0]
-    assert isinstance(mw, PermissionDenyMiddleware)
-    assert mw is not deny_mw
+    mws = specs[0]["middleware"]
+    assert isinstance(mws[0], ToolErrorBoundaryMiddleware)
+    assert isinstance(mws[1], PermissionDenyMiddleware)
+    assert mws[1] is not deny_mw  # per-agent state 独立构建
 
 
 def test_build_agent_appends_config_subagents(tmp_path, monkeypatch):

@@ -1,13 +1,17 @@
 """#10 路径放开：deepagents middleware 层的 Windows 盘符路径定点适配。"""
 import pytest
 
+from deepagents.middleware import filesystem as _fs_middleware
+
 from src import path_policy
 
 
 @pytest.fixture(autouse=True)
-def _applied():
+def _applied_and_restored():
+    saved = _fs_middleware.validate_path
     path_policy.apply_unrestricted_paths()
     yield
+    _fs_middleware.validate_path = saved
 
 
 def test_drive_letter_paths_pass_through():

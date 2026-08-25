@@ -10,8 +10,15 @@ FilesystemMiddleware 的工具包装层无条件调用 validate_path，它拒绝
 
 做法：替换 deepagents.middleware.filesystem 命名空间里的 validate_path 引用，
 盘符路径原样放行、其余走原实现。backend 侧 virtual_mode=False 本就支持
-Windows 绝对路径。这是对 deepagents 0.7.6 的定点适配——升级 deepagents 时
-需复核 middleware 的 import 方式与校验逻辑是否变化。
+Windows 绝对路径。
+
+已知边界（有意为之 / 升级时需复核）：
+1. 盘符路径不做 `..`/`~` 复检（trusted-local 语义，写操作仍走 HITL 审批）；
+2. deepagents.middleware._fs_interrupt 在 import 时按值绑定了原版
+   validate_path——未来若用 deepagents FilesystemPermission 做路径级中断，
+   盘符路径的谓词会拿不到真实路径（当前项目未使用该机制）；
+3. 本模块不在 import 时自动生效——由 src/agent.py 的 _make_backend 显式
+   apply_unrestricted_paths() 接线。
 """
 from __future__ import annotations
 
@@ -42,7 +49,5 @@ def apply_unrestricted_paths() -> None:
 def validate_path(path: str, *, allowed_prefixes=None) -> str:
     return _unrestricted_validate_path(path, allowed_prefixes=allowed_prefixes)
 
-
-apply_unrestricted_paths()
 
 __all__ = ["apply_unrestricted_paths", "validate_path"]

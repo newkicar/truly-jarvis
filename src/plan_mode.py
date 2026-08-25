@@ -34,7 +34,7 @@ def current_mode(state: dict) -> str:
 
 
 def set_mode(state: dict, mode: str) -> None:
-    if mode not in ("act", "plan"):
+    if mode not in MODES:
         raise ValueError(f"unknown mode: {mode!r}")
     state[MODE_KEY] = mode
 

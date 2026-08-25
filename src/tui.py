@@ -641,7 +641,7 @@ class JarvisApp(App):
 
     def _spinner_config(self) -> tuple[bool, str]:
         """(animations, style)；config 缺失时默认开动画、braille。"""
-        tui = getattr(self.config, "tui", None) or {} if self.config else {}
+        tui = getattr(self.config, "tui", None) or {}
         return bool(tui.get("animations", True)), str(tui.get("spinner_style", "braille"))
 
     def _show_spinner(self) -> None:
@@ -682,13 +682,11 @@ class JarvisApp(App):
         stream = self.query_one("#ai_stream", Static)
         stream.update(ai_stream_renderable(text))
 
-    def _finalize_ai_stream(self, log: RichLog, text: str) -> None:
-        from src.plan_mode import current_mode
-
+    def _finalize_ai_stream(self, log: RichLog, text: str, mode: str | None = None) -> None:
         self._hide_ai_stream()
         if not isinstance(text, str):
             text = commands.content_to_text(text)
-        log.write(ai_message_header_markup(mode=current_mode(self.permission_state)))
+        log.write(ai_message_header_markup(mode=mode))
         log.write(render_markdown(text))
         log.write("")
 
@@ -950,8 +948,12 @@ class JarvisApp(App):
         checkpoint_id: str | None = None,
     ) -> None:
         """后台线程消费 stream_events(v3)，逐字写入 RichLog。"""
+        from src.plan_mode import current_mode
+
         worker = get_current_worker()
         started = time()
+        # 模式标注取流开始时的快照（中途 Tab 切换不改变本轮回复的归属）
+        start_mode = current_mode(self.permission_state)
         log = cast(RichLog, self.call_from_thread(self.query_one, "#messages", RichLog))
         throttler = AiStreamThrottler()
         stream_active = False
@@ -987,7 +989,7 @@ class JarvisApp(App):
             if cancelled() or not segment.strip():
                 return
             refresh_stream(force=True)
-            self.call_from_thread(self._finalize_ai_stream, log, segment)
+            self.call_from_thread(self._finalize_ai_stream, log, segment, start_mode)
             throttler.reset()
             nonlocal stream_active
             stream_active = False
@@ -1068,7 +1070,7 @@ class JarvisApp(App):
                 },
                 is_cancelled=cancelled,
                 on_fallback_message=lambda text: self.call_from_thread(
-                    self._finalize_ai_stream, log, text or throttler.buffer
+                    self._finalize_ai_stream, log, text or throttler.buffer, start_mode
                 ),
                 on_stream_start=reset_header,
                 on_cancelled=on_cancelled,

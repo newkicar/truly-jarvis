@@ -304,7 +304,7 @@ def build_agent(
     from src.system_context_enforcer import SystemContextEnforcerMiddleware
 
     system_context_enforcer = SystemContextEnforcerMiddleware()
-    vault_guard = VaultWriteGuardMiddleware()
+    vault_guard = VaultWriteGuardMiddleware(vault_path=config.vault_path)
     root = config.project_root
     inbox_snapshot = (
         InboxSnapshotMiddleware(root, config.vault_path)

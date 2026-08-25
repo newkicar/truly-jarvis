@@ -84,3 +84,64 @@ def test_guard_blocks_delete_outside_inbox():
     )
     result = mw.wrap_tool_call(req, lambda r: "ok")
     assert result.status == "error"
+
+
+def test_real_drive_path_to_protected_zone_blocked(tmp_path):
+    """#10 后真实盘符路径也必须受 vault 写边界约束（MAJOR 评审项）。"""
+    from types import SimpleNamespace
+
+    from src.vault_guard import VaultWriteGuardMiddleware
+
+    vault = tmp_path / "MyVault"
+    secret = vault / "Archive"
+    secret.mkdir(parents=True)
+    inbox = vault / "Inbox"
+    inbox.mkdir()
+
+    mw = VaultWriteGuardMiddleware(vault_path=vault)
+    req = SimpleNamespace(tool_call={
+        "name": "write_file",
+        "id": "c1",
+        "args": {"file_path": str(secret / "x.md"), "content": "v"},
+    })
+    res = mw.wrap_tool_call(req, lambda r: "ran")
+    assert getattr(res, "status", "") == "error"
+    assert "Inbox" in str(res.content)
+
+
+def test_real_drive_path_inbox_allowed(tmp_path):
+    from types import SimpleNamespace
+
+    from src.vault_guard import VaultWriteGuardMiddleware
+
+    vault = tmp_path / "MyVault"
+    inbox = vault / "Inbox"
+    inbox.mkdir(parents=True)
+
+    mw = VaultWriteGuardMiddleware(vault_path=vault)
+    marker: list = []
+    req = SimpleNamespace(tool_call={
+        "name": "write_file",
+        "id": "c1",
+        "args": {"file_path": str(inbox / "note.md"), "content": "v"},
+    })
+    assert mw.wrap_tool_call(req, lambda r: marker.append(1)) is None or True
+    assert marker, "Inbox 内真实路径应放行"
+
+
+def test_non_vault_real_path_unaffected(tmp_path):
+    from types import SimpleNamespace
+
+    from src.vault_guard import VaultWriteGuardMiddleware
+
+    outside = tmp_path / "Other"
+    outside.mkdir()
+    mw = VaultWriteGuardMiddleware(vault_path=tmp_path / "MyVault")
+    marker: list = []
+    req = SimpleNamespace(tool_call={
+        "name": "write_file",
+        "id": "c1",
+        "args": {"file_path": str(outside / "a.txt"), "content": "v"},
+    })
+    mw.wrap_tool_call(req, lambda r: marker.append(1))
+    assert marker, "vault 之外的普通路径不受此守卫管辖"

@@ -33,15 +33,6 @@ def test_spinner_line_blocks_style():
     assert "■" in line
 
 
-def _make_app(tui_cfg=None):
-    app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
-    if tui_cfg is not None:
-        object.__setattr__(app.config, "tui", tui_cfg) if hasattr(app.config, "tui") else None
-        if app.config is not None:
-            app.config.tui = tui_cfg
-    return app
-
-
 @pytest.mark.asyncio
 async def test_spinner_hidden_by_default():
     app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})

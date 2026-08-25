@@ -1,5 +1,13 @@
-"""Vault 写边界：仅 Inbox / Reports 等指定目录可写。"""
+"""Vault 写边界：仅 Inbox / Reports 等指定目录可写。
+
+#10 路径放开后，write/edit/delete 可以携带真实盘符路径（如
+D:/Obsidian/MyVault/Secrets/x.md）绕开 /vault/ 前缀——本 middleware 构造时
+接收 vault 真实路径，_check 前先把落在 vault 目录内的真实路径映射回
+/vault/... 虚拟形式再走同一套可写区判定（MAJOR 评审项修复）。
+"""
 from __future__ import annotations
+
+from pathlib import Path
 
 from langchain.agents.middleware.types import AgentMiddleware
 
@@ -75,9 +83,23 @@ def blocked_vault_write_message(tool: str, path: str, *, actor: str = "JARVIS") 
 class VaultWriteGuardMiddleware(AgentMiddleware):
     """拦截对 Vault 非可写区路径的 write_file / edit_file / delete。"""
 
-    def __init__(self, *, actor: str = "JARVIS"):
+    def __init__(self, *, actor: str = "JARVIS", vault_path=None):
         super().__init__()
         self.actor = actor
+        self._vault_real = Path(vault_path).resolve() if vault_path else None
+
+    def _virtualize(self, path: str) -> str:
+        """落在 vault 目录内的真实盘符路径 → /vault/... 虚拟形式；其余原样返回。"""
+        if self._vault_real is None or not path:
+            return path
+        p = Path(path)
+        if not p.is_absolute():
+            return path
+        try:
+            rel = p.resolve().relative_to(self._vault_real)
+        except (ValueError, OSError):
+            return path
+        return "/vault/" + rel.as_posix()
 
     @property
     def name(self) -> str:
@@ -89,9 +111,13 @@ class VaultWriteGuardMiddleware(AgentMiddleware):
             return None
         tool = tool_call.get("name", "")
         args = tool_call.get("args", {}) or {}
-        path = normalize_vault_path(_tool_arg_value(args, "file_path", "path"))
-        if vault_write_blocked(tool, path):
-            return tool, path
+        raw = _tool_arg_value(args, "file_path", "path")
+        # 先尝试把真实路径映射回 /vault/...，再统一走虚拟路径判定
+        virtualized = normalize_vault_path(self._virtualize(raw))
+        path = normalize_vault_path(raw)
+        for candidate in (virtualized, path):
+            if vault_write_blocked(tool, candidate):
+                return tool, candidate
         return None
 
     def _error_message(self, tool: str, path: str) -> str:
