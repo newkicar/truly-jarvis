@@ -826,14 +826,13 @@ class JarvisApp(App):
         self._bump_hitl_generation()
         commands.finalize_turn(self.agent, old_thread)
 
-    def _adopt_thread(self, thread_id: str, message: str) -> None:
-        """接管新会话：换 id → 副标题 → 侧边栏 → 欢迎行。"""
+    def _adopt_thread(self, thread_id: str, message: str, *, clear: bool = False) -> None:
+        """接管新会话：换 id → 副标题 → 侧边栏 → 写入消息。clear=True 时先清空显示栏。"""
         self.thread_id = thread_id
         self._update_sub_title()
         self._refresh_session_sidebar()
         log = self.query_one("#messages", RichLog)
-        # #12: 新建会话时清空旧内容，切换会话时保留（由 _switch_session 处理加载）
-        if "新会话" in message:
+        if clear:
             log.clear()
         log.write(message)
 
@@ -842,22 +841,18 @@ class JarvisApp(App):
             return
         old_thread = self.thread_id
         self._leave_current_thread(old_thread)
-        # #13: 清空旧内容，加载目标会话完整对话历史
+        # #13: 加载目标会话完整对话历史，通过 _adopt_thread 统一接管
+        pairs = commands.thread_history_text(self.agent, thread_id)
         log = self.query_one("#messages", RichLog)
         log.clear()
-        pairs = commands.thread_history_text(self.agent, thread_id)
         for role, content in pairs:
             if role == "user":
                 log.write(user_message_markup(content))
             else:
                 self._write_ai(log, content)
-        # 接管新 id
-        self.thread_id = thread_id
-        self._update_sub_title()
-        self._refresh_session_sidebar()
         if not pairs:
             log.write("[i][dim]（暂无历史）[/dim][/i]")
-        log.write(f"[b]已切换到会话 {thread_id}[/b]")
+        self._adopt_thread(thread_id, f"[b]已切换到会话 {thread_id}[/b]")
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option_list.id != "session_sidebar":
@@ -1092,4 +1087,7 @@ class JarvisApp(App):
         old_thread = self.thread_id
         self._leave_current_thread(old_thread)
         new_thread = f"session-{uuid.uuid4().hex[:8]}"
-        self._adopt_thread(new_thread, f"[b]已开启新会话 {new_thread}[/b]")
+        # #12: 清空旧内容 + 欢迎提示
+        self._adopt_thread(new_thread, f"[b]已开启新会话 {new_thread}[/b]", clear=True)
+        log = self.query_one("#messages", RichLog)
+        self._write_system(log, "JARVIS 就绪。@ 引用路径，/ 命令；Tab 切换 Plan/Act。")

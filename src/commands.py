@@ -374,15 +374,14 @@ def finalize_turn(agent, thread_id: str) -> bool:
 
     新会话（只有1个 checkpoint，agent 第一轮还没跑完）直接跳过——
     没有「已完成 turn」可回退，回滚必然失败且可能导致会话丢失。
+    sched-* 线程回滚失败时仍可 delete_thread（scheduler 清理契约）。
     """
     checkpointer = getattr(agent, "checkpointer", None)
     if checkpointer is None:
         return False
     if checkpoint_config_stuck(checkpointer, thread_id):
-        # stuck 状态必须清理
         return _rollback_thread_to_last_usable_checkpoint(agent, thread_id)
     try:
-        # 数 checkpoints：只有1个说明新会话未完成第一轮，跳过
         count = 0
         for _ in agent.get_state_history(config=thread_config(thread_id)):
             count += 1
@@ -392,10 +391,18 @@ def finalize_turn(agent, thread_id: str) -> bool:
             return False
         state = agent.get_state(thread_config(thread_id))
         if not getattr(state, "next", None):
-            return False  # 无 pending next，无需清理
+            return False
     except Exception:
         return False
-    return _rollback_thread_to_last_usable_checkpoint(agent, thread_id)
+    ok = _rollback_thread_to_last_usable_checkpoint(agent, thread_id)
+    # sched-* 线程回滚失败时清理（scheduler 契约）；用户会话保留原样
+    if not ok and thread_id.startswith("sched-"):
+        try:
+            checkpointer.delete_thread(thread_id)
+            return True
+        except Exception:
+            pass
+    return ok
 
 
 HANDOFF_PROMPT = (
