@@ -15,13 +15,7 @@
   "mcps": {
     "servers": {}
   },
-  "permissions": {
-    "*": "ask",
-    "execute": "ask",
-    "write_file": "ask",
-    "edit_file": "ask",
-    "delete": "ask"
-  },
+  "permissions": {},
   "rag": {
     "ollama_base_url": "http://localhost:11434",
     "embed_model": "quentinz/bge-small-zh-v1.5"
