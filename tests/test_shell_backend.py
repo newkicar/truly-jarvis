@@ -114,3 +114,53 @@ def test_make_backend_wires_prefixes(tmp_path):
     assert "workspace" in prefixes
     assert "memories" in prefixes
     assert "vault" in prefixes  # fake config 带 vault_path
+
+
+def test_virtual_prefix_guard_matches_without_trailing_slash(tmp_path):
+    """dir /workspace（无尾斜杠）也要拦（Spec 审查缺口）。"""
+    b = InheritedEnvShellBackend(
+        root_dir=str(tmp_path), virtual_mode=True,
+        virtual_prefixes=("/workspace/", "/vault/"),
+    )
+    for cmd in ("dir /workspace", 'cd "/vault"', "type /workspace/notes.txt"):
+        res = b.execute(cmd)
+        assert res.exit_code == 1, f"{cmd!r} 漏拦"
+        assert "虚拟前缀" in res.output
+    # 真实路径不受影响
+    res = b.execute("echo /workspacefoo is a plain dir name")
+    assert res.exit_code == 0
+
+
+def test_make_backend_default_unrestricted(tmp_path):
+    """#10: _make_backend 的 default（workspace backend）必须 virtual_mode=False。"""
+    import sys
+
+    sys.path.insert(0, ".")
+    from src.agent import _make_backend
+    from tests.conftest import make_fake_config
+
+    cfg = make_fake_config(tmp_path)
+    backend = _make_backend(cfg)
+    assert backend.default.virtual_mode is False
+
+
+def test_unrestricted_backend_accesses_paths_outside_root(tmp_path):
+    """#10: virtual_mode=False 下文件方法可访问项目外绝对路径；相对路径仍落项目根。"""
+    ext = tmp_path / "outside"
+    ext.mkdir()
+    (ext / "note.txt").write_text("outer-content", encoding="utf-8")
+    proj = tmp_path / "proj"
+    proj.mkdir()
+
+    b = InheritedEnvShellBackend(root_dir=str(proj), virtual_mode=False)
+
+    ls = b.ls(str(ext))
+    assert ls.error is None
+    assert any("note.txt" in e["path"] for e in ls.entries)
+
+    grep = b.grep("outer", path=str(ext))
+    assert grep.matches, "项目外 grep 应有命中"
+
+    write = b.write("inner-rel.txt", "x")
+    assert write.error is None
+    assert (proj / "inner-rel.txt").exists(), "相对路径应以项目根为基准"

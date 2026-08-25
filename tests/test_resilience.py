@@ -534,8 +534,13 @@ def test_tool_boundary_hilt_resume_no_crash():
     tmp = Path(tempfile.mkdtemp())
     cfg = make_fake_config(tmp)
 
+    # #10 后 virtual_mode=False，畸形虚拟前缀路径不再触发 backend ValueError；
+    # 改用「write 已存在的目录」作为稳定的 backend 异常源。
+    blocker = Path(str(cfg.project_root)) / "blocker"
+    blocker.mkdir(parents=True, exist_ok=True)
+
     class ScriptedModel(BaseChatModel):
-        """第 1 轮：write_file /workspace/D:/tmp/x.py；第 2 轮：DONE。"""
+        """第 1 轮：write_file 一个已存在的目录（backend 必然报错）；第 2 轮：DONE。"""
         step: int = 0
 
         def bind_tools(self, tools, **kw):
@@ -547,7 +552,7 @@ def test_tool_boundary_hilt_resume_no_crash():
                 return ChatResult(generations=[ChatGeneration(message=AIMessage(
                     content="", tool_calls=[{
                         "name": "write_file",
-                        "args": {"file_path": "/workspace/D:/tmp/javis-demo/fizzbuzz.py", "content": "x"},
+                        "args": {"file_path": str(blocker), "content": "x"},
                         "id": "c1", "type": "tool_call",
                     }]
                 ))])
@@ -576,7 +581,11 @@ def test_tool_boundary_hilt_resume_no_crash():
     tool_msgs = [m for m in messages if type(m).__name__ == "ToolMessage"]
     assert len(tool_msgs) >= 1, "应有 ToolMessage（backend 错误数据）"
     assert tool_msgs[-1].status == "error"
-    assert "ValueError" in tool_msgs[-1].content or "outside root" in tool_msgs[-1].content
+    assert (
+        "ValueError" in tool_msgs[-1].content
+        or "outside root" in tool_msgs[-1].content
+        or "Error writing file" in tool_msgs[-1].content
+    )
     # 最后一条是模型的 DONE
     assert messages[-1].content == "DONE"
 

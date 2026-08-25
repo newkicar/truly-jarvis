@@ -50,9 +50,10 @@ class InheritedEnvShellBackend(LocalShellBackend):
             inherit_env=True,
         )
         self._virtual_prefixes = tuple(p.strip("/") for p in virtual_prefixes if p.strip("/"))
-        # (?<![:\w]) 排除 URL 路径段（https://x/workspace/）
+        # (?<![:\w]) 排除 URL 路径段（https://x/workspace/）；
+        # (?![\w]) 兼容无尾斜杠形式（dir /workspace、cd "/vault"）。
         alt = "|".join(re.escape(p) for p in self._virtual_prefixes) or r"(?!)"
-        self._virtual_path_re = re.compile(rf"(?<![:\w])/(?:{alt})/", re.IGNORECASE)
+        self._virtual_path_re = re.compile(rf"(?<![:\w])/(?:{alt})(?![\w])", re.IGNORECASE)
 
     def _virtual_prefix_error(self, command: str) -> ExecuteResponse | None:
         m = self._virtual_path_re.search(command)
