@@ -943,3 +943,47 @@ def test_thread_config_literal_single_source():
     assert commands.thread_config("t1", "c9") == {
         "configurable": {"thread_id": "t1", "checkpoint_id": "c9"}
     }
+
+
+def test_last_ai_text_extracts_final_reply():
+    """#13: last_ai_text 取最后一条 AI 回复（用于切换会话时加载历史）。"""
+    class _M:
+        def __init__(self, type_, content):
+            self.type = type_
+            self.content = content
+
+    agent = type("A", (), {
+        "get_state": lambda self, cfg: type("S", (), {
+            "values": {"messages": [
+                _M("human", "你好"), _M("ai", "第一次回复"),
+                _M("human", "继续"), _M("ai", "第二次回复"),
+            ]},
+        })(),
+    })()
+    text = commands.last_ai_text(agent, "t1")
+    assert text == "第二次回复"
+
+
+def test_last_ai_text_empty_messages():
+    agent = type("A", (), {
+        "get_state": lambda self, cfg: type("S", (), {"values": {"messages": []}})(),
+    })()
+    assert commands.last_ai_text(agent, "t1") == ""
+
+
+def test_last_ai_text_state_error():
+    agent = type("A", (), {"get_state": lambda self, cfg: (_ for _ in ()).throw(RuntimeError("boom"))})()
+    assert commands.last_ai_text(agent, "t1") == ""
+
+
+def test_last_ai_text_truncates():
+    class _M:
+        def __init__(self, t, c): self.type, self.content = t, c
+
+    agent = type("A", (), {
+        "get_state": lambda self, cfg: type("S", (), {
+            "values": {"messages": [_M("ai", "长" * 200)]},
+        })(),
+    })()
+    text = commands.last_ai_text(agent, "t1", limit=50)
+    assert len(text) <= 50

@@ -830,6 +830,9 @@ class JarvisApp(App):
         self._update_sub_title()
         self._refresh_session_sidebar()
         log = self.query_one("#messages", RichLog)
+        # #12: 新建会话时清空旧内容，切换会话时保留（由 _switch_session 处理加载）
+        if "新会话" in message:
+            log.clear()
         log.write(message)
 
     def _switch_session(self, thread_id: str) -> None:
@@ -837,7 +840,17 @@ class JarvisApp(App):
             return
         old_thread = self.thread_id
         self._leave_current_thread(old_thread)
-        self._adopt_thread(thread_id, f"[b]已切换到会话 {thread_id}[/b]")
+        # #13: 清空旧内容，加载目标会话最后一条 AI 回复
+        log = self.query_one("#messages", RichLog)
+        log.clear()
+        last_ai = commands.last_ai_text(self.agent, thread_id)
+        if last_ai:
+            self._write_ai(log, last_ai)
+        # 接管新 id（清空+加载完成后设置，避免 _adopt_thread 再次清空）
+        self.thread_id = thread_id
+        self._update_sub_title()
+        self._refresh_session_sidebar()
+        log.write(f"[b]已切换到会话 {thread_id}[/b]")
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option_list.id != "session_sidebar":

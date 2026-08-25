@@ -178,6 +178,25 @@ def last_human_text(values) -> str:
     return ""
 
 
+def last_ai_text(agent, thread_id: str, limit: int = 300) -> str:
+    """取指定 thread 最后一条 AI 回复全文（供切换会话时加载到显示栏）。
+
+    返回纯文本（含多行原样），截断至 limit 字防止炸上下文；
+    无消息或出错返回空串。
+    """
+    try:
+        state = agent.get_state(thread_config(thread_id))
+    except Exception:
+        return ""
+    messages = (getattr(state, "values", None) or {}).get("messages") or []
+    for msg in reversed(messages):
+        if getattr(msg, "type", "") == "ai":
+            content = getattr(msg, "content", "") or ""
+            if isinstance(content, str) and content.strip():
+                return content.strip()[:limit]
+    return ""
+
+
 def first_human_text(agent, thread_id: str, limit: int = 18) -> str:
     """取指定 thread 首条人类消息文本（压单行、截断 limit 字）；无消息或出错返回空串。
 

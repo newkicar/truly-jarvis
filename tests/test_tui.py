@@ -465,3 +465,59 @@ async def test_switch_session_finalizes_old_thread(monkeypatch):
         with patch.object(app, "_cancel_stream_worker") as mock_cancel2:
             app._switch_session("other-thread")
             mock_cancel2.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_new_session_clears_old_display():
+    """#12: 新建会话时显示栏旧内容清空。"""
+    from unittest.mock import patch
+
+    app = JarvisApp(None, FakeAgent(reply="你好"), {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        log = app.query_one("#messages")
+        # 先写一些旧内容
+        log.write("[b]旧会话的测试内容[/b]")
+        joined = "".join(l.text for l in log.lines)
+        assert "旧会话" in joined
+        # monkeypatch finalize + uuid
+        commands.finalize_turn = lambda agent, tid: None
+        with patch("uuid.uuid4", return_value=type("U", (), {"hex": "abc"})()):
+            app.action_new_session()
+        await pilot.pause()
+        joined2 = "".join(l.text for l in log.lines)
+        assert "旧会话" not in joined2, "旧内容应被清空"
+        assert "新会话" in joined2 or "abc" in joined2
+
+
+@pytest.mark.asyncio
+async def test_switch_session_loads_last_ai_reply(monkeypatch):
+    """#13: 切换会话时显示栏加载该会话最后一条 AI 回复。"""
+    from unittest.mock import patch
+
+    class _FakeState:
+        values = {"messages": [
+            type("M", (), {"type": "human", "content": "你好"})(),
+            type("M", (), {"type": "ai", "content": "这是对方之前的回复"})(),
+        ]}
+
+    class _FakeAgentWithState:
+        checkpointer = None
+        def get_state(self, cfg):
+            return _FakeState()
+        def get_state_history(self, config=None):
+            return iter([])
+        def stream_events(self, *args, **kwargs):
+            return iter([])
+
+    app = JarvisApp(None, _FakeAgentWithState(), {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        log = app.query_one("#messages")
+        log.write("[b]旧会话内容[/b]")
+        commands.finalize_turn = lambda agent, tid: None
+        app._switch_session("target-thread")
+        await pilot.pause()
+        joined = "".join(l.text for l in log.lines)
+        assert "对方之前的回复" in joined, f"应加载历史 AI 回复，实际: {joined[:100]}"
+        assert "已切换" in joined
+        assert app.thread_id == "target-thread"
