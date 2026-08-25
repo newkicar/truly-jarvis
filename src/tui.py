@@ -86,6 +86,10 @@ class PasteInput(Input):
 
     BINDINGS = [
         Binding("ctrl+shift+v", "paste", "粘贴", show=False),
+        # #08 Plan/Act：输入框聚焦时 Tab 切换模式（widget 级绑定先于 Screen 的
+        # focus_next；补全活跃时由 app.on_key 先行拦截，仍为接受建议）。
+        Binding("tab", "app.toggle_mode", "Plan/Act", show=False),
+        Binding("shift+tab", "app.toggle_mode_reverse", "Plan/Act 反向", show=False),
     ]
 
     def action_paste(self) -> None:
@@ -460,6 +464,15 @@ class JarvisApp(App):
         border: round $accent;
     }
 
+    #editor_frame {
+        transition: border 160ms;
+    }
+
+    #editor_frame.-plan,
+    #editor_frame.-plan:focus-within {
+        border: round $success;
+    }
+
     #prompt {
         width: auto;
         min-width: 2;
@@ -552,11 +565,14 @@ class JarvisApp(App):
             pass
 
     def _update_sub_title(self) -> None:
+        from src.plan_mode import current_mode
+
         parts = [self.thread_id]
         if self._mcp_tool_count:
             parts.append(f"MCP:{self._mcp_tool_count}")
         if self.config and getattr(self.config, "project_root", None):
             parts.append(str(self.config.project_root.name))
+        parts.append(current_mode(self.permission_state).capitalize())
         if self.sched is not None:
             try:
                 n = len(self.sched.get_jobs())
@@ -667,10 +683,12 @@ class JarvisApp(App):
         stream.update(ai_stream_renderable(text))
 
     def _finalize_ai_stream(self, log: RichLog, text: str) -> None:
+        from src.plan_mode import current_mode
+
         self._hide_ai_stream()
         if not isinstance(text, str):
             text = commands.content_to_text(text)
-        log.write(ai_message_header_markup())
+        log.write(ai_message_header_markup(mode=current_mode(self.permission_state)))
         log.write(render_markdown(text))
         log.write("")
 
@@ -695,7 +713,9 @@ class JarvisApp(App):
 
     def on_mount(self) -> None:
         log = self.query_one("#messages", RichLog)
-        self._write_system(log, "JARVIS 就绪。@ 引用路径，/ 命令；Tab 接受建议，Enter 发送。")
+        self._write_system(
+            log, "JARVIS 就绪。@ 引用路径，/ 命令；Tab 接受建议，Enter 发送；Tab（无补全时）切换 Plan/Act。"
+        )
         self._write_system(
             log,
             "会话：Ctrl+B 开侧边栏 → 点选 → Y 复制 ID / D 删除；或 /delete-session 2 按序号。"
@@ -814,6 +834,26 @@ class JarvisApp(App):
         if thread_id is not None:
             self._switch_session(str(thread_id))
         self.query_one("#input", Input).focus()
+
+    def action_toggle_mode(self) -> None:
+        self._switch_mode(1)
+
+    def action_toggle_mode_reverse(self) -> None:
+        self._switch_mode(-1)
+
+    def _switch_mode(self, direction: int) -> None:
+        """Tab 切换 Plan/Act（补全活跃时由 on_key 拦截，不会走到这里）。"""
+        from src.plan_mode import MODES, current_mode, set_mode
+
+        idx = MODES.index(current_mode(self.permission_state))
+        next_mode = MODES[(idx + direction) % len(MODES)]
+        set_mode(self.permission_state, next_mode)
+        frame = self.query_one("#editor_frame")
+        if next_mode == "plan":
+            frame.add_class("-plan")
+        else:
+            frame.remove_class("-plan")
+        self._update_sub_title()
 
     def action_toggle_sidebar(self) -> None:
         sidebar = self._session_sidebar()

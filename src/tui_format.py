@@ -40,9 +40,14 @@ def user_message_markup(text: str) -> str:
     return f"[bold cyan]▌[/bold cyan] [bold]你[/bold]\n  {body}\n"
 
 
-def ai_message_header_markup() -> str:
-    """AI 消息标题行。"""
-    return "[bold blue]▌[/bold blue] [bold]JARVIS[/bold]"
+def ai_message_header_markup(mode: str | None = None) -> str:
+    """AI 消息标题行；mode 传入时追加 [Act]/[Plan] 标注。"""
+    base = "[bold blue]▌[/bold blue] [bold]JARVIS[/bold]"
+    if mode == "plan":
+        return f"{base} [yellow][Plan][/yellow]"
+    if mode == "act":
+        return f"{base} [blue][Act][/blue]"
+    return base
 
 
 def ai_typing_markup() -> str:

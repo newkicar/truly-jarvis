@@ -332,6 +332,9 @@ def build_agent(
         if f.name.lower() != "readme.md"
     ]
 
+    # #08 Plan/Act 模式闸门（与 deny_middleware 共享同一 permission_state 引用）
+    from src.plan_mode import PlanModeMiddleware
+
     skills = skill_virtual_sources(config)
     main_tools: list = [make_quick_search_tool(config.tavily_key)]
     if mcp_tools:
@@ -351,6 +354,7 @@ def build_agent(
             CodeInterpreterMiddleware(subagents=True),
             TodoListMiddleware(),
             deny_middleware,
+            PlanModeMiddleware(permission_state),
             deprecated_guard,
             system_context_enforcer,
             vault_guard,

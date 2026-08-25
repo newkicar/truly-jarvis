@@ -176,7 +176,7 @@ async def test_new_session_action():
         app.action_new_session()
         await pilot.pause()
         assert app.thread_id.startswith("session-")
-        assert app.sub_title == app.thread_id
+        assert app.sub_title.startswith(app.thread_id)  # #08: 尾部追加 Act/Plan 模式名
 
 
 @pytest.mark.asyncio
