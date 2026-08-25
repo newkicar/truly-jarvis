@@ -360,8 +360,30 @@ def turn_needs_finalize(agent, thread_id: str) -> bool:
 
 
 def finalize_turn(agent, thread_id: str) -> bool:
-    """Turn 结束清理：取消/放弃/HITL 中断后避免脏 checkpoint 污染下轮。返回是否做了 repair。"""
-    if not turn_needs_finalize(agent, thread_id):
+    """Turn 结束清理：取消/放弃/HITL 中断后避免脏 checkpoint 污染下轮。返回是否做了 repair。
+
+    新会话（只有1个 checkpoint，agent 第一轮还没跑完）直接跳过——
+    没有「已完成 turn」可回退，回滚必然失败且可能导致会话丢失。
+    """
+    checkpointer = getattr(agent, "checkpointer", None)
+    if checkpointer is None:
+        return False
+    if checkpoint_config_stuck(checkpointer, thread_id):
+        # stuck 状态必须清理
+        return _rollback_thread_to_last_usable_checkpoint(agent, thread_id)
+    try:
+        # 数 checkpoints：只有1个说明新会话未完成第一轮，跳过
+        count = 0
+        for _ in agent.get_state_history(config=thread_config(thread_id)):
+            count += 1
+            if count > 1:
+                break
+        if count < 2:
+            return False
+        state = agent.get_state(thread_config(thread_id))
+        if not getattr(state, "next", None):
+            return False  # 无 pending next，无需清理
+    except Exception:
         return False
     return _rollback_thread_to_last_usable_checkpoint(agent, thread_id)
 
