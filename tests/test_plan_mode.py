@@ -68,28 +68,16 @@ def test_plan_mode_blocks_write_tools():
         assert "Plan" in str(res.content)
 
 
-def test_plan_mode_blocks_execute_no_hitl_popup():
-    """2026-08-25 回归：Plan 下 execute 必须硬拦（否则穿透到 HITL 弹窗）。"""
-    state = {}
-    set_mode(state, "plan")
-    mw = PlanModeMiddleware(state)
-    res = mw.wrap_tool_call(
-        _req({"name": "execute", "id": "c1", "args": {"command": "echo hi"}}),
-        lambda r: "PASSED-TO-HITL",
-    )
-    assert getattr(res, "status", "") == "error"
-    assert "Plan" in str(res.content)
-
-
 def test_plan_mode_allows_read_tools():
+    """write/edit/delete 被拦；execute/read 文件工具放行。"""
     state = {}
     set_mode(state, "plan")
     mw = PlanModeMiddleware(state)
     marker: list = []
-    for tool in ("read_file", "ls", "grep", "glob"):
+    for tool in ("read_file", "ls", "grep", "glob", "execute"):
         res = mw.wrap_tool_call(_req({"name": tool, "id": "c1"}), _handler_marker(marker))
         assert res == "ok", tool
-    assert len(marker) == 4
+    assert len(marker) == 5
 
 
 @pytest.mark.asyncio

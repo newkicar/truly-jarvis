@@ -4,11 +4,12 @@
 state 引用的既有惯例）——TUI 切换只改 state，无需重建 agent。
 
 Plan 模式两道闸：
-1. wrap_tool_call：写类工具与 execute 执行前拦截，返回 error ToolMessage
-   引导先完成规划；读类文件工具放行。execute 曾按原 brief 留给提示词约束，
-   2026-08-25 实测约束不住（弱模型仍发起执行触发 HITL 弹窗），改为硬边界。
+1. wrap_tool_call：写类工具（write_file/edit_file/delete）执行前拦截，返回
+   error ToolMessage 引导先完成规划。execute 不硬拦——agent 需要用它做只读
+   探索（如 python -c 读取文件、查看数据）；禁止 execute 中修改状态的行为
+   由系统提示词约束。
 2. wrap_model_call：往当轮 system 尾部追加规划约束提示词（StepBudgetMiddleware
-   手法），不写入持久历史；其中同步声明 execute 已禁用，双保险引导模型改道。
+   手法），不写入持久历史。
 """
 from __future__ import annotations
 
@@ -16,16 +17,16 @@ from langchain.agents.middleware.types import AgentMiddleware
 
 MODE_KEY = "mode"
 MODES = ("act", "plan")
-# execute 一并硬拦（2026-08-25 用户实测：提示词约束不住弱模型，仍发起
-# execute 触发 HITL 弹窗——「提示词是建议，代码才是边界」）。Plan 的只读
-# 探索由文件工具（ls/read_file/grep/glob）覆盖，shell 整体留待 Act。
-PLAN_TOOLS = frozenset({"write_file", "edit_file", "delete", "execute"})
+# 只拦写操作；execute 不拦——只读探索由 agent 通过 execute + Python 命令完成，
+# 禁止修改状态的行为靠提示词约束（不拆命令，命令级白名单不可维护）。
+PLAN_TOOLS = frozenset({"write_file", "edit_file", "delete"})
 
 PLAN_MODE_PROMPT = (
     "\n\n[Plan 模式]\n"
     "当前处于 Plan 模式——只做规划和分析，不做任何修改：\n"
     "- 可以：读取文件、搜索代码、列出目录、分析架构、用 write_todos 输出任务分解清单\n"
-    "- 不可以：写入/编辑/删除文件；execute 只用于只读命令（查看、检索），禁止任何修改状态的命令\n"
+    "- 可以用 execute 执行只读命令（查看数据、检查文件、浏览目录结构），但禁止用 execute 做任何修改操作（禁止 echo > / cp / mv / rm / mkdir / write / 创建脚本文件等）\n"
+    "- 不可以：用 write_file/edit_file/delete 写入任何文件\n"
     "- 输出：先给出任务分解清单（write_todos），再逐项分析要点与风险\n"
     "- 完成规划后提醒用户按 Tab 切回 Act 模式再开始执行\n"
 )
