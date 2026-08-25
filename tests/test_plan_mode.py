@@ -167,3 +167,24 @@ async def test_ai_header_carries_mode():
     assert "[Plan]" in header
     header_act = ai_message_header_markup(mode="act")
     assert "[Act]" in header_act
+
+
+@pytest.mark.asyncio
+async def test_prompt_marker_shows_mode_label():
+    from textual.widgets import Static
+
+    from src.tui import JarvisApp
+
+    app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        marker = app.query_one("#prompt", Static)
+        # 默认 act：普通提示符
+        assert "-plan" not in marker.classes
+        await pilot.press("tab")
+        await pilot.pause()
+        assert "-plan" in marker.classes
+        assert "PLAN" in str(marker.render())
+        await pilot.press("tab")
+        await pilot.pause()
+        assert "-plan" not in marker.classes
+        assert "PLAN" not in str(marker.render())

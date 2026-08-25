@@ -480,6 +480,10 @@ class JarvisApp(App):
         content-align: center middle;
     }
 
+    #prompt.-plan {
+        color: $success;
+    }
+
     #input {
         width: 1fr;
         height: 1;
@@ -846,12 +850,25 @@ class JarvisApp(App):
         idx = MODES.index(current_mode(self.permission_state))
         next_mode = MODES[(idx + direction) % len(MODES)]
         set_mode(self.permission_state, next_mode)
+        self._refresh_mode_indicator()
         frame = self.query_one("#editor_frame")
         if next_mode == "plan":
             frame.add_class("-plan")
         else:
             frame.remove_class("-plan")
         self._update_sub_title()
+
+    def _refresh_mode_indicator(self) -> None:
+        """输入框左侧模式文字标记（对标 opencode prompt 的 agent 名标签）。"""
+        from src.plan_mode import current_mode
+
+        marker = self.query_one("#prompt", Static)
+        if current_mode(self.permission_state) == "plan":
+            marker.update("[b] PLAN [/b]")
+            marker.add_class("-plan")
+        else:
+            marker.update("›")
+            marker.remove_class("-plan")
 
     def action_toggle_sidebar(self) -> None:
         sidebar = self._session_sidebar()
