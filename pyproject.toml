@@ -17,9 +17,9 @@ dependencies = [
     "langchain-quickjs>=0.3.3",
     "langchain-mcp-adapters>=0.3.2",
     "textual>=0.40.0",
-    "openpyxl>=3.1",
     "tavily-python",
-    "pandas>=2.0",
+    "httpx",
+    "chromadb>=0.5.0",
     "apscheduler>=3.10",
 ]
 
@@ -27,7 +27,7 @@ dependencies = [
 jarvis = "src.main:main"
 
 [tool.setuptools.packages.find]
-include = ["src*"]
+include = ["src*", "jarvis*"]
 
 [tool.setuptools.package-data]
 src = ["*.md"]

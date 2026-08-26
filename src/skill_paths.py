@@ -1,4 +1,4 @@
-"""Skill 目录发现：安装包 + 用户全局 ~/.javis + 项目。"""
+"""Skill 目录发现：安装包 + 用户全局 ~/.jarvis + 项目。"""
 from __future__ import annotations
 
 from dataclasses import dataclass

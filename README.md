@@ -17,53 +17,58 @@
 
 ### 环境
 
-- Python 3.11+（推荐 3.12）
-- 依赖：`pip install -r requirements.txt`
-- 模型：`.env` 配置 OpenAI 兼容端点（当前默认 `https://opencode.ai/zen/go/v1` + `mimo-v2.5`）
-- 知识库（可选）：路径写在 `javis.json` 的 `knowledge_base`（如 Obsidian vault）；留空 `""` 或删除该键 = 无 `/vault/`。兼容旧键 `obsidian_vault`（`knowledge_base` 优先）。
+- Python 3.12+
+- 模型：`.env` 配置 OpenAI 兼容端点
+- 知识库（可选）：路径写在 `jarvis.json` 的 `knowledge_base`（如 Obsidian vault）；留空 `""` 或删除该键 = 无 `/vault/`。
 - 可选：Ollama（增量 RAG embedding）、已配置的 MCP servers
 
 ### 配置
 
-1. 复制并填写 `.env`（支持 `KEY:VALUE` 或 `KEY=VALUE`，键名大小写不敏感）：
+1. 克隆仓库并安装：
+
+```bash
+git clone https://github.com/newkicar/truly-jarvis.git
+cd truly-jarvis
+pip install -e .
+```
+
+2. 复制并填写 `.env`（支持 `KEY:VALUE` 或 `KEY=VALUE`，键名大小写不敏感）：
 
 ```dotenv
-BASE_URL=https://opencode.ai/zen/go/v1
+BASE_URL=https://your-model-endpoint/v1
 API_KEY=sk-...
-MODEL_ID=mimo-v2.5
+MODEL_ID=your-model-id
 TAVILY_KEY=tvly-...
 ```
 
-2. 编辑 `javis.json`：知识库路径（`knowledge_base`，不同电脑可配不同路径或留空禁用）、`permissions`、`mcps.servers`、`schedules_dir`、`execution.max_steps`（单轮任务步数上限，默认 200，超限前会软着陆总结）等可变项均在此，不写死在代码里。
-
-**项目根**：在哪运行，哪就是 `/workspace/`。JARVIS 从 cwd 向上找 `javis.json` 确定项目根；也可设 `JARVIS_PROJECT_ROOT` 覆盖。在 `truly_Javis/` 内开发时行为与以前一致。
-
-**新项目初始化**（任意空目录）：
+3. 启动即可——首次运行会自动在项目目录生成 `jarvis.json` + `skills/`：
 
 ```bash
-python -m src.main --init e:\tmp\javis-test
-# 然后双击 e:\tmp\javis-test\run-javis.cmd 启动（不要 cd 进去 python -m src.main）
+jarvis          # TUI 界面（默认）
+jarvis --cli    # 纯 CLI 模式
 ```
 
-`run-javis.cmd` 会设置 `JARVIS_PROJECT_ROOT` 并回到引擎安装目录启动。也可手动：
+也可用 `python -m jarvis` 或 `python -m src.main`。
+
+**项目根**：在哪运行，哪就是 `/workspace/`。JARVIS 从 cwd 向上找 `jarvis.json` 确定项目根；也可设 `JARVIS_PROJECT_ROOT` 覆盖。
+
+**手动初始化**（如需自定义配置）：
 
 ```bash
-set JARVIS_PROJECT_ROOT=e:\tmp\javis-test
-cd e:\Thomas\Python_Project\thomas-project\truly_Javis
-python -m src.main
+jarvis --init /path/to/project
 ```
 
 ### 运行
 
 ```bash
 # 默认：Textual TUI
-python -m src.main
+jarvis
 
 # 回退纯 CLI（命令 + y/n/e/a 审批）
-python -m src.main --cli
+jarvis --cli
 
-# 新会话 thread
-python -m src.main -n
+# 新会话
+jarvis -n
 ```
 
 ---
@@ -74,10 +79,10 @@ python -m src.main -n
 |------|----------------|
 | 新会话 | `Ctrl+N` |
 | 折叠/展开会话侧边栏 | `Ctrl+B` |
-| 切换主题（写回 javis.json） | `Ctrl+T` |
+| 切换主题（写回 jarvis.json） | `Ctrl+T` |
 | 取消流式输出 | `Esc` |
 | 引用 workspace / vault / memories 路径 | 输入 `@` 触发补全（**workspace 优先**；`@vault/` 进知识库）；**Tab** 接受建议，**Enter** 发送 |
-| 复制对话区文本 | 鼠标拖选后松开自动复制（`javis.json` → `tui.copy_on_select`，默认 true）；或 Ctrl+Insert |
+| 复制对话区文本 | 鼠标拖选后松开自动复制（`jarvis.json` → `tui.copy_on_select`，默认 true）；或 Ctrl+Insert |
 | 命令建议 | 输入 `/` 或 `/his` 等前缀即弹出（无需先 `/help`） |
 | 退出 | `/exit` 或 `Ctrl+C` |
 
@@ -85,7 +90,7 @@ python -m src.main -n
 
 **写边界**：JARVIS 只能写 `/vault/Inbox/` 与 `/vault/Reports/`；Vault 其它路径只读。知识库为**可选**配置——未配置 `knowledge_base` 时没有 `/vault/`，代理正常工作（检索/沉淀类任务会被环境说明引导跳过）。详见 [`docs/adr/0002-inbox-only-write-and-snapshots.md`](docs/adr/0002-inbox-only-write-and-snapshots.md)。
 
-**系统上下文**（日期 / 时间 / 城市）：启动时 system prompt 仅含**当天日期 + 星期**；问精确时间或城市时用 `execute` 读本机，不写死 `javis.json` 或 profile。详见 [`docs/adr/0003-system-context-on-demand.md`](docs/adr/0003-system-context-on-demand.md)。
+**系统上下文**（日期 / 时间 / 城市）：启动时 system prompt 仅含**当天日期 + 星期**；问精确时间或城市时用 `execute` 读本机，不写死 `jarvis.json` 或 profile。详见 [`docs/adr/0003-system-context-on-demand.md`](docs/adr/0003-system-context-on-demand.md)。
 
 ---
 
@@ -149,9 +154,9 @@ python -m src.smoke_test --tui-hitl
 
 ### Permission hooks（审批前扩展）
 
-在 HITL Modal 之前可配置外部命令，按工具调用返回 `allow` / `deny` / `ask`（未匹配仍走 `permissions` + Modal）。优先级：**Hooks → javis.json permissions → 用户审批**。
+在 HITL Modal 之前可配置外部命令，按工具调用返回 `allow` / `deny` / `ask`（未匹配仍走 `permissions` + Modal）。优先级：**Hooks → jarvis.json permissions → 用户审批**。
 
-`javis.json` 示例：
+`jarvis.json` 示例：
 
 ```json
 "hooks": {
@@ -184,12 +189,12 @@ src/
   inbox_snapshots.py  Inbox 快照与 rollback 还原
   rag.py / wiki.py / tools.py  知识检索与搜索
   agent.py           主代理组装（含 session 日期注入）
-  skill_paths.py     skill 三层发现（安装 / ~/.javis / 项目）
-  project_paths.py   项目根 + 用户全局 ~/.javis
+  skill_paths.py     skill 三层发现（安装 / ~/.jarvis / 项目）
+  project_paths.py   项目根 + 用户全局 ~/.jarvis
 tests/             pytest
 memory/            长期记忆（*.md，注入 system prompt；不含固定所在地）
 schedules/         定时任务（每任务一 JSON）
-skills/            随安装包默认 skill（用户 skill 放 ~/.javis/skills/）
+skills/            随安装包默认 skill（用户 skill 放 ~/.jarvis/skills/）
 docs/specs/        权威设计文档
 docs/adr/          架构决策记录
 ```
@@ -216,4 +221,4 @@ docs/adr/          架构决策记录
 1. 动手实现前，先到 GitHub 搜索优秀开源项目参考。
 2. deepagents 更新很快，先通过 langchain MCP（docs-langchain）确认最新版功能与语法再实现。
 3. 复用 deepagents 原生工具（`ls/read_file/write_file/.../execute/task`），不重造轮子。
-4. 可变配置进 `javis.json` 或 `schedules/`，不写死。
+4. 可变配置进 `jarvis.json` 或 `schedules/`，不写死。

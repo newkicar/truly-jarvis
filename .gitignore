@@ -1,5 +1,6 @@
 # 密钥与本地数据库
 .env
+jarvis.json
 checkpoints.sqlite
 *.sqlite
 *.sqlite3
@@ -26,3 +27,4 @@ Thumbs.db
 *.log
 memory/rag-index/
 tmp/
+history-sessions/
