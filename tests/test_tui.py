@@ -3,6 +3,8 @@
 import asyncio
 import time
 
+from contextlib import contextmanager
+
 import pytest
 
 from textual.widgets import Input, Static
@@ -289,6 +291,10 @@ class _FakeCheckpointer:
 
     def fetchall(self):
         return [(t,) for t in self._threads]
+
+    @contextmanager
+    def cursor(self, transaction=True):
+        yield self
 
 
 class _SidebarAgent(FakeAgent):

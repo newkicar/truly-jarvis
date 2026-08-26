@@ -201,6 +201,7 @@ def main(argv=None) -> int:
     mcp_tools = load_mcp_tools(config.mcps)
 
     with SqliteSaver.from_conn_string(str(config.checkpoint_db)) as checkpointer:
+        checkpointer.setup()  # 确保 checkpoints/writes 表存在（绕过 cursor() 的裸 SQL 需要）
         _, permission_state = build_permission_interrupts(
             config.permissions,
             hooks=config.hooks,

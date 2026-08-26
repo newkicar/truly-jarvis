@@ -248,16 +248,16 @@ def session_thread_ids(agent) -> list[str]:
     LangGraph checkpoint_id 内含时间戳，天然有序。
     """
     checkpointer = getattr(agent, "checkpointer", None)
-    conn = getattr(checkpointer, "conn", None)
-    if conn is None:
+    if checkpointer is None:
         return []
-    rows = conn.execute(
-        """SELECT thread_id
-           FROM checkpoints
-           WHERE thread_id NOT LIKE 'sched-%'
-           GROUP BY thread_id
-           ORDER BY MAX(checkpoint_id) DESC"""
-    ).fetchall()
+    with checkpointer.cursor() as cur:
+        rows = cur.execute(
+            """SELECT thread_id
+               FROM checkpoints
+               WHERE thread_id NOT LIKE 'sched-%'
+               GROUP BY thread_id
+               ORDER BY MAX(checkpoint_id) DESC"""
+        ).fetchall()
     return [str(r[0]) for r in rows]
 
 
@@ -497,14 +497,14 @@ def _config_layer_lines(project_root: Path) -> list[str]:
 def _checkpoint_thread_stats(agent, thread_id: str) -> tuple[int | None, int | None]:
     """返回 (checkpoint 条数, 最大 blob 字节)，无 checkpointer 时为 (None, None)。"""
     checkpointer = getattr(agent, "checkpointer", None)
-    conn = getattr(checkpointer, "conn", None)
-    if conn is None:
+    if checkpointer is None:
         return None, None
     try:
-        row = conn.execute(
-            "SELECT COUNT(*), MAX(length(checkpoint)) FROM checkpoints WHERE thread_id = ?",
-            (thread_id,),
-        ).fetchone()
+        with checkpointer.cursor() as cur:
+            row = cur.execute(
+                "SELECT COUNT(*), MAX(length(checkpoint)) FROM checkpoints WHERE thread_id = ?",
+                (thread_id,),
+            ).fetchone()
         if not row:
             return 0, 0
         return int(row[0] or 0), int(row[1] or 0)

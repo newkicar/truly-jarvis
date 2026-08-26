@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 """commands.py 命令分发与会话管理测试。
 
 Seam: commands.boundary_checkpoints / resolve_checkpoint_id / list_history /
@@ -117,6 +118,10 @@ def test_list_sessions_filters_sched_threads():
     class FakeCp:
         conn = FakeConn()
 
+        @contextmanager
+        def cursor(self, transaction=True):
+            yield self.conn
+
     class FakeAgent2:
         checkpointer = FakeCp()
 
@@ -139,6 +144,10 @@ def test_resolve_session_target_by_index():
 
     class FakeCp:
         conn = FakeConn()
+
+        @contextmanager
+        def cursor(self, transaction=True):
+            yield self.conn
 
     class FakeAgent:
         checkpointer = FakeCp()
@@ -164,6 +173,10 @@ def test_resolve_thread_id_prefix():
     class FakeCp:
         conn = FakeConn()
 
+        @contextmanager
+        def cursor(self, transaction=True):
+            yield self.conn
+
     class FakeAgent:
         checkpointer = FakeCp()
 
@@ -184,6 +197,10 @@ def test_delete_session_removes_thread(monkeypatch, tmp_path):
 
     class FakeCp:
         conn = FakeConn()
+
+        @contextmanager
+        def cursor(self, transaction=True):
+            yield self.conn
 
         def delete_thread(self, thread_id):
             deleted.append(thread_id)
@@ -217,6 +234,10 @@ def test_delete_session_current_switches_thread(monkeypatch, tmp_path):
 
     class FakeCp:
         conn = FakeConn()
+
+        @contextmanager
+        def cursor(self, transaction=True):
+            yield self.conn
 
         def delete_thread(self, thread_id):
             deleted.append(thread_id)
@@ -283,6 +304,10 @@ def test_session_thread_ids_filters_sched_threads():
 
     class FakeCp:
         conn = FakeConn()
+
+        @contextmanager
+        def cursor(self, transaction=True):
+            yield self.conn
 
     class FakeAgent2:
         checkpointer = FakeCp()
@@ -927,8 +952,17 @@ def test_list_sessions_shows_summary():
         def fetchall(self):
             return [("with-msg",), ("empty-thread",)]
 
+    _cp_conn = FakeConn()
+
+    def _cp_cursor(transaction=True):
+        from contextlib import contextmanager
+        @contextmanager
+        def _inner(transaction=True):
+            yield _cp_conn
+        return _inner()
+
     class FakeAgent3:
-        checkpointer = type("Cp", (), {"conn": FakeConn()})()
+        checkpointer = type("Cp", (), {"conn": _cp_conn, "cursor": _cp_cursor})()
 
         def get_state(self, config):
             tid = config["configurable"]["thread_id"]
