@@ -4,10 +4,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-JAVIS_JSON = "javis.json"
+JARVIS_JSON = "jarvis.json"
 ENV_PROJECT_ROOT = "JARVIS_PROJECT_ROOT"
 ENV_JARVIS_HOME = "JARVIS_HOME"
-DEFAULT_USER_HOME = ".javis"
+DEFAULT_USER_HOME = ".jarvis"
+
+# 向后兼容别名（R2 阶段全面切换后可删除）
+JAVIS_JSON = JARVIS_JSON
 
 
 def install_root() -> Path:
@@ -15,8 +18,17 @@ def install_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def _migrate_user_home() -> Path:
+    """~/.javis/ → ~/.jarvis/ 自动迁移（旧版用户无感升级）。"""
+    old_home = Path.home() / ".javis"
+    new_home = Path.home() / DEFAULT_USER_HOME
+    if old_home.is_dir() and not new_home.is_dir():
+        old_home.rename(new_home)
+    return new_home
+
+
 def discover_project_root(start: Path | None = None) -> Path:
-    """从 start（默认 cwd）向上查找 javis.json；找不到则返回 start/cwd。
+    """从 start（默认 cwd）向上查找 jarvis.json；找不到则返回 start/cwd。
 
     环境变量 JARVIS_PROJECT_ROOT 可强制指定。
     """
@@ -26,7 +38,7 @@ def discover_project_root(start: Path | None = None) -> Path:
 
     current = (start or Path.cwd()).resolve()
     for directory in (current, *current.parents):
-        if (directory / JAVIS_JSON).is_file():
+        if (directory / JARVIS_JSON).is_file():
             return directory
     return current
 
@@ -47,16 +59,25 @@ def get_project_root() -> Path:
     return discover_project_root()
 
 
-def resolve_javis_json(project_root: Path | None = None) -> Path:
-    """解析 javis.json 路径：项目根优先，否则安装目录。"""
+def resolve_jarvis_json(project_root: Path | None = None) -> Path:
+    """解析 jarvis.json 路径：项目根优先，仅隐式发现时 fallback 到安装目录。
+
+    显式传入 project_root 时不 fallback——让 main 的自动初始化正确触发。
+    """
     root = (project_root or discover_project_root()).resolve()
-    candidate = root / JAVIS_JSON
+    candidate = root / JARVIS_JSON
     if candidate.is_file():
         return candidate
-    install_candidate = install_root() / JAVIS_JSON
-    if install_candidate.is_file():
-        return install_candidate
+    # 仅当未显式指定 project_root 时 fallback（即 cwd 发现模式）
+    if project_root is None:
+        install_candidate = install_root() / JARVIS_JSON
+        if install_candidate.is_file():
+            return install_candidate
     return candidate
+
+
+# 向后兼容别名
+resolve_javis_json = resolve_jarvis_json
 
 
 def resolve_env_file(project_root: Path | None = None) -> Path:
@@ -69,11 +90,11 @@ def resolve_env_file(project_root: Path | None = None) -> Path:
 
 
 def user_home() -> Path:
-    """用户全局目录（默认 ~/.javis，可用 JARVIS_HOME 覆盖）。"""
+    """用户全局目录（默认 ~/.jarvis，可用 JARVIS_HOME 覆盖）。"""
     override = os.environ.get(ENV_JARVIS_HOME, "").strip()
     if override:
         return Path(override).expanduser().resolve()
-    return (Path.home() / DEFAULT_USER_HOME).resolve()
+    return _migrate_user_home()
 
 
 def ensure_user_home() -> Path:
@@ -84,9 +105,13 @@ def ensure_user_home() -> Path:
     return home
 
 
-def resolve_user_javis_json() -> Path:
-    """用户全局 javis.json 路径（~/.javis/javis.json）。"""
-    return user_home() / JAVIS_JSON
+def resolve_user_jarvis_json() -> Path:
+    """用户全局 jarvis.json 路径（~/.jarvis/jarvis.json）。"""
+    return user_home() / JARVIS_JSON
+
+
+# 向后兼容别名
+resolve_user_javis_json = resolve_user_jarvis_json
 
 
 INSTRUCTIONS_FILENAME = "JARVIS.md"
@@ -95,7 +120,7 @@ INSTRUCTIONS_FILENAME = "JARVIS.md"
 def load_project_instructions(project_root: Path | None = None) -> str:
     """发现并读取项目指令文件（对标 AGENTS.md 分层：全局 + 项目级）。
 
-    - 全局：~/.javis/JARVIS.md（用户跨项目约定）
+    - 全局：~/.jarvis/JARVIS.md（用户跨项目约定）
     - 项目级：{project_root}/JARVIS.md（本项目技术约定）
 
     两级都可选；都存在则拼接（全局在前）。文件缺失返回空串。

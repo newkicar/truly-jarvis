@@ -532,8 +532,8 @@ class JarvisApp(App):
 
     def _config_path(self) -> Path:
         if self.config and getattr(self.config, "project_root", None):
-            return self.config.project_root / "javis.json"
-        return commands.project_root() / "javis.json"
+            return self.config.project_root / "jarvis.json"
+        return commands.project_root() / "jarvis.json"
 
     def _restore_theme(self) -> None:
         try:

@@ -483,7 +483,7 @@ def _config_layer_lines(project_root: Path) -> list[str]:
     if json_path.is_file():
         lines.append(f"  javis.json ← {json_path}")
     else:
-        lines.append(f"  javis.json ← （未找到；期望 {project_root / 'javis.json'}）")
+        lines.append(f"  javis.json ← （未找到；期望 {project_root / 'jarvis.json'}）")
 
     lines.append(f"  用户全局目录 ← {user_home()}（skills；JARVIS_HOME 可覆盖）")
     if os.environ.get(ENV_PROJECT_ROOT, "").strip():
@@ -841,7 +841,7 @@ def always_approve(permission_state: dict, tool: str) -> bool:
     apply_permission_override(permission_state, tool, "allow")
     dump_permissions_json(
         current_permissions(permission_state),
-        project_root() / "javis.json",
+        project_root() / "jarvis.json",
     )
     return True
 

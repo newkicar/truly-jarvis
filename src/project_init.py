@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from src.project_paths import JAVIS_JSON, discover_project_root, install_root
+from src.project_paths import JARVIS_JSON, discover_project_root, install_root
 
 ENV_EXAMPLE = """\
 # JARVIS 环境变量（复制为 .env 并填写）
@@ -16,7 +16,7 @@ MODEL_ID=mimo-v2.5
 TAVILY_KEY=tvly-your-key
 """
 
-JAVIS_JSON_TEMPLATE: dict = {
+JARVIS_JSON_TEMPLATE: dict = {
     "model": {
         "base_url_env": "BASE_URL",
         "api_key_env": "API_KEY",
@@ -86,12 +86,12 @@ def init_project(
     skipped: list[str] = []
     messages: list[str] = []
 
-    javis_path = root / JAVIS_JSON
+    javis_path = root / JARVIS_JSON
     if javis_path.is_file() and not force:
         skipped.append(str(javis_path))
-        messages.append(f"已存在 {JAVIS_JSON}，跳过（加 --force 覆盖）")
+        messages.append(f"已存在 {JARVIS_JSON}，跳过（加 --force 覆盖）")
     else:
-        data = dict(JAVIS_JSON_TEMPLATE)
+        data = dict(JARVIS_JSON_TEMPLATE)
         if vault_path:
             data["knowledge_base"] = vault_path
         javis_path.write_text(
@@ -159,7 +159,7 @@ def format_init_report(root: Path, created: list[str], skipped: list[str], messa
             "",
             "下一步：",
             f"  1. 编辑 {root / '.env'} 填写 BASE_URL / API_KEY / MODEL_ID / TAVILY_KEY",
-            f"  2. 编辑 {root / JAVIS_JSON}（knowledge_base、permissions 等）",
+            f"  2. 编辑 {root / JARVIS_JSON}（knowledge_base、permissions 等）",
             f"  3. 双击 {root / 'run-javis.cmd'} 启动 TUI",
             "",
             "或手动指定项目根（从 JARVIS 安装目录运行）：",
@@ -206,13 +206,13 @@ def run_init_cli(argv: list[str] | None = None) -> int:
 def suggest_init_if_missing(start: Path | None = None) -> str | None:
     """cwd 及上级均无 javis.json 时返回提示文案。"""
     current = (start or Path.cwd()).resolve()
-    if (current / JAVIS_JSON).is_file():
+    if (current / JARVIS_JSON).is_file():
         return None
     for directory in (current, *current.parents):
-        if (directory / JAVIS_JSON).is_file():
+        if (directory / JARVIS_JSON).is_file():
             return None
     return (
-        f"当前目录未找到 {JAVIS_JSON}。可先初始化项目：\n"
+        f"当前目录未找到 {JARVIS_JSON}。可先初始化项目：\n"
         f"  python -m src.main --init\n"
         f"然后在项目目录运行 run-javis.cmd"
     )

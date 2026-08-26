@@ -74,7 +74,7 @@ def test_when_predicate_matches_command_pattern():
 
 def test_dump_permissions_roundtrip(tmp_path):
     """dump_permissions_json 把内存配置写回 javis.json。"""
-    json_path = tmp_path / "javis.json"
+    json_path = tmp_path / "jarvis.json"
     json_path.write_text(json.dumps({"model": {}, "mcps": []}), encoding="utf-8")
 
     _, state = build_permission_interrupts({"*": "ask"})

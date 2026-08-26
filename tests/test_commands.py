@@ -758,9 +758,9 @@ def test_format_doctor_report_healthy(tmp_path, monkeypatch):
     from src.config import Config
 
     monkeypatch.setattr(commands, "resolve_env_file", lambda root: tmp_path / ".env")
-    monkeypatch.setattr(commands, "resolve_javis_json", lambda root: tmp_path / "javis.json")
+    monkeypatch.setattr(commands, "resolve_javis_json", lambda root: tmp_path / "jarvis.json")
     (tmp_path / ".env").write_text("BASE_URL=http://x\nAPI_KEY=secret\nMODEL_ID=m\nTAVILY_KEY=t", encoding="utf-8")
-    (tmp_path / "javis.json").write_text('{"obsidian_vault":"v","permissions":{"*":"ask"}}', encoding="utf-8")
+    (tmp_path / "jarvis.json").write_text('{"obsidian_vault":"v","permissions":{"*":"ask"}}', encoding="utf-8")
 
     cfg = Config(
         project_root=tmp_path,
@@ -805,7 +805,7 @@ def test_format_doctor_report_stuck(tmp_path, monkeypatch):
     from src.config import Config
 
     monkeypatch.setattr(commands, "resolve_env_file", lambda root: tmp_path / ".env")
-    monkeypatch.setattr(commands, "resolve_javis_json", lambda root: tmp_path / "javis.json")
+    monkeypatch.setattr(commands, "resolve_javis_json", lambda root: tmp_path / "jarvis.json")
 
     cfg = Config(
         project_root=tmp_path,

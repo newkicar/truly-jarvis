@@ -6,12 +6,12 @@ from src.project_init import init_project, suggest_init_if_missing
 
 def test_init_project_creates_layout(tmp_path: Path):
     created, skipped, messages = init_project(tmp_path, vault_path="D:/vault")
-    assert (tmp_path / "javis.json").is_file()
+    assert (tmp_path / "jarvis.json").is_file()
     assert (tmp_path / ".env").is_file()
     assert (tmp_path / "memory").is_dir()
     assert (tmp_path / "vault" / "Inbox").is_dir()
     assert (tmp_path / "run-javis.cmd").is_file()
-    data = (tmp_path / "javis.json").read_text(encoding="utf-8")
+    data = (tmp_path / "jarvis.json").read_text(encoding="utf-8")
     assert "D:/vault" in data
     assert "copy_on_select" in data
     assert created
@@ -19,16 +19,16 @@ def test_init_project_creates_layout(tmp_path: Path):
 
 
 def test_init_project_skips_existing_javis_json(tmp_path: Path):
-    (tmp_path / "javis.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "jarvis.json").write_text("{}", encoding="utf-8")
     created, skipped, _ = init_project(tmp_path)
-    assert str(tmp_path / "javis.json") in skipped
-    assert (tmp_path / "javis.json").read_text(encoding="utf-8") == "{}"
+    assert str(tmp_path / "jarvis.json") in skipped
+    assert (tmp_path / "jarvis.json").read_text(encoding="utf-8") == "{}"
 
 
 def test_init_project_force_overwrites_javis_json(tmp_path: Path):
-    (tmp_path / "javis.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "jarvis.json").write_text("{}", encoding="utf-8")
     init_project(tmp_path, force=True)
-    text = (tmp_path / "javis.json").read_text(encoding="utf-8")
+    text = (tmp_path / "jarvis.json").read_text(encoding="utf-8")
     assert '"knowledge_base"' in text
     assert '"obsidian_vault"' not in text
 
@@ -41,5 +41,5 @@ def test_suggest_init_if_missing(tmp_path: Path, monkeypatch):
     assert hint is not None
     assert "--init" in hint
 
-    (empty / "javis.json").write_text("{}", encoding="utf-8")
+    (empty / "jarvis.json").write_text("{}", encoding="utf-8")
     assert suggest_init_if_missing() is None

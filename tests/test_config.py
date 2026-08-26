@@ -61,7 +61,7 @@ def test_load_config_builds_dataclass(tmp_path: Path):
         "tavily_key:tvly-test\n",
         encoding="utf-8",
     )
-    json_file = tmp_path / "javis.json"
+    json_file = tmp_path / "jarvis.json"
     json_file.write_text(
         json.dumps(
             {
@@ -91,7 +91,7 @@ def test_load_config_builds_dataclass(tmp_path: Path):
 def test_load_config_absolutizes_paths(tmp_path: Path):
     env_file = tmp_path / ".env"
     env_file.write_text("base_url:https://x.com\napi_key:k\nmodel_id:m\ntavily_key:t\n", encoding="utf-8")
-    json_file = tmp_path / "javis.json"
+    json_file = tmp_path / "jarvis.json"
     vault_rel = tmp_path / "vault"
     json_file.write_text(
         json.dumps(
@@ -113,7 +113,7 @@ def test_load_config_absolutizes_paths(tmp_path: Path):
 def test_load_config_missing_required_key_raises(tmp_path: Path):
     env_file = tmp_path / ".env"
     env_file.write_text("base_url:https://x.com\n", encoding="utf-8")
-    json_file = tmp_path / "javis.json"
+    json_file = tmp_path / "jarvis.json"
     json_file.write_text(
         json.dumps(
             {
@@ -135,7 +135,7 @@ def test_load_config_parses_mcps_dict(tmp_path: Path):
     """mcps 应按 OpenCode 风格 dict（{"servers": {...}}）解析，而非旧 list。"""
     env_file = tmp_path / ".env"
     env_file.write_text("base_url:https://x.com\napi_key:k\nmodel_id:m\ntavily_key:t\n", encoding="utf-8")
-    json_file = tmp_path / "javis.json"
+    json_file = tmp_path / "jarvis.json"
     json_file.write_text(
         json.dumps(
             {
@@ -167,7 +167,7 @@ def test_load_config_mcps_missing_defaults_to_empty(tmp_path: Path):
     """未配置 mcps 键时 cfg.mcps 默认为空 dict（向后兼容旧 list 格式）。"""
     env_file = tmp_path / ".env"
     env_file.write_text("base_url:https://x.com\napi_key:k\nmodel_id:m\ntavily_key:t\n", encoding="utf-8")
-    json_file = tmp_path / "javis.json"
+    json_file = tmp_path / "jarvis.json"
     json_file.write_text(
         json.dumps(
             {
@@ -187,7 +187,7 @@ def test_load_config_mcps_missing_defaults_to_empty(tmp_path: Path):
 def test_load_config_rag_from_json(tmp_path: Path):
     env_file = tmp_path / ".env"
     env_file.write_text("base_url:https://x.com\napi_key:k\nmodel_id:m\ntavily_key:t\n", encoding="utf-8")
-    json_file = tmp_path / "javis.json"
+    json_file = tmp_path / "jarvis.json"
     json_file.write_text(
         json.dumps(
             {
@@ -210,7 +210,7 @@ def test_load_config_rag_from_json(tmp_path: Path):
 def test_load_config_tui_from_json(tmp_path: Path):
     env_file = tmp_path / ".env"
     env_file.write_text("base_url:https://x.com\napi_key:k\nmodel_id:m\ntavily_key:t\n", encoding="utf-8")
-    json_file = tmp_path / "javis.json"
+    json_file = tmp_path / "jarvis.json"
     json_file.write_text(
         json.dumps(
             {
@@ -232,7 +232,7 @@ def _write_min_env(tmp_path: Path) -> Path:
 
 
 def _write_json(tmp_path: Path, data: dict) -> Path:
-    json_file = tmp_path / "javis.json"
+    json_file = tmp_path / "jarvis.json"
     base = {"model": {"base_url_env": "BASE_URL", "api_key_env": "API_KEY", "model_id_env": "MODEL_ID"}}
     base.update(data)
     json_file.write_text(json.dumps(base), encoding="utf-8")

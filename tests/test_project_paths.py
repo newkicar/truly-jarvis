@@ -16,7 +16,7 @@ def test_discover_project_root_finds_javis_in_parent(tmp_path, monkeypatch):
     project = tmp_path / "my-app"
     nested = project / "sub"
     nested.mkdir(parents=True)
-    (project / "javis.json").write_text("{}", encoding="utf-8")
+    (project / "jarvis.json").write_text("{}", encoding="utf-8")
     monkeypatch.chdir(nested)
     assert discover_project_root() == project.resolve()
 
@@ -39,8 +39,8 @@ def test_discover_project_root_env_override(tmp_path, monkeypatch):
 def test_resolve_javis_json_prefers_project(tmp_path):
     project = tmp_path / "proj"
     project.mkdir()
-    (project / "javis.json").write_text("{}", encoding="utf-8")
-    assert resolve_javis_json(project) == project / "javis.json"
+    (project / "jarvis.json").write_text("{}", encoding="utf-8")
+    assert resolve_javis_json(project) == project / "jarvis.json"
 
 
 def test_runtime_project_root(monkeypatch):

@@ -203,4 +203,4 @@ def test_handle_interrupts_always_approve_updates_state_and_json(monkeypatch, tm
     assert resume["decisions"][0]["type"] == "approve"
     assert state["tools"]["execute"] == "allow"
     assert written["permissions"] == {"execute": "allow"}
-    assert written["path"] == tmp_path / "javis.json"
+    assert written["path"] == tmp_path / "jarvis.json"

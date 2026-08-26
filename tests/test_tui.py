@@ -422,7 +422,7 @@ async def test_at_completion_escape_closes_overlay(tmp_path):
 async def test_theme_persistence(tmp_path):
     import json
 
-    config_file = tmp_path / "javis.json"
+    config_file = tmp_path / "jarvis.json"
     config_file.write_text(json.dumps({"permissions": {"*": "ask"}, "theme": "dracula"}), encoding="utf-8")
 
     app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})

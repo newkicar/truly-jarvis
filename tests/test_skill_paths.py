@@ -22,7 +22,7 @@ def test_user_home_default_uses_dot_javis(monkeypatch, tmp_path):
     fake_home = tmp_path / "home"
     fake_home.mkdir()
     monkeypatch.setattr(Path, "home", lambda: fake_home)
-    assert user_home() == (fake_home / ".javis").resolve()
+    assert user_home() == (fake_home / ".jarvis").resolve()
 
 
 def test_user_home_env_override(tmp_path, monkeypatch):
