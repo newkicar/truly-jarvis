@@ -6,7 +6,7 @@ from src.project_paths import (
     get_project_root,
     install_root,
     resolve_env_file,
-    resolve_javis_json,
+    resolve_jarvis_json,
     set_runtime_project_root,
 )
 
@@ -36,11 +36,11 @@ def test_discover_project_root_env_override(tmp_path, monkeypatch):
     assert discover_project_root() == forced.resolve()
 
 
-def test_resolve_javis_json_prefers_project(tmp_path):
+def test_resolve_jarvis_json_prefers_project(tmp_path):
     project = tmp_path / "proj"
     project.mkdir()
     (project / "jarvis.json").write_text("{}", encoding="utf-8")
-    assert resolve_javis_json(project) == project / "jarvis.json"
+    assert resolve_jarvis_json(project) == project / "jarvis.json"
 
 
 def test_runtime_project_root(monkeypatch):

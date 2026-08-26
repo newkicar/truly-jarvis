@@ -9,9 +9,6 @@ ENV_PROJECT_ROOT = "JARVIS_PROJECT_ROOT"
 ENV_JARVIS_HOME = "JARVIS_HOME"
 DEFAULT_USER_HOME = ".jarvis"
 
-# 向后兼容别名（R2 阶段全面切换后可删除）
-JAVIS_JSON = JARVIS_JSON
-
 
 def install_root() -> Path:
     """JARVIS 引擎安装目录（含 src/、内置 skills/）。"""
@@ -60,10 +57,6 @@ def get_project_root() -> Path:
 
 
 def resolve_jarvis_json(project_root: Path | None = None) -> Path:
-    """解析 jarvis.json 路径：项目根优先，仅隐式发现时 fallback 到安装目录。
-
-    显式传入 project_root 时不 fallback——让 main 的自动初始化正确触发。
-    """
     root = (project_root or discover_project_root()).resolve()
     candidate = root / JARVIS_JSON
     if candidate.is_file():
@@ -74,10 +67,6 @@ def resolve_jarvis_json(project_root: Path | None = None) -> Path:
         if install_candidate.is_file():
             return install_candidate
     return candidate
-
-
-# 向后兼容别名
-resolve_javis_json = resolve_jarvis_json
 
 
 def resolve_env_file(project_root: Path | None = None) -> Path:
@@ -108,10 +97,6 @@ def ensure_user_home() -> Path:
 def resolve_user_jarvis_json() -> Path:
     """用户全局 jarvis.json 路径（~/.jarvis/jarvis.json）。"""
     return user_home() / JARVIS_JSON
-
-
-# 向后兼容别名
-resolve_user_javis_json = resolve_user_jarvis_json
 
 
 INSTRUCTIONS_FILENAME = "JARVIS.md"

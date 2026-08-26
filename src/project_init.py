@@ -204,7 +204,7 @@ def run_init_cli(argv: list[str] | None = None) -> int:
 
 
 def suggest_init_if_missing(start: Path | None = None) -> str | None:
-    """cwd 及上级均无 javis.json 时返回提示文案。"""
+    """cwd 及上级均无 jarvis.json 时返回提示文案。"""
     current = (start or Path.cwd()).resolve()
     if (current / JARVIS_JSON).is_file():
         return None
@@ -213,9 +213,28 @@ def suggest_init_if_missing(start: Path | None = None) -> str | None:
             return None
     return (
         f"当前目录未找到 {JARVIS_JSON}。可先初始化项目：\n"
-        f"  python -m src.main --init\n"
-        f"然后在项目目录运行 run-javis.cmd"
+        f"  jarvis --init\n"
     )
+
+
+def auto_init_project(root: Path | None = None) -> None:
+    """首次运行时自动生成项目级 jarvis.json + skills/（对标 opencode 开箱即用）。
+
+    仅在 jarvis.json 不存在时生成，幂等安全。
+    """
+    from src.project_paths import ensure_user_home
+
+    project_root = (root or Path.cwd()).resolve()
+    jarvis_file = project_root / JARVIS_JSON
+    if not jarvis_file.is_file():
+        data = dict(JARVIS_JSON_TEMPLATE)
+        data["project_name"] = project_root.name
+        jarvis_file.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        (project_root / "skills").mkdir(exist_ok=True)
+    ensure_user_home()
 
 
 if __name__ == "__main__":

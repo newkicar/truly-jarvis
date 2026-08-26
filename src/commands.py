@@ -11,9 +11,10 @@ from src import time_travel
 from src.project_paths import (
     ENV_JARVIS_HOME,
     ENV_PROJECT_ROOT,
+    JARVIS_JSON,
     install_root,
     resolve_env_file,
-    resolve_javis_json,
+    resolve_jarvis_json,
     user_home,
 )
 
@@ -45,13 +46,13 @@ _HELP_COMMANDS = """\
 CLI_HELP = (
     _HELP_COMMANDS
     + "审批操作时: [y]本次放行 [n]拒绝 [e]编辑参数 [a]always approve(q 放弃本轮)；\n"
-    + "也可直接编辑 javis.json 的 permissions 段（allow/ask/deny）。\n"
+    + f"也可直接编辑 {JARVIS_JSON} 的 permissions 段（allow/ask/deny）。\n"
 )
 
 TUI_HELP = (
     _HELP_COMMANDS
     + "会话：侧边栏点选后 Y 复制 ID、D 删除；或 /delete-session 2 按序号删。\n"
-    + "复制：对话区鼠标拖选（松开自动复制，javis.json tui.copy_on_select）；"
+    + f"复制：对话区鼠标拖选（松开自动复制，{JARVIS_JSON} tui.copy_on_select）；"
     + "Ctrl+Insert / Y（侧边栏会话）；/copy-session 复制 thread_id。\n"
     + "退出：Ctrl+C 或 Ctrl+Q；集成终端若 Ctrl+C 直接杀进程，请用 /exit。\n"
     + "HITL 审批时: 点击按钮选择（放行/永久放行/拒绝/编辑参数），Esc 放弃。\n"
@@ -479,11 +480,11 @@ def _config_layer_lines(project_root: Path) -> list[str]:
     else:
         lines.append(f"  .env ← （未找到；期望 {env_path} 或 {install_root() / '.env'}）")
 
-    json_path = resolve_javis_json(project_root)
+    json_path = resolve_jarvis_json(project_root)
     if json_path.is_file():
-        lines.append(f"  javis.json ← {json_path}")
+        lines.append(f"  {JARVIS_JSON} ← {json_path}")
     else:
-        lines.append(f"  javis.json ← （未找到；期望 {project_root / 'jarvis.json'}）")
+        lines.append(f"  {JARVIS_JSON} ← （未找到；期望 {project_root / JARVIS_JSON}）")
 
     lines.append(f"  用户全局目录 ← {user_home()}（skills；JARVIS_HOME 可覆盖）")
     if os.environ.get(ENV_PROJECT_ROOT, "").strip():

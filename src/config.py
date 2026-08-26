@@ -17,7 +17,7 @@ from src.project_paths import (
     ensure_user_home,
     install_root,
     resolve_env_file,
-    resolve_javis_json,
+    resolve_jarvis_json,
     set_runtime_project_root,
 )
 
@@ -98,7 +98,7 @@ def load_config(
     """
     root = Path(project_root).resolve() if project_root else discover_project_root()
     if json_file is None:
-        json_file = resolve_javis_json(root)
+        json_file = resolve_jarvis_json(root)
         if json_file.is_file():
             root = json_file.parent.resolve()
     else:

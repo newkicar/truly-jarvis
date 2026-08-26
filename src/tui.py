@@ -841,10 +841,11 @@ class JarvisApp(App):
             return
         old_thread = self.thread_id
         self._leave_current_thread(old_thread)
-        # #13: 加载目标会话完整对话历史，通过 _adopt_thread 统一接管
-        pairs = commands.thread_history_text(self.agent, thread_id)
+        # #13: 清空 → 切换提示 → 加载历史（与 action_new_session 顺序一致）
         log = self.query_one("#messages", RichLog)
         log.clear()
+        self._adopt_thread(thread_id, f"[b]已切换到会话 {thread_id}[/b]")
+        pairs = commands.thread_history_text(self.agent, thread_id)
         for role, content in pairs:
             if role == "user":
                 log.write(user_message_markup(content))
@@ -852,7 +853,6 @@ class JarvisApp(App):
                 self._write_ai(log, content)
         if not pairs:
             log.write("[i][dim]（暂无历史）[/dim][/i]")
-        self._adopt_thread(thread_id, f"[b]已切换到会话 {thread_id}[/b]")
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option_list.id != "session_sidebar":

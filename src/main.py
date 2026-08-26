@@ -5,7 +5,6 @@
 CLI 支持 /exit、/sessions、/delete-session、/history、/replay、/fork、/snapshot、/rollback 等命令。
 """
 import sys
-from pathlib import Path
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 
@@ -183,21 +182,9 @@ def main(argv=None) -> int:
         config = load_config()
     except (KeyError, FileNotFoundError):
         # P2: 首次运行——自动生成项目配置 + skills/ + 全局目录
-        from src.project_paths import JARVIS_JSON, ensure_user_home
+        from src.project_init import auto_init_project
 
-        root = Path.cwd()
-        jarvis_file = root / JARVIS_JSON
-        if not jarvis_file.is_file():
-            from src.project_init import JARVIS_JSON_TEMPLATE
-
-            data = dict(JARVIS_JSON_TEMPLATE)
-            data["project_name"] = root.name
-            jarvis_file.write_text(
-                __import__("json").dumps(data, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-            (root / "skills").mkdir(exist_ok=True)
-        ensure_user_home()
+        auto_init_project()
         config = load_config()
 
     thread_id = "default"
