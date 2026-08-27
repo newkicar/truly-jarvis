@@ -181,7 +181,8 @@ def test_load_config_mcps_missing_defaults_to_empty(tmp_path: Path):
         encoding="utf-8",
     )
     cfg = load_config(env_file=env_file, json_file=json_file)
-    assert cfg.mcps == {}
+    # 全局 ~/.jarvis/jarvis.json 提供 mcps 默认值，项目未覆盖时继承
+    assert "servers" in cfg.mcps
 
 
 def test_load_config_rag_from_json(tmp_path: Path):

@@ -18,10 +18,22 @@ from src.project_paths import (
     install_root,
     resolve_env_file,
     resolve_jarvis_json,
+    resolve_user_jarvis_json,
     set_runtime_project_root,
 )
 
 REQUIRED_ENV_KEYS = ("BASE_URL", "API_KEY", "MODEL_ID", "TAVILY_KEY")
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    """合并两个 dict：override 覆盖 base（同 key），嵌套 dict 递归合并。"""
+    merged = dict(base)
+    for key, val in override.items():
+        if key in merged and isinstance(merged[key], dict) and isinstance(val, dict):
+            merged[key] = _deep_merge(merged[key], val)
+        else:
+            merged[key] = val
+    return merged
 
 
 def ensure_utf8_stdout() -> None:
@@ -92,9 +104,10 @@ def load_config(
     json_file: Path | None = None,
     project_root: Path | None = None,
 ) -> Config:
-    """加载 .env + javis.json，产出 Config。
+    """加载 .env + jarvis.json，产出 Config。
 
-    未显式传入路径时：从 cwd 发现 project_root，再解析 javis.json / .env。
+    配置合并：~/.jarvis/jarvis.json（全局默认）+ 项目 jarvis.json（覆盖全局）。
+    未显式传入路径时：从 cwd 发现 project_root，再解析 jarvis.json / .env。
     """
     root = Path(project_root).resolve() if project_root else discover_project_root()
     if json_file is None:
@@ -122,6 +135,15 @@ def load_config(
         raise KeyError(f"缺少必需配置项（.env）: {', '.join(missing)}")
 
     data = _load_json_file(json_file)
+
+    # 全局配置合并（项目覆盖全局，同 opencode 语义）
+    global_cfg_path = resolve_user_jarvis_json()
+    if global_cfg_path.is_file():
+        try:
+            global_data = _load_json_file(global_cfg_path)
+            data = _deep_merge(global_data, data)
+        except Exception:
+            pass  # 全局配置损坏时静默忽略，不影响项目启动
     model_cfg = data.get("model", {})
 
     def _resolve_env_name(cfg_key: str, default: str) -> str:

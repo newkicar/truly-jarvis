@@ -87,10 +87,42 @@ def user_home() -> Path:
 
 
 def ensure_user_home() -> Path:
-    """确保用户全局目录存在（skills/ 等可写内容）。"""
+    """确保用户全局目录存在（skills/ + 全局 jarvis.json 默认配置）。"""
+    import json as _json
+
     home = user_home()
     home.mkdir(parents=True, exist_ok=True)
     (home / "skills").mkdir(parents=True, exist_ok=True)
+
+    # 全局默认配置（仅非路径项；路径项始终由项目级 jarvis.json 决定）
+    global_cfg = home / JARVIS_JSON
+    if not global_cfg.is_file():
+        defaults = {
+            "model": {
+                "base_url_env": "BASE_URL",
+                "api_key_env": "API_KEY",
+                "model_id_env": "MODEL_ID",
+            },
+            "mcps": {"servers": {}},
+            "permissions": {
+                "*": "ask",
+                "execute": "ask",
+                "write_file": "ask",
+                "edit_file": "ask",
+                "delete": "ask",
+            },
+            "hooks": {"permission": []},
+            "rag": {
+                "ollama_base_url": "http://localhost:11434",
+                "embed_model": "quentinz/bge-small-zh-v1.5",
+            },
+            "execution": {"max_steps": 200},
+            "tui": {"copy_on_select": True},
+        }
+        global_cfg.write_text(
+            _json.dumps(defaults, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
     return home
 
 
