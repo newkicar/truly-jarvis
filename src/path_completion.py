@@ -5,25 +5,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _SKIP_DIR_NAMES = frozenset({".git", ".obsidian", "node_modules", "__pycache__", ".venv", "venv"})
-_WORKSPACE_SUFFIXES = frozenset(
-    {
-        ".py",
-        ".md",
-        ".json",
-        ".yaml",
-        ".yml",
-        ".toml",
-        ".ts",
-        ".tsx",
-        ".js",
-        ".jsx",
-        ".css",
-        ".html",
-        ".txt",
-        ".rs",
-        ".go",
-    }
-)
+_BINARY_SUFFIXES = frozenset({
+    ".xlsx", ".xls", ".xlsm", ".docx", ".doc", ".pptx", ".ppt",
+    ".pdf", ".csv", ".tsv",
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".ico",
+    ".mp3", ".mp4", ".avi", ".mov", ".wav",
+    ".zip", ".tar", ".gz", ".7z", ".rar",
+    ".exe", ".dll", ".so", ".dylib",
+    ".db", ".sqlite", ".sqlite3",
+})
 _VAULT_SUFFIXES = frozenset({".md"})
 
 
@@ -41,14 +31,15 @@ def _should_skip(path: Path, root: Path) -> bool:
     return any(part in _SKIP_DIR_NAMES or part.startswith(".") for part in rel.parts[:-1])
 
 
-def _scan_paths(root: Path, prefix: str, suffixes: frozenset[str], *, cap: int = 500) -> list[str]:
+def _scan_paths(root: Path, prefix: str, suffixes: frozenset[str] | None = None, *, cap: int = 500) -> list[str]:
+    """扫描目录下所有文件。suffixes=None 时不过滤后缀（fuzzy search）。"""
     if not root.is_dir():
         return []
     out: list[str] = []
     for file_path in root.rglob("*"):
         if not file_path.is_file() or _should_skip(file_path, root):
             continue
-        if file_path.suffix.lower() not in suffixes:
+        if suffixes is not None and file_path.suffix.lower() not in suffixes:
             continue
         rel = file_path.relative_to(root).as_posix()
         out.append(f"{prefix}{rel}")
@@ -104,8 +95,12 @@ def collect_completion_paths(
     items: list[PathSuggestion] = []
 
     if scope in ("all", "workspace") and workspace_root is not None:
-        for path in _scan_paths(workspace_root, "/workspace/", _WORKSPACE_SUFFIXES):
-            items.append(PathSuggestion(path, "项目"))
+        for path in _scan_paths(workspace_root, "/workspace/"):
+            hint = "项目"
+            suffix = Path(path).suffix.lower()
+            if suffix in _BINARY_SUFFIXES:
+                hint = "项目 [binary]"
+            items.append(PathSuggestion(path, hint))
 
     if scope in ("all", "memories") and memories_root is not None:
         for path in _scan_paths(memories_root, "/memories/", _VAULT_SUFFIXES, cap=100):
