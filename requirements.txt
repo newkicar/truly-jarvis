@@ -14,3 +14,12 @@ httpx
 apscheduler
 textual>=0.40.0
 chromadb>=0.5.0
+
+# Office skills
+openpyxl>=3.1
+pandas>=2.0
+python-docx>=1.1
+python-pptx>=0.6.23
+pypdf>=4.0
+pdfplumber>=0.11
+reportlab>=4.0

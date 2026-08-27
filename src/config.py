@@ -24,6 +24,30 @@ from src.project_paths import (
 
 REQUIRED_ENV_KEYS = ("BASE_URL", "API_KEY", "MODEL_ID", "TAVILY_KEY")
 
+# 全局默认配置（~/.jarvis/jarvis.json）；仅非路径项，路径项由项目级 jarvis.json 决定
+GLOBAL_DEFAULTS: dict = {
+    "model": {
+        "base_url_env": "BASE_URL",
+        "api_key_env": "API_KEY",
+        "model_id_env": "MODEL_ID",
+    },
+    "mcps": {"servers": {}},
+    "permissions": {
+        "*": "ask",
+        "execute": "ask",
+        "write_file": "ask",
+        "edit_file": "ask",
+        "delete": "ask",
+    },
+    "hooks": {"permission": []},
+    "rag": {
+        "ollama_base_url": "http://localhost:11434",
+        "embed_model": "quentinz/bge-small-zh-v1.5",
+    },
+    "execution": {"max_steps": 200},
+    "tui": {"copy_on_select": True},
+}
+
 
 def _deep_merge(base: dict, override: dict) -> dict:
     """合并两个 dict：override 覆盖 base（同 key），嵌套 dict 递归合并。"""
@@ -142,8 +166,9 @@ def load_config(
         try:
             global_data = _load_json_file(global_cfg_path)
             data = _deep_merge(global_data, data)
-        except Exception:
-            pass  # 全局配置损坏时静默忽略，不影响项目启动
+        except Exception as exc:
+            import logging
+            logging.warning("全局配置 %s 解析失败，忽略: %s", global_cfg_path, exc)
     model_cfg = data.get("model", {})
 
     def _resolve_env_name(cfg_key: str, default: str) -> str:

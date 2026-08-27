@@ -7,7 +7,7 @@ from pathlib import Path
 _SKIP_DIR_NAMES = frozenset({".git", ".obsidian", "node_modules", "__pycache__", ".venv", "venv"})
 _BINARY_SUFFIXES = frozenset({
     ".xlsx", ".xls", ".xlsm", ".docx", ".doc", ".pptx", ".ppt",
-    ".pdf", ".csv", ".tsv",
+    ".pdf",
     ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".ico",
     ".mp3", ".mp4", ".avi", ".mov", ".wav",
     ".zip", ".tar", ".gz", ".7z", ".rar",
@@ -95,7 +95,7 @@ def collect_completion_paths(
     items: list[PathSuggestion] = []
 
     if scope in ("all", "workspace") and workspace_root is not None:
-        for path in _scan_paths(workspace_root, "/workspace/"):
+        for path in _scan_paths(workspace_root, "/workspace/", cap=300):
             hint = "项目"
             suffix = Path(path).suffix.lower()
             if suffix in _BINARY_SUFFIXES:

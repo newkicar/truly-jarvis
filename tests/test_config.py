@@ -163,8 +163,8 @@ def test_load_config_parses_mcps_dict(tmp_path: Path):
     assert servers["api"]["url"] == "http://localhost:8000/mcp"
 
 
-def test_load_config_mcps_missing_defaults_to_empty(tmp_path: Path):
-    """未配置 mcps 键时 cfg.mcps 默认为空 dict（向后兼容旧 list 格式）。"""
+def test_load_config_mcps_inherits_global_defaults(tmp_path: Path):
+    """项目未配置 mcps 键时，从全局 ~/.jarvis/jarvis.json 继承默认值。"""
     env_file = tmp_path / ".env"
     env_file.write_text("base_url:https://x.com\napi_key:k\nmodel_id:m\ntavily_key:t\n", encoding="utf-8")
     json_file = tmp_path / "jarvis.json"

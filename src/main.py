@@ -178,6 +178,9 @@ def main(argv=None) -> int:
             init_args = ["--force", *init_args]
         return run_init_cli(init_args or None)
 
+    from src.project_paths import ensure_user_home
+    ensure_user_home()  # 确保 ~/.jarvis/jarvis.json 存在（冷启动时全局配置合并需要）
+
     try:
         config = load_config()
     except (KeyError, FileNotFoundError):
@@ -201,7 +204,7 @@ def main(argv=None) -> int:
     mcp_tools = load_mcp_tools(config.mcps)
 
     with SqliteSaver.from_conn_string(str(config.checkpoint_db)) as checkpointer:
-        checkpointer.setup()  # 确保 checkpoints/writes 表存在（绕过 cursor() 的裸 SQL 需要）
+        checkpointer.setup()  # 确保 checkpoints/writes 表存在（cursor() 内部也会懒触发，但显式调用更安全）
         _, permission_state = build_permission_interrupts(
             config.permissions,
             hooks=config.hooks,

@@ -9,6 +9,21 @@ checkpoint，不触网、不碰真 checkpoints.sqlite。
 from src import commands
 
 
+def _make_fake_cp(conn):
+    """为 FakeConn 创建带 cursor() 的 FakeCp（消除重复定义）。"""
+    class _FakeCp:
+        pass
+    cp = _FakeCp()
+    cp.conn = conn
+
+    @contextmanager
+    def _cursor(transaction=True):
+        yield conn
+
+    cp.cursor = _cursor
+    return cp
+
+
 class FakeState:
     """模拟 get_state_history 返回的 checkpoint 对象。"""
 
