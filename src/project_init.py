@@ -26,7 +26,7 @@ JARVIS_JSON_TEMPLATE: dict = {
     # 兼容旧键 obsidian_vault（knowledge_base 优先）。
     "knowledge_base": "vault",
     "memory_dir": "memory",
-    "checkpoint_db": "checkpoints.sqlite",
+    "checkpoint_db": "checkpoints/checkpoints.sqlite",
     "skills": ["skills/"],
     "schedules_dir": "schedules",
     "mcps": {"servers": {}},

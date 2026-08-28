@@ -184,7 +184,7 @@ def load_config(
     kb_raw = data.get("knowledge_base", data.get("obsidian_vault"))
     vault = Path(os.path.expandvars(str(kb_raw))).resolve() if kb_raw else None
     memory = (root / data.get("memory_dir", "memory")).resolve()
-    checkpoint_db = (root / data.get("checkpoint_db", "checkpoints.sqlite")).resolve()
+    checkpoint_db = (root / data.get("checkpoint_db", "checkpoints/checkpoints.sqlite")).resolve()
     schedules_dir = (root / data.get("schedules_dir", "schedules")).resolve()
     skills = tuple((root / s).resolve() for s in data.get("skills", []))
     mcps = data.get("mcps", {})

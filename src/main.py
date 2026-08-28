@@ -201,6 +201,7 @@ def main(argv=None) -> int:
         if rest:
             thread_id = rest[0]
 
+    config.checkpoint_db.parent.mkdir(parents=True, exist_ok=True)
     mcp_tools = load_mcp_tools(config.mcps)
 
     with SqliteSaver.from_conn_string(str(config.checkpoint_db)) as checkpointer:
