@@ -28,3 +28,10 @@ Thumbs.db
 memory/rag-index/
 tmp/
 history-sessions/
+
+# 个人记忆与定时任务（每人自建；示例模板 *.example.* 保留共享）
+memory/*.md
+!memory/README.md
+!memory/*.example.md
+schedules/*.json
+!schedules/*.example.json

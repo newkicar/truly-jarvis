@@ -1,6 +1,6 @@
 {
   "id": "tech-daily",
-  "enabled": true,
+  "enabled": false,
   "cron": "0 8 * * *",
   "task": "调研国内 AI 大模型行业最新动态",
   "save_path": "vault:Inbox/",

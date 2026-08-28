@@ -26,6 +26,17 @@ def test_load_schedules_filters_disabled(tmp_path):
     assert [t["id"] for t in tasks] == ["a"]
 
 
+def test_load_schedules_skips_example_templates(tmp_path):
+    """*.example.json 是共享模板，不应被当作真实任务加载。"""
+    cfg = make_fake_config(tmp_path)
+    _write_schedule(cfg.schedules_dir, "real.json", {"id": "real", "task": "t", "cron": "0 8 * * *"})
+    # 即使 example 里 enabled: true，也应被跳过
+    _write_schedule(cfg.schedules_dir, "demo.example.json", {"id": "demo", "task": "t", "enabled": True})
+
+    tasks = scheduler.load_schedules(cfg.schedules_dir)
+    assert [t["id"] for t in tasks] == ["real"]
+
+
 def test_load_schedules_requires_id_and_task(tmp_path):
     cfg = make_fake_config(tmp_path)
     _write_schedule(cfg.schedules_dir, "bad.json", {"cron": "0 8 * * *"})

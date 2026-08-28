@@ -62,6 +62,8 @@ def load_schedules(schedules_dir: Path) -> list[dict]:
     if not schedules_dir.exists():
         return tasks
     for path in sorted(schedules_dir.glob("*.json")):
+        if ".example." in path.name:
+            continue  # 跳过示例模板（*.example.json）
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
