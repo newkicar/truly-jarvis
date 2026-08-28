@@ -1,11 +1,12 @@
 """Skill 目录发现：用户全局 ~/.jarvis + 项目（两层模型，对齐 opencode）。"""
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
 from src.config import Config
-from src.project_paths import user_home
+from src.project_paths import install_root, user_home
 
 USER_SKILLS_VPATH = "/skills/"
 
@@ -14,6 +15,19 @@ USER_SKILLS_VPATH = "/skills/"
 class SkillLayer:
     virtual_path: str
     fs_path: Path
+
+
+def seed_builtin_skills() -> None:
+    """将安装包内置 skill 拷贝到 ~/.jarvis/skills（合并式：已存在则合并，不覆盖同名文件）。"""
+    builtin_skills = install_root() / "skills"
+    user_skills = user_home() / "skills"
+    user_skills.mkdir(parents=True, exist_ok=True)
+
+    if builtin_skills.is_dir():
+        for child in builtin_skills.iterdir():
+            if child.is_dir() and not child.name.startswith(".") and not child.name.startswith("__"):
+                target = user_skills / child.name
+                shutil.copytree(child, target, dirs_exist_ok=True)
 
 
 def discover_skill_layers(config: Config) -> tuple[SkillLayer, ...]:

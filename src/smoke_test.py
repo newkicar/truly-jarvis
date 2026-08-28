@@ -72,7 +72,6 @@ def main() -> int:
     argv = sys.argv[1:]
     use_tui, use_hitl, question = parse_smoke_argv(argv)
     config = load_config()
-    config.checkpoint_db.parent.mkdir(parents=True, exist_ok=True)
     mcp_tools = load_mcp_tools(config.mcps)
 
     with SqliteSaver.from_conn_string(str(config.checkpoint_db)) as checkpointer:

@@ -8,15 +8,13 @@ from typing import Iterator
 
 from src.vault_guard import VAULT_WRITE_TOOLS, is_writable_vault_path, normalize_vault_path
 
-from src.project_paths import RUNTIME_DATA_DIR
+from src.project_paths import resolve_checkpoint_db
 
 DB_NAME = "inbox_snapshots.sqlite"
 
 
 def _db_path(root: Path) -> Path:
-    path = Path(root).resolve() / RUNTIME_DATA_DIR / DB_NAME
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
+    return resolve_checkpoint_db(root, DB_NAME)
 
 
 def _init_db(conn: sqlite3.Connection) -> None:

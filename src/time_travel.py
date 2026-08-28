@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Optional
 
-from src.project_paths import RUNTIME_DATA_DIR
+from src.project_paths import resolve_checkpoint_db
 
 DB_NAME = "git_mapping.sqlite"
 
@@ -44,9 +44,9 @@ def _has_changes(root: Path) -> bool:
 
 
 def _db_path(root: Path) -> Path:
-    path = root / RUNTIME_DATA_DIR / DB_NAME
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
+    return resolve_checkpoint_db(root, DB_NAME)
+
+
 
 
 def _init_db(root: Path):
