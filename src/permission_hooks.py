@@ -9,7 +9,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.permissions import GATED_TOOLS, _command_from_args, _tool_arg_value
+from src.permissions import GATED_TOOLS
+from src.tool_call import arg_value, command
 
 VALID_HOOK_DECISIONS = frozenset({"allow", "deny", "ask"})
 
@@ -64,8 +65,8 @@ def parse_permission_hooks(hooks_cfg: object, *, project_root: Path | None = Non
 def hook_match_value(tool: str, args: dict) -> str:
     """构造 hook 匹配用的 value（与 permissions 规则集同形）。"""
     if tool == "execute":
-        return _command_from_args(args)
-    return _tool_arg_value(args, "file_path", "path", "pattern", "command")
+        return command(args)
+    return arg_value(args, "file_path", "path", "pattern", "command")
 
 
 def hook_matches(rule: PermissionHookRule, tool: str, value: str) -> bool:

@@ -4,16 +4,17 @@
 state 引用的既有惯例）——TUI 切换只改 state，无需重建 agent。
 
 Plan 模式两道闸：
-1. wrap_tool_call：写类工具（write_file/edit_file/delete）执行前拦截，返回
-   error ToolMessage 引导先完成规划。execute 不硬拦——agent 需要用它做只读
-   探索（如 python -c 读取文件、查看数据）；禁止 execute 中修改状态的行为
-   由系统提示词约束。
+1. wrap_tool_call（GuardMiddleware.block）：写类工具（write_file/edit_file/delete）
+   执行前拦截，返回 error ToolMessage 引导先完成规划。execute 不硬拦——agent 需要
+   用它做只读探索（如 python -c 读取文件、查看数据）；禁止 execute 中修改状态的
+   行为由系统提示词约束。
 2. wrap_model_call：往当轮 system 尾部追加规划约束提示词（StepBudgetMiddleware
    手法），不写入持久历史。
 """
 from __future__ import annotations
 
-from langchain.agents.middleware.types import AgentMiddleware
+from src.guard import GuardMiddleware
+from src.tool_call import ToolCallView
 
 MODE_KEY = "mode"
 MODES = ("act", "plan")
@@ -43,8 +44,11 @@ def set_mode(state: dict, mode: str) -> None:
     state[MODE_KEY] = mode
 
 
-class PlanModeMiddleware(AgentMiddleware):
-    """Plan 模式闸门：state 驱动，运行时切换即时生效（无需重建 agent）。"""
+class PlanModeMiddleware(GuardMiddleware):
+    """Plan 模式闸门：state 驱动，运行时切换即时生效（无需重建 agent）。
+
+    tool 侧由 GuardMiddleware.block() 实现；model 侧由 wrap_model_call 单独实现。
+    """
 
     def __init__(self, state: dict):
         super().__init__()
@@ -54,30 +58,14 @@ class PlanModeMiddleware(AgentMiddleware):
     def name(self) -> str:
         return "plan-mode"
 
-    def _blocked_message(self, tool: str, tool_call_id: str):
-        from langchain_core.messages import ToolMessage
-
-        return ToolMessage(
-            content=(
-                f"Error: 当前处于 Plan 模式，{tool} 已被禁用。"
+    def block(self, view: ToolCallView) -> str | None:
+        if current_mode(self.state) == "plan" and view.name in PLAN_TOOLS:
+            return (
+                f"Error: 当前处于 Plan 模式，{view.name} 已被禁用。"
                 "请完成规划分析（可用 write_todos 记录任务分解），"
                 "完成后提示用户按 Tab 切回 Act 模式再执行修改。"
-            ),
-            name=tool,
-            tool_call_id=tool_call_id,
-            status="error",
-        )
-
-    def wrap_tool_call(self, request, handler):
-        if current_mode(self.state) == "plan":
-            tool_call = getattr(request, "tool_call", None) or {}
-            tool = tool_call.get("name", "") if isinstance(tool_call, dict) else ""
-            if tool in PLAN_TOOLS:
-                return self._blocked_message(tool, tool_call.get("id", ""))
-        return handler(request)
-
-    async def awrap_tool_call(self, request, handler):
-        return self.wrap_tool_call(request, handler)
+            )
+        return None
 
     def _with_plan_prompt(self, request):
         from langchain_core.messages import SystemMessage

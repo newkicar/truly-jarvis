@@ -2,16 +2,15 @@
 
 #10 路径放开后，write/edit/delete 可以携带真实盘符路径（如
 D:/Obsidian/MyVault/Secrets/x.md）绕开 /vault/ 前缀——本 middleware 构造时
-接收 vault 真实路径，_check 前先把落在 vault 目录内的真实路径映射回
+接收 vault 真实路径，block() 前先把落在 vault 目录内的真实路径映射回
 /vault/... 虚拟形式再走同一套可写区判定（MAJOR 评审项修复）。
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-from langchain.agents.middleware.types import AgentMiddleware
-
-from src.permissions import _tool_arg_value
+from src.guard import GuardMiddleware
+from src.tool_call import ToolCallView
 
 VAULT_PREFIX = "/vault/"
 INBOX_PREFIX = "/vault/Inbox/"
@@ -80,7 +79,7 @@ def blocked_vault_write_message(tool: str, path: str, *, actor: str = "JARVIS") 
     )
 
 
-class VaultWriteGuardMiddleware(AgentMiddleware):
+class VaultWriteGuardMiddleware(GuardMiddleware):
     """拦截对 Vault 非可写区路径的 write_file / edit_file / delete。"""
 
     def __init__(self, *, actor: str = "JARVIS", vault_path=None):
@@ -105,53 +104,16 @@ class VaultWriteGuardMiddleware(AgentMiddleware):
     def name(self) -> str:
         return "vault-write-guard"
 
-    def _check(self, request) -> tuple[str, str] | None:
-        tool_call = getattr(request, "tool_call", None) or {}
-        if not isinstance(tool_call, dict):
+    def block(self, view: ToolCallView) -> str | None:
+        if view.name not in VAULT_WRITE_TOOLS:
             return None
-        tool = tool_call.get("name", "")
-        args = tool_call.get("args", {}) or {}
-        raw = _tool_arg_value(args, "file_path", "path")
-        # 先尝试把真实路径映射回 /vault/...，再统一走虚拟路径判定
+        raw = view.arg_value("file_path", "path")
         virtualized = normalize_vault_path(self._virtualize(raw))
         path = normalize_vault_path(raw)
         for candidate in (virtualized, path):
-            if vault_write_blocked(tool, candidate):
-                return tool, candidate
+            if vault_write_blocked(view.name, candidate):
+                return blocked_vault_write_message(view.name, candidate, actor=self.actor)
         return None
-
-    def _error_message(self, tool: str, path: str) -> str:
-        return blocked_vault_write_message(tool, path, actor=self.actor)
-
-    def wrap_tool_call(self, request, handler):
-        blocked = self._check(request)
-        if blocked:
-            from langchain_core.messages import ToolMessage
-
-            tool, path = blocked
-            tool_call = getattr(request, "tool_call", None) or {}
-            return ToolMessage(
-                content=self._error_message(tool, path),
-                name=tool,
-                tool_call_id=tool_call.get("id", ""),
-                status="error",
-            )
-        return handler(request)
-
-    async def awrap_tool_call(self, request, handler):
-        blocked = self._check(request)
-        if blocked:
-            from langchain_core.messages import ToolMessage
-
-            tool, path = blocked
-            tool_call = getattr(request, "tool_call", None) or {}
-            return ToolMessage(
-                content=self._error_message(tool, path),
-                name=tool,
-                tool_call_id=tool_call.get("id", ""),
-                status="error",
-            )
-        return await handler(request)
 
 
 # 兼容旧名（knowledge_keeper 测试）

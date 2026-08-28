@@ -1,15 +1,13 @@
-"""Inbox 写入快照 middleware。"""
 from __future__ import annotations
 
 from langchain.agents.middleware.types import AgentMiddleware
 
 from src import inbox_snapshots
-from src.permissions import _tool_arg_value
+from src.tool_call import tool_call_view
 from src.vault_guard import normalize_vault_path
 
 
 class InboxSnapshotMiddleware(AgentMiddleware):
-    """Inbox 写入前记录快照（供 /rollback 还原）。"""
 
     def __init__(self, project_root, vault_root):
         super().__init__()
@@ -21,16 +19,14 @@ class InboxSnapshotMiddleware(AgentMiddleware):
         return "inbox-snapshot"
 
     def _context(self, request) -> tuple[str, str, str, str]:
-        tool_call = getattr(request, "tool_call", None) or {}
-        tool = tool_call.get("name", "") if isinstance(tool_call, dict) else ""
-        args = tool_call.get("args", {}) if isinstance(tool_call, dict) else {}
-        path = normalize_vault_path(_tool_arg_value(args, "file_path", "path"))
+        view = tool_call_view(request)
+        path = normalize_vault_path(view.arg_value("file_path", "path"))
         runtime = getattr(request, "runtime", None)
         config = getattr(runtime, "config", None) or {}
         conf = config.get("configurable", {}) if isinstance(config, dict) else {}
         thread_id = conf.get("thread_id", "")
         checkpoint_id = conf.get("checkpoint_id", "")
-        return tool, path, thread_id, checkpoint_id
+        return view.name, path, thread_id, checkpoint_id
 
     def wrap_tool_call(self, request, handler):
         tool, path, thread_id, checkpoint_id = self._context(request)

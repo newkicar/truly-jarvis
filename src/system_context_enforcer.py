@@ -13,9 +13,10 @@ from datetime import datetime
 from typing import Callable
 
 from langchain.agents.middleware.types import AgentMiddleware, hook_config
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
-from src.permissions import _tool_arg_value
+from src.guard import GuardMiddleware
+from src.tool_call import ToolCallView
 
 _WEEKDAYS = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
 
@@ -204,7 +205,7 @@ def last_human_from_state(state) -> str:
     return last_human_from_messages(messages)
 
 
-class SystemContextEnforcerMiddleware(AgentMiddleware):
+class SystemContextEnforcerMiddleware(GuardMiddleware):
     """纯日期 short-circuit；eval 时钟探测代码在工具层重定向。"""
 
     @property
@@ -223,46 +224,13 @@ class SystemContextEnforcerMiddleware(AgentMiddleware):
     async def abefore_model(self, state, runtime):
         return self.before_model(state, runtime)
 
-    def _blocked_tool(self, request) -> tuple[str, str] | None:
-        tool_call = getattr(request, "tool_call", None) or {}
-        if not isinstance(tool_call, dict):
-            return None
-        tool = tool_call.get("name", "")
-        args = tool_call.get("args", {}) or {}
-
-        if tool == _EVAL_TOOL:
-            code = str(args.get("code") or args.get("expression") or "")
+    def block(self, view: ToolCallView) -> str | None:
+        if view.name == _EVAL_TOOL:
+            code = str(view.args.get("code") or view.args.get("expression") or "")
             if eval_code_looks_like_clock_probe(code):
-                return tool, eval_misuse_message()
-
-        if tool == "read_file":
-            path = _tool_arg_value(args, "file_path", "path")
+                return eval_misuse_message()
+        if view.name == "read_file":
+            path = view.arg_value("file_path", "path")
             if "user-profile" in path.replace("\\", "/").casefold():
-                return tool, "不要读 user-profile 推断用户状况；用工具自行核实。"
+                return "不要读 user-profile 推断用户状况；用工具自行核实。"
         return None
-
-    def wrap_tool_call(self, request, handler):
-        blocked = self._blocked_tool(request)
-        if blocked:
-            tool, message = blocked
-            tool_call = getattr(request, "tool_call", None) or {}
-            return ToolMessage(
-                content=message,
-                name=tool,
-                tool_call_id=tool_call.get("id", ""),
-                status="error",
-            )
-        return handler(request)
-
-    async def awrap_tool_call(self, request, handler):
-        blocked = self._blocked_tool(request)
-        if blocked:
-            tool, message = blocked
-            tool_call = getattr(request, "tool_call", None) or {}
-            return ToolMessage(
-                content=message,
-                name=tool,
-                tool_call_id=tool_call.get("id", ""),
-                status="error",
-            )
-        return await handler(request)

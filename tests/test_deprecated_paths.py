@@ -4,6 +4,7 @@ from src.deprecated_paths import (
     deprecated_path_message,
     references_deprecated_path,
 )
+from src.tool_call import tool_call_view
 
 
 class _Req:
@@ -20,15 +21,18 @@ def test_references_deprecated_path():
 def test_blocks_ls_on_system_context():
     mw = DeprecatedPathMiddleware()
     req = _Req("ls", {"path": "/workspace/skills/system-context/scripts"})
-    blocked = mw._blocked(req)
-    assert blocked == ("ls", "/workspace/skills/system-context/scripts")
+    view = tool_call_view(req)
+    message = mw.block(view)
+    assert message is not None
+    assert "system-context" in message
 
 
 def test_blocks_execute_read_context_script():
     mw = DeprecatedPathMiddleware()
     req = _Req("execute", {"command": "python skills/system-context/scripts/read_context.py"})
-    blocked = mw._blocked(req)
-    assert blocked is not None
+    view = tool_call_view(req)
+    message = mw.block(view)
+    assert message is not None
 
 
 def test_wrap_returns_error_tool_message():

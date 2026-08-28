@@ -1,9 +1,8 @@
 """拦截对已废弃路径（如 system-context）的工具访问。"""
 from __future__ import annotations
 
-from langchain.agents.middleware.types import AgentMiddleware
-
-from src.permissions import _command_from_args, _tool_arg_value
+from src.guard import GuardMiddleware
+from src.tool_call import ToolCallView
 
 _DEPRECATED_MARKERS = ("system-context", "read_context.py")
 _PATH_TOOLS = frozenset({"ls", "read_file", "glob", "grep", "write_file", "edit_file", "delete"})
@@ -28,56 +27,21 @@ def deprecated_path_message(tool: str, detail: str) -> str:
     )
 
 
-class DeprecatedPathMiddleware(AgentMiddleware):
+class DeprecatedPathMiddleware(GuardMiddleware):
     """阻止模型访问已删除的 system-context skill 路径。"""
 
     @property
     def name(self) -> str:
         return "deprecated-path-guard"
 
-    def _blocked(self, request) -> tuple[str, str] | None:
-        tool_call = getattr(request, "tool_call", None) or {}
-        if not isinstance(tool_call, dict):
-            return None
-        tool = tool_call.get("name", "")
-        args = tool_call.get("args", {}) or {}
-        if tool in _PATH_TOOLS:
-            path = _tool_arg_value(args, "file_path", "path")
-            pattern = _tool_arg_value(args, "pattern", "glob_pattern")
+    def block(self, view: ToolCallView) -> str | None:
+        if view.name in _PATH_TOOLS:
+            path = view.arg_value("file_path", "path")
+            pattern = view.arg_value("pattern", "glob_pattern")
             if references_deprecated_path(path, pattern):
-                return tool, path or pattern
-        if tool == "execute":
-            cmd = _command_from_args(args)
+                return deprecated_path_message(view.name, path or pattern)
+        if view.name == "execute":
+            cmd = view.command()
             if references_deprecated_path(cmd):
-                return tool, cmd[:120]
+                return deprecated_path_message(view.name, cmd[:120])
         return None
-
-    def wrap_tool_call(self, request, handler):
-        blocked = self._blocked(request)
-        if blocked:
-            from langchain_core.messages import ToolMessage
-
-            tool, detail = blocked
-            tool_call = getattr(request, "tool_call", None) or {}
-            return ToolMessage(
-                content=deprecated_path_message(tool, detail),
-                name=tool,
-                tool_call_id=tool_call.get("id", ""),
-                status="error",
-            )
-        return handler(request)
-
-    async def awrap_tool_call(self, request, handler):
-        blocked = self._blocked(request)
-        if blocked:
-            from langchain_core.messages import ToolMessage
-
-            tool, detail = blocked
-            tool_call = getattr(request, "tool_call", None) or {}
-            return ToolMessage(
-                content=deprecated_path_message(tool, detail),
-                name=tool,
-                tool_call_id=tool_call.get("id", ""),
-                status="error",
-            )
-        return await handler(request)

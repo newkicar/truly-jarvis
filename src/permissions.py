@@ -17,7 +17,8 @@ import fnmatch
 import json
 from pathlib import Path
 
-from langchain.agents.middleware.types import AgentMiddleware
+from src.guard import GuardMiddleware
+from src.tool_call import ToolCallView, arg_value, command, tool_call_view
 
 # 需要审批的工具（deepagents 默认 gated tools）；read/glob/grep 只读工具不审批。
 GATED_TOOLS = ("execute", "write_file", "edit_file", "delete")
@@ -49,40 +50,11 @@ def resolve_tool_action(rule: object, value: str) -> str:
     return "ask"
 
 
-def _tool_arg_value(args: dict, *keys: str) -> str:
-    """从工具调用 args 里取指定字段（多个候选键取第一个存在的）。"""
-    if not isinstance(args, dict):
-        return ""
-    for k in keys:
-        v = args.get(k)
-        if v is not None:
-            return str(v)
-    return ""
+def _action_for_args(state: dict, tool: str, args: dict) -> str:
+    """按 state 当前规则 + 一次工具调用的 args 解析动作（allow/ask/deny）。
 
-
-def _command_from_args(args: dict) -> str:
-    """从 execute 工具参数里还原命令字符串（shell 命令或 command 列表）。"""
-    raw = args.get("command") or args.get("cmd") or ""
-    if isinstance(raw, str):
-        return raw
-    if isinstance(raw, (list, tuple)):
-        return " ".join(str(c) for c in raw)
-    return str(raw)
-
-
-def _action_from_tool_call(state: dict, tool: str, request) -> str:
-    """按 state 当前规则 + 一次工具调用参数解析动作（allow/ask/deny）。
-
-    request 是 ToolCallRequest（含 .tool_call dict）或直接 ToolCall dict。
     Hook 优先于 javis.json permissions（Codex: Hooks → rules → User）。
     """
-    tool_call = getattr(request, "tool_call", None)
-    if isinstance(tool_call, dict) and "name" in tool_call:
-        tool = tool_call.get("name", tool)
-        args = tool_call.get("args", {})
-    else:
-        args = getattr(request, "args", None) or {}
-
     hook_rules = state.get("hooks") or []
     if hook_rules and tool in GATED_TOOLS:
         from src.permission_hooks import resolve_permission_hook
@@ -103,10 +75,18 @@ def _action_from_tool_call(state: dict, tool: str, request) -> str:
     if isinstance(active_rule, str):
         return active_rule if active_rule in VALID_ACTIONS else "ask"
     if tool == "execute":
-        value = _command_from_args(args)
+        value = command(args)
     else:
-        value = _tool_arg_value(args, "file_path", "path", "pattern", "command")
+        value = arg_value(args, "file_path", "path", "pattern", "command")
     return resolve_tool_action(active_rule, value)
+
+
+def _extract_args_from_request(request) -> dict:
+    """从 ToolCallRequest（或兼容对象）提取 args dict。"""
+    tool_call = getattr(request, "tool_call", None)
+    if isinstance(tool_call, dict) and "name" in tool_call:
+        return tool_call.get("args", {}) or {}
+    return getattr(request, "args", None) or {}
 
 
 def _build_when(state: dict, tool: str, rule: object):
@@ -116,7 +96,8 @@ def _build_when(state: dict, tool: str, rule: object):
     PermissionDenyMiddleware 在工具层拦截）。
     """
     def when(request) -> bool:
-        return _action_from_tool_call(state, tool, request) == "ask"
+        args = _extract_args_from_request(request)
+        return _action_for_args(state, tool, args) == "ask"
     return when
 
 
@@ -207,7 +188,7 @@ def apply_permission_override(state: dict, tool: str, action: str, value: str = 
         state["tools"][tool] = action
 
 
-class PermissionDenyMiddleware(AgentMiddleware):
+class PermissionDenyMiddleware(GuardMiddleware):
     """deny 规则拦截：命中 deny 的工具调用不执行，直接返回 permission-denied 错误。
 
     挂在 wrap_tool_call / awrap_tool_call（工具执行前），state 与 interrupt_on
@@ -223,12 +204,20 @@ class PermissionDenyMiddleware(AgentMiddleware):
     def name(self) -> str:
         return "permission-deny"
 
-    def _deny(self, request, tool: str, *, prefix: str = "") -> str:
+    def block(self, view: ToolCallView) -> str | None:
+        tool = view.name
+        if tool not in GATED_TOOLS:
+            return None
+        if _action_for_args(self.state, tool, view.args) != "deny":
+            return None
+        return self._deny_message(view, tool)
+
+    def _deny_message(self, view: ToolCallView, tool: str, *, prefix: str = "") -> str:
         """命中 deny 时生成给模型的错误消息。"""
-        tool_call = getattr(request, "tool_call", None) or {}
-        args = tool_call.get("args", {}) if isinstance(tool_call, dict) else {}
-        value = _command_from_args(args) if tool == "execute" else _tool_arg_value(
-            args, "file_path", "path", "pattern", "command"
+        value = (
+            command(view.args)
+            if tool == "execute"
+            else arg_value(view.args, "file_path", "path", "pattern", "command")
         )
         hook_msg = ""
         hook_rules = self.state.get("hooks") or []
@@ -238,7 +227,7 @@ class PermissionDenyMiddleware(AgentMiddleware):
             hook = resolve_permission_hook(
                 hook_rules,
                 tool,
-                args if isinstance(args, dict) else {},
+                view.args if isinstance(view.args, dict) else {},
                 thread_id=str(self.state.get("thread_id") or ""),
                 project_root=self.state.get("project_root"),
             )
@@ -247,36 +236,8 @@ class PermissionDenyMiddleware(AgentMiddleware):
         lead = prefix or "Permission denied: 操作被 javis.json permissions 规则拒绝（deny）。"
         return (
             f"{lead}"
-            f"工具 {tool}，参数 {value or args}。{hook_msg} 请更换方案或询问用户，不要重试相同调用。"
+            f"工具 {tool}，参数 {value or view.args}。{hook_msg} 请更换方案或询问用户，不要重试相同调用。"
         )
-
-    def wrap_tool_call(self, request, handler):
-        tool_call = getattr(request, "tool_call", None) or {}
-        tool = tool_call.get("name", "") if isinstance(tool_call, dict) else ""
-        if tool in GATED_TOOLS and _action_from_tool_call(self.state, tool, request) == "deny":
-            from langchain_core.messages import ToolMessage
-
-            return ToolMessage(
-                content=self._deny(request, tool),
-                name=tool,
-                tool_call_id=tool_call.get("id", ""),
-                status="error",
-            )
-        return handler(request)
-
-    async def awrap_tool_call(self, request, handler):
-        tool_call = getattr(request, "tool_call", None) or {}
-        tool = tool_call.get("name", "") if isinstance(tool_call, dict) else ""
-        if tool in GATED_TOOLS and _action_from_tool_call(self.state, tool, request) == "deny":
-            from langchain_core.messages import ToolMessage
-
-            return ToolMessage(
-                content=self._deny(request, tool),
-                name=tool,
-                tool_call_id=tool_call.get("id", ""),
-                status="error",
-            )
-        return await handler(request)
 
 
 def dump_permissions_json(permissions: dict, json_path: Path) -> None:

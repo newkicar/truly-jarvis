@@ -12,6 +12,7 @@ from src.system_context_enforcer import (
     eval_misuse_message,
     format_date_answer,
 )
+from src.tool_call import tool_call_view
 
 
 class _Req:
@@ -115,7 +116,8 @@ def test_allows_eval_for_pure_computation():
         {"code": "Array.from({length:3}, (_,i)=>i+1).reduce((a,b)=>a+b,0)"},
         state={"messages": [HumanMessage("帮我算 1+2+3")]},
     )
-    assert mw._blocked_tool(req) is None
+    view = tool_call_view(req)
+    assert mw.block(view) is None
 
 
 def test_eval_misuse_message_is_generic():
