@@ -242,7 +242,7 @@ Hook 收到 JSON（tool/args/path/thread_id），返回 `{"decision":"allow"|"de
 
 ### 加定时任务
 
-在 `schedules/` 新建 JSON 文件，格式见第六节。`/reload-schedules` 热重载。
+在 `schedules/` 新建 JSON 文件，格式见第七节。`/reload-schedules` 热重载。
 
 ### 加 MCP server
 

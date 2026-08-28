@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from src.project_paths import JARVIS_JSON, discover_project_root, install_root
+from src.config import DEFAULT_CHECKPOINT_DB
 
 ENV_EXAMPLE = """\
 # JARVIS 环境变量（复制为 .env 并填写）
@@ -26,7 +27,7 @@ JARVIS_JSON_TEMPLATE: dict = {
     # 兼容旧键 obsidian_vault（knowledge_base 优先）。
     "knowledge_base": "vault",
     "memory_dir": "memory",
-    "checkpoint_db": "checkpoints/checkpoints.sqlite",
+    "checkpoint_db": DEFAULT_CHECKPOINT_DB,
     "skills": ["skills/"],
     "schedules_dir": "schedules",
     "mcps": {"servers": {}},
@@ -115,7 +116,7 @@ def init_project(
     else:
         skipped.append(str(env_file))
 
-    for rel in ("memory", "schedules", "skills", "vault", "vault/Inbox", "vault/Reports"):
+    for rel in ("memory", "schedules", "skills", "vault", "vault/Inbox", "vault/Reports", "checkpoints"):
         path = root / rel
         if path.is_dir():
             skipped.append(str(path))
