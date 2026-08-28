@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 JARVIS_JSON = "jarvis.json"
+RUNTIME_DATA_DIR = "checkpoints"
 ENV_PROJECT_ROOT = "JARVIS_PROJECT_ROOT"
 ENV_JARVIS_HOME = "JARVIS_HOME"
 DEFAULT_USER_HOME = ".jarvis"
@@ -87,14 +88,16 @@ def user_home() -> Path:
 
 
 def ensure_user_home() -> Path:
-    """确保用户全局目录存在（skills/ + 全局 jarvis.json 默认配置）。"""
+    """确保用户全局目录存在（seed 内置 skill + 全局 jarvis.json 默认配置）。"""
     import json as _json
+    import shutil
 
     from src.config import GLOBAL_DEFAULTS
 
     home = user_home()
     home.mkdir(parents=True, exist_ok=True)
-    (home / "skills").mkdir(parents=True, exist_ok=True)
+    user_skills = home / "skills"
+    user_skills.mkdir(parents=True, exist_ok=True)
 
     global_cfg = home / JARVIS_JSON
     if not global_cfg.is_file():
@@ -102,6 +105,16 @@ def ensure_user_home() -> Path:
             _json.dumps(GLOBAL_DEFAULTS, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+
+    # Seed 内置 skill 到 ~/.jarvis/skills（仅目标不存在时拷贝，不覆盖用户修改）
+    builtin_skills = install_root() / "skills"
+    if builtin_skills.is_dir():
+        for child in builtin_skills.iterdir():
+            if child.is_dir() and not child.name.startswith(".") and not child.name.startswith("__"):
+                target = user_skills / child.name
+                if not target.exists():
+                    shutil.copytree(child, target)
+
     return home
 
 

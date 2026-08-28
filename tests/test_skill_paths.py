@@ -9,7 +9,6 @@ from tests.conftest import make_fake_config
 from src.agent import build_main_prompt, session_date_line
 from src.project_paths import ensure_user_home, user_home
 from src.skill_paths import (
-    BUILTIN_SKILLS_VPATH,
     USER_SKILLS_VPATH,
     discover_skill_layers,
     skill_backend_routes,
@@ -53,10 +52,9 @@ def test_discover_skill_layers_order(tmp_path, monkeypatch):
     cfg = replace(make_fake_config(project), skills=(project_skills,))
     layers = discover_skill_layers(cfg)
     vpaths = [layer.virtual_path for layer in layers]
-    assert BUILTIN_SKILLS_VPATH in vpaths
     assert USER_SKILLS_VPATH in vpaths
     assert "/workspace/skills/" in vpaths
-    assert vpaths.index(BUILTIN_SKILLS_VPATH) < vpaths.index(USER_SKILLS_VPATH) < vpaths.index("/workspace/skills/")
+    assert vpaths.index(USER_SKILLS_VPATH) < vpaths.index("/workspace/skills/")
 
 
 def test_skill_backend_routes_excludes_workspace(tmp_path, monkeypatch):

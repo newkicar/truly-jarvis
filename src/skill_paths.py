@@ -1,13 +1,12 @@
-"""Skill 目录发现：安装包 + 用户全局 ~/.jarvis + 项目。"""
+"""Skill 目录发现：用户全局 ~/.jarvis + 项目（两层模型，对齐 opencode）。"""
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 
 from src.config import Config
-from src.project_paths import install_root, user_home
+from src.project_paths import user_home
 
-BUILTIN_SKILLS_VPATH = "/builtin-skills/"
 USER_SKILLS_VPATH = "/skills/"
 
 
@@ -18,12 +17,8 @@ class SkillLayer:
 
 
 def discover_skill_layers(config: Config) -> tuple[SkillLayer, ...]:
-    """返回 skill 层（低→高优先级）。同名 skill 时后层覆盖前层。"""
+    """返回 skill 层（低→高优先级）。两层：全局 USER + 项目 PROJECT。同名 skill 时后层覆盖前层。"""
     layers: list[SkillLayer] = []
-
-    install_skills = install_root() / "skills"
-    if install_skills.is_dir():
-        layers.append(SkillLayer(BUILTIN_SKILLS_VPATH, install_skills.resolve()))
 
     user_skills = user_home() / "skills"
     user_skills.mkdir(parents=True, exist_ok=True)

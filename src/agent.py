@@ -116,7 +116,7 @@ MAIN_SYSTEM_PROMPT = """你是 JARVIS，个人 AI 助手，专注扩展用户的
 - **可验证任务**：能跑则跑（测试、命令输出），声称完成前附上验证输出；无法验证时说明建议的检查步骤，不谎称已完成。
 
 ## 约束
-- 文件路径：任意磁盘路径均可（绝对路径直接用；相对路径以项目根为基准）；`/workspace/`（项目）、`/vault/`（Obsidian）、`/memories/`（用户记忆）、`/skills/`（用户全局 skill）、`/builtin-skills/`（随安装包 skill）前缀仍可用作快捷方式。
+- 文件路径：任意磁盘路径均可（绝对路径直接用；相对路径以项目根为基准）；`/workspace/`（项目）、`/vault/`（Obsidian）、`/memories/`（用户记忆）、`/skills/`（用户全局 skill）前缀仍可用作快捷方式。
 - 值得长期保留或用户要求记住 → task(knowledge_keeper, …)。
 - 委派时传递用户原意，不扩写成「全面调研 / 行业动态报告」。
 - 多角度并行**研究**可用 CodeInterpreter + `task()` fan-out 多个 researcher，再合并。

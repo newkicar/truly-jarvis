@@ -13,9 +13,11 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Optional
 
+from src.project_paths import RUNTIME_DATA_DIR
+
 DB_NAME = "git_mapping.sqlite"
 
-# 快照排除项依赖 .gitignore（checkpoints.sqlite / .env / git_mapping.sqlite 等）。
+# 快照排除项依赖 .gitignore（checkpoints/ / .env 等）。
 
 
 def _git(root: Path, *args: str) -> str:
@@ -42,7 +44,9 @@ def _has_changes(root: Path) -> bool:
 
 
 def _db_path(root: Path) -> Path:
-    return root / DB_NAME
+    path = root / RUNTIME_DATA_DIR / DB_NAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def _init_db(root: Path):

@@ -6,7 +6,6 @@ checkpoints/
 *.sqlite3
 *.sqlite-shm
 *.sqlite-wal
-git_mapping.sqlite
 
 # Python
 __pycache__/
