@@ -164,3 +164,38 @@ def test_unrestricted_backend_accesses_paths_outside_root(tmp_path):
     write = b.write("inner-rel.txt", "x")
     assert write.error is None
     assert (proj / "inner-rel.txt").exists(), "相对路径应以项目根为基准"
+
+
+def test_resolve_path_driveless_abs_resolves_under_cwd(tmp_path):
+    """Windows 无盘符绝对路径（/foo）必须落到 cwd 下，不能锚定到盘符根。"""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    b = InheritedEnvShellBackend(root_dir=str(proj), virtual_mode=False)
+
+    result = b._resolve_path("/game")
+    assert result == proj / "game", f"应落到项目根，实际: {result}"
+
+    b.write("/game/test.txt", "ok")
+    assert (proj / "game" / "test.txt").exists()
+
+
+def test_resolve_path_true_absolute_unchanged(tmp_path):
+    """真实盘符绝对路径（D:\\foo）原样放行。"""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    b = InheritedEnvShellBackend(root_dir=str(proj), virtual_mode=False)
+
+    ext = tmp_path / "ext"
+    ext.mkdir()
+    result = b._resolve_path(str(ext))
+    assert result == ext, f"应原样放行，实际: {result}"
+
+
+def test_resolve_path_relative_unchanged(tmp_path):
+    """相对路径仍以项目根为基准。"""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    b = InheritedEnvShellBackend(root_dir=str(proj), virtual_mode=False)
+
+    result = b._resolve_path("sub/dir")
+    assert result == proj / "sub" / "dir", f"应落到项目根下，实际: {result}"

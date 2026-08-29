@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
 from deepagents.backends.local_shell import DEFAULT_EXECUTE_TIMEOUT, LocalShellBackend
@@ -54,6 +55,21 @@ class InheritedEnvShellBackend(LocalShellBackend):
         # (?![\w]) 兼容无尾斜杠形式（dir /workspace、cd "/vault"）。
         alt = "|".join(re.escape(p) for p in self._virtual_prefixes) or r"(?!)"
         self._virtual_path_re = re.compile(rf"(?<![:\w])/(?:{alt})(?![\w])", re.IGNORECASE)
+
+    def _resolve_path(self, key: str) -> Path:
+        """覆写 virtual_mode=False 分支：无盘符绝对路径（/foo）落到 cwd 下。
+
+        Windows 下 Path("/foo").is_absolute() 为 False，但 Path("/foo").root
+        为 "\\"，导致 cwd / Path("/foo") 锚定到盘符根（D:\\foo）而非 cwd\\foo。
+        本方法在非真正绝对路径时剥离前导分隔符，使其解析为 cwd 的子路径。
+
+        跨盘符真正绝对路径（D:\\foo）不受影响。
+        """
+        path = Path(key)
+        if path.is_absolute():
+            return path
+        rel = str(path).lstrip("/\\")
+        return (self.cwd / rel).resolve()
 
     def _virtual_prefix_error(self, command: str) -> ExecuteResponse | None:
         m = self._virtual_path_re.search(command)
