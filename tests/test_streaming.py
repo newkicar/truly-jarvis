@@ -3,24 +3,8 @@ from src import streaming
 
 
 class _Msg:
-    def __init__(self, text, tool_calls=None):
-        self.text = list(text) if isinstance(text, str) else text
-        self._tool_calls = tool_calls or []
-
-    @property
-    def tool_calls(self):
-        return _FakeToolCallsProj(self._tool_calls)
-
-
-class _FakeToolCallsProj:
-    def __init__(self, calls):
-        self._calls = calls
-
-    def get(self):
-        return self._calls
-
-    def __iter__(self):
-        return iter(self._calls)
+    def __init__(self, text: str):
+        self.text = list(text)
 
 
 class _Tool:
@@ -53,7 +37,8 @@ def test_consume_stream_tool_output_and_subagent_nesting():
     stream = _Stream(
         [
             ("subagents", _Sub("researcher", "started", [_Tool("grep", "x", output="hit1\nhit2")])),
-            ("messages", _Msg("答案", tool_calls=[{"name": "read_file", "args": "/vault/a.md"}])),
+            ("tool_calls", _Tool("read_file", "/vault/a.md", output="content line")),
+            ("messages", _Msg("答案")),
         ]
     )
     tools = []
@@ -73,7 +58,7 @@ def test_consume_stream_tool_output_and_subagent_nesting():
     nested = [t for t in tools if t[0] == "tool" and t[1] == "grep"]
     assert nested and "hit1" in nested[0][2]
     top = [t for t in tools if t[0] == "tool" and t[1] == "read_file"]
-    assert top
+    assert top and top[0][3] >= 1
     assert segments == ["答案"]
 
 
@@ -89,11 +74,7 @@ def test_consume_stream_skips_tool_call_message_blocks():
         def __init__(self, text):
             self.text = text
 
-        @property
-        def tool_calls(self):
-            return _FakeToolCallsProj([])
-
-    stream = _Stream([("messages", _Msg([tool_block]))])
+    stream = _Stream([("messages", _Msg([tool_block])), ("tool_calls", _Tool("task", "researcher"))])
     segments = []
     deltas = []
 

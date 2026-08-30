@@ -240,7 +240,7 @@ def consume_stream_events(
     """消费 stream_events interleave 循环，返回 message delta 计数。"""
     consumed = 0
     subagent_depth = 0
-    for kind, item in stream.interleave("messages", "subagents"):
+    for kind, item in stream.interleave("messages", "tool_calls", "subagents"):
         if is_cancelled():
             if on_cancelled:
                 on_cancelled()
@@ -253,6 +253,7 @@ def consume_stream_events(
             callbacks["on_subagent"](name, status, subagent_depth)
             if status in _SUBAGENT_DONE:
                 subagent_depth = max(0, subagent_depth - 1)
+            # 子代理项内嵌工具（fan-out 等场景）
             nested = getattr(item, "tool_calls", None) or []
             for tc in nested:
                 tc_name = getattr(tc, "tool_name", None) or getattr(tc, "name", "?")
@@ -260,6 +261,14 @@ def consume_stream_events(
                 tc_err = bool(getattr(tc, "error", None))
                 tc_out = _tool_output(tc)
                 callbacks["on_tool_call"](tc_name, tc_args, tc_err, tc_out, subagent_depth)
+        elif kind == "tool_calls":
+            callbacks["on_tool_call"](
+                getattr(item, "tool_name", "?"),
+                str(getattr(item, "input", "")),
+                bool(getattr(item, "error", None)),
+                _tool_output(item),
+                subagent_depth,
+            )
         else:
             segment: list[str] = []
             for delta in iter_text_deltas(item.text):
@@ -272,19 +281,6 @@ def consume_stream_events(
                 callbacks["on_message_delta"](delta)
             if segment and callbacks.get("on_message_end"):
                 callbacks["on_message_end"]("".join(segment))
-            tcs = getattr(item, "tool_calls", None)
-            if tcs is not None:
-                finalized = tcs.get() if callable(getattr(tcs, "get", None)) else list(tcs)
-                for tc in finalized or []:
-                    if isinstance(tc, dict):
-                        tc_name = tc.get("name", "?")
-                        tc_args = tc.get("args", "")
-                    else:
-                        tc_name = getattr(tc, "name", None) or "?"
-                        tc_args = getattr(tc, "args", "")
-                    if isinstance(tc_args, dict):
-                        tc_args = json.dumps(tc_args, default=str)
-                    callbacks["on_tool_call"](tc_name, str(tc_args), False, None, subagent_depth)
     return consumed
 
 
