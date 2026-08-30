@@ -168,6 +168,9 @@ def test_unrestricted_backend_accesses_paths_outside_root(tmp_path):
 
 def test_resolve_path_driveless_abs_resolves_under_cwd(tmp_path):
     """Windows 无盘符绝对路径（/foo）必须落到 cwd 下，不能锚定到盘符根。"""
+    import sys
+    if sys.platform != "win32":
+        pytest.skip("Windows-only: Linux 下 /foo 是真绝对路径，行为不同")
     proj = tmp_path / "proj"
     proj.mkdir()
     b = InheritedEnvShellBackend(root_dir=str(proj), virtual_mode=False)
