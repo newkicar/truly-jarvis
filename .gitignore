@@ -34,3 +34,5 @@ memory/*.md
 !memory/*.example.md
 schedules/*.json
 !schedules/*.example.json
+.mypy_cache
+.mypy_cache
