@@ -8,8 +8,12 @@
   工具内部每次调用时自动创建并销毁 session（stdio 子进程随开随关）。
 - 因此这里只负责「启动时一次性加载工具」，不做长期生命周期管理；
   返回的工具列表可直接交给 create_deep_agent(tools=...) 注入主代理。
+
+配置值支持 `${ENV_VAR}` 语法引用环境变量（jarvis.json → .env）。
 """
 import asyncio
+import os
+import re
 from typing import cast
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -19,6 +23,26 @@ try:
     from langchain_core.tools import BaseTool
 except ImportError:  # pragma: no cover
     BaseTool = object  # type: ignore[assignment, misc]
+
+
+def _interpolate_env(value: str) -> str:
+    """将字符串中的 ${ENV_VAR} 替换为环境变量值；未定义则保留原样。"""
+    def _replace(m: re.Match[str]) -> str:
+        return os.environ.get(m.group(1), m.group(0))
+    return re.sub(r"\$\{(\w+)\}", _replace, value)
+
+
+def _interpolate_config(raw: dict) -> dict:
+    """递归替换配置 dict 中所有字符串值的 ${ENV_VAR}。"""
+    result = {}
+    for k, v in raw.items():
+        if isinstance(v, str):
+            result[k] = _interpolate_env(v)
+        elif isinstance(v, dict):
+            result[k] = _interpolate_config(v)
+        else:
+            result[k] = v
+    return result
 
 
 def _parse_server_config(raw: dict) -> Connection:
@@ -56,7 +80,7 @@ def _enabled_servers(mcps_config: dict) -> dict[str, dict]:
     if not isinstance(servers, dict):
         return {}
     return {
-        name: cfg
+        name: _interpolate_config(cfg)
         for name, cfg in servers.items()
         if isinstance(cfg, dict) and cfg.get("enabled", True)
     }
