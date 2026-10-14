@@ -15,6 +15,12 @@ from textual.widgets.option_list import Option
 from textual.worker import Worker
 
 from src import commands
+from src.clipboard_image import (
+    build_multimodal_content,
+    image_fallback_text,
+    looks_like_image_path,
+    try_copy_clipboard_image,
+)
 from src.tui_completion import OverlayState, apply_suggestion, resolve_overlay_state
 from src.tui_log import CopyableRichLog
 from src import tui_format
@@ -95,7 +101,23 @@ class PasteInput(Input):
     def _read_clipboard_worker(self) -> None:
         text = read_os_clipboard()
         if text:
+            # #03: 粘贴文本若是已存在的图片文件路径 → 登记附件并插 [Image #N] 占位符。
+            image_path = looks_like_image_path(text)
+            if image_path:
+                idx = self.app.call_from_thread(self.app._register_image_attachment, image_path)
+                if idx is not None:
+                    self.app.call_from_thread(self._apply_paste, f"[Image #{idx}]")
+                    self.app.call_from_thread(self.app.notify, f"已插入 [Image #{idx}]")
+                return
             self.app.call_from_thread(self._apply_paste, text)
+            return
+        # #03: 剪贴板无文本 → 读剪贴板图片（codex 同款：落盘临时 PNG + 原子占位符）。
+        image = try_copy_clipboard_image()
+        if image:
+            idx = self.app.call_from_thread(self.app._register_image_attachment, image)
+            if idx is not None:
+                self.app.call_from_thread(self._apply_paste, f"[Image #{idx}]")
+                self.app.call_from_thread(self.app.notify, f"已插入 [Image #{idx}]")
 
     def _apply_paste(self, text: str) -> None:
         line = text.splitlines()[0] if text else ""
@@ -608,6 +630,8 @@ class JarvisApp(App):
         self._sidebar_visible = True
         self._spinner_timer = None
         self._spinner_frame = 0
+        self._image_seq = 0  # #03: 剪贴板图片附件序号（[Image #N]）
+        self._image_attachments: dict[int, str] = {}  # #03: 占位符号 → 临时图片文件
         self.title = "JARVIS"
         self._restore_theme()
         self._update_sub_title()
@@ -687,6 +711,23 @@ class JarvisApp(App):
         tui = getattr(self.config, "tui", None) or {}
         style = tui.get("at_reference_style", "dual")
         return style if style in ("virtual", "dual", "real") else "dual"
+
+    def _register_image_attachment(self, path: str) -> int:
+        """#03: 登记一个剪贴板/路径图片附件，返回占位符序号。"""
+        self._image_seq += 1
+        self._image_attachments[self._image_seq] = path
+        return self._image_seq
+
+    def _clear_image_attachments(self) -> None:
+        self._image_attachments.clear()
+        self._image_seq = 0
+
+    def _image_input_mode(self) -> str:
+        """#03: model.image_input 能力门（auto/on/off，未配置回落 auto）。"""
+        if not self.config:
+            return "auto"
+        mode = getattr(self.config, "model_image_input", "auto")
+        return mode if mode in ("auto", "on", "off") else "auto"
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -867,8 +908,27 @@ class JarvisApp(App):
             log.write(system_message_markup(f"正在执行 {cmd}…"))
             self._worker = self.run_worker(partial(self._run_command_worker, text), thread=True)
             return
+        stream_input: str | list = text
+        image_fallback: str | None = None
+        if "[Image #" in text:
+            # #03: 提交时展开 [Image #N] 占位符 → 多模态 content（off 时回落纯文本路径引用）。
+            mode = self._image_input_mode()
+            if mode == "off":
+                stream_input = image_fallback_text(text, self._image_attachments)
+            else:
+                stream_input = build_multimodal_content(text, self._image_attachments)
+                image_fallback = image_fallback_text(text, self._image_attachments)
+            self._clear_image_attachments()
         self._show_spinner()
-        self._worker = self.run_worker(partial(self._stream_agent, user_input=text), thread=True)
+        self._worker = self.run_worker(
+            partial(
+                self._stream_agent,
+                user_input=stream_input,
+                image_input=self._image_input_mode(),
+                image_fallback=image_fallback,
+            ),
+            thread=True,
+        )
 
     def _run_command_worker(self, text: str) -> None:
         """后台线程执行可能阻塞的命令（/history、/fork 等）。"""
@@ -1085,12 +1145,20 @@ class JarvisApp(App):
 
     def _stream_agent(
         self,
-        user_input: str | None = None,
+        user_input: str | list | None = None,
         *,
         checkpoint_id: str | None = None,
+        image_input: str | None = None,
+        image_fallback: str | None = None,
     ) -> None:
         """后台线程入口：组装 TurnPresenter 并驱动本轮（编排细节见 tui_turn.py）。"""
-        TurnPresenter(self, user_input, checkpoint_id).run()
+        TurnPresenter(
+            self,
+            user_input,
+            checkpoint_id,
+            image_input=image_input,
+            image_fallback=image_fallback,
+        ).run()
 
     async def _wait_modal_dismiss(self, inv: commands.ToolInvocation):
         """push PermissionModal 并等待 dismiss 结果（在 UI 线程执行）。"""

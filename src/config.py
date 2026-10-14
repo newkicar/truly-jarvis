@@ -31,6 +31,7 @@ GLOBAL_DEFAULTS: dict = {
         "base_url_env": "BASE_URL",
         "api_key_env": "API_KEY",
         "model_id_env": "MODEL_ID",
+        "image_input": "auto",
     },
     "mcps": {"servers": {}},
     "permissions": {
@@ -93,6 +94,8 @@ class Config:
     rag_embed_model: str
     execution_max_steps: int
     tui: dict[str, object]
+    # #03: 模型图片输入能力门（auto/on/off，缺省 auto：首发多模态，被拒后路径引用重试一次）。
+    model_image_input: str = "auto"
 
 
 def parse_env_text(text: str) -> dict[str, str]:
@@ -236,6 +239,7 @@ def load_config(
         rag_embed_model=str(rag_cfg.get("embed_model", "quentinz/bge-small-zh-v1.5")),
         execution_max_steps=max_steps,
         tui=tui_cfg,
+        model_image_input=str(model_cfg.get("image_input", "auto")),
     )
     ensure_user_home()
     set_runtime_project_root(cfg.project_root)

@@ -287,7 +287,7 @@ def consume_stream_events(
 def run_agent_turn(
     agent,
     thread_id: str,
-    user_input: str | None = None,
+    user_input: str | list | None = None,
     *,
     checkpoint_id: str | None = None,
     handle_interrupts: Callable[[Any], dict | None],
@@ -300,6 +300,8 @@ def run_agent_turn(
     permission_state: dict | None = None,
     project_root=None,
     max_steps: int = 200,
+    model_image_input: str = "auto",
+    user_input_fallback: str | None = None,
 ) -> bool:
     """跑一轮对话或 checkpoint 重跑（含 HITL resume 循环）。返回 True=正常结束，False=放弃/取消。
 
@@ -317,6 +319,7 @@ def run_agent_turn(
     max_steps = max(10, int(max_steps))
     base_config = {**commands.thread_config(thread_id), "recursion_limit": max_steps}
     resume = None
+    _image_fallback_done = False  # #03: 多模态 auto 回落只重试一次
     replay_pending = checkpoint_id is not None
     outcome = "complete"
 
@@ -434,6 +437,24 @@ def run_agent_turn(
                         on_fallback_message(msg)
                 outcome = "abandon"
                 return False
+            except Exception as exc:
+                # #03: 多模态能力门 auto 回落——模型拒绝图片时，改发「路径引用」纯文本重试一次；
+                # 其余异常保持原语义（清理 checkpoint 后上抛，由 presenter 显示错误）。
+                if (
+                    not _image_fallback_done
+                    and isinstance(user_input, list)
+                    and model_image_input == "auto"
+                    and user_input_fallback is not None
+                    and any(k in str(exc).lower() for k in ("image", "vision"))
+                ):
+                    _image_fallback_done = True
+                    user_input = user_input_fallback
+                    status_cb = callbacks.get("on_status")
+                    if status_cb:
+                        status_cb("模型拒绝图片，已改为路径引用重试")
+                    continue
+                # 内部 _stream_with_resilience 上抛前已 finalize，这里不重复清理。
+                raise
             if is_cancelled():
                 outcome = "cancel"
                 return False

@@ -25,10 +25,20 @@ class TurnPresenter:
     编排边界上使用。
     """
 
-    def __init__(self, app, user_input: str | None, checkpoint_id: str | None):
+    def __init__(
+        self,
+        app,
+        user_input: str | list | None,
+        checkpoint_id: str | None,
+        *,
+        image_input: str | None = None,
+        image_fallback: str | None = None,
+    ):
         self.app = app
         self.user_input = user_input
         self.checkpoint_id = checkpoint_id
+        self.image_input = image_input  # #03: model.image_input 能力门（None=读 config 默认）
+        self.image_fallback = image_fallback  # #03: 被拒时改发的纯文本路径引用
         self.started = time()
         # 模式标注取流开始时的快照（中途 Tab 切换不改变本轮回复的归属）；
         # 先于 log 的 UI 往返捕获，与重构前顺序一致。
@@ -147,6 +157,14 @@ class TurnPresenter:
             "on_status": self.on_status,
         }
 
+    # ---- #03 图片能力门 ----
+
+    def _image_input_mode(self) -> str:
+        """image_input 缺省时读 config.model_image_input（默认 auto）。"""
+        if self.image_input:
+            return self.image_input
+        return getattr(self.app.config, "model_image_input", "auto")
+
     # ---- 主流程 ----
 
     def run(self) -> None:
@@ -174,6 +192,8 @@ class TurnPresenter:
                 permission_state=self.app.permission_state,
                 project_root=self.app._workspace_root(),
                 max_steps=int(getattr(self.app.config, "execution_max_steps", 200)),
+                model_image_input=self._image_input_mode(),
+                user_input_fallback=self.image_fallback,
             )
         except Exception as exc:  # noqa: BLE001
             self.reset_header()
