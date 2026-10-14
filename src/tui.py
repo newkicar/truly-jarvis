@@ -21,6 +21,7 @@ from src.clipboard_image import (
     looks_like_image_path,
     try_copy_clipboard_image,
 )
+from src.tui_punct import PUNCT_ITEMS, ime_hint_line, is_conhost_like
 from src.tui_completion import OverlayState, apply_suggestion, resolve_overlay_state
 from src.tui_log import CopyableRichLog
 from src import tui_format
@@ -307,7 +308,7 @@ class CopyPickerModal(ModalScreen):
     def compose(self) -> ComposeResult:
         with Static(id="copy_picker"):
             yield Label("复制到剪贴板（↑↓ 选择，Enter 确认）", id="copy_picker_title")
-            yield OptionList(id="copy_list", can_focus=True)
+            yield OptionList(id="copy_list")
 
     def on_mount(self) -> None:
         listing = self.query_one("#copy_list", OptionList)
@@ -320,6 +321,10 @@ class CopyPickerModal(ModalScreen):
         )
         listing.highlighted = 0
         listing.focus()
+
+    def action_cancel(self) -> None:
+        """Esc 关闭（Textual 8.x 已移除 Screen.cancel 内置动作，需自行定义）。"""
+        self.dismiss()
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         text = self._pick_text(str(event.option.id))
@@ -438,6 +443,70 @@ class SessionSidebar(OptionList):
                 self.highlighted = 0
 
 
+class PunctPanelModal(ModalScreen):
+    """标点快插面板（#02）：高频中英文标点列表，Enter 插入输入框，Esc 关闭。
+
+    针对 legacy conhost 终端中文标点 IME 候选窗不可用的问题；
+    Windows Terminal / ConEmu 下也可用作快捷输入。
+    """
+
+    BINDINGS = [
+        Binding("escape", "cancel", "关闭"),
+    ]
+
+    DEFAULT_CSS = """
+    PunctPanelModal {
+        align: center middle;
+        background: $surface;
+    }
+
+    #punct_panel {
+        width: 60;
+        height: auto;
+        border: thick $primary;
+        background: $panel;
+        padding: 1 2;
+    }
+
+    #punct_panel_title {
+        color: $accent;
+        text-style: bold;
+    }
+
+    #punct_list {
+        height: 14;
+        border: round $surface;
+        background: $surface;
+    }
+    """
+
+    def __init__(self, app: "JarvisApp") -> None:
+        super().__init__()
+        self._app = app
+
+    def compose(self) -> ComposeResult:
+        with Static(id="punct_panel"):
+            yield Label("标点快插（↑↓ 选择，Enter 插入输入框）", id="punct_panel_title")
+            yield OptionList(id="punct_list")
+
+    def on_mount(self) -> None:
+        listing = self.query_one("#punct_list", OptionList)
+        listing.add_options(
+            [Option(f"{char}\u3000{desc}", id=char) for char, desc in PUNCT_ITEMS]
+        )
+        listing.highlighted = 0
+        listing.focus()
+
+    def action_cancel(self) -> None:
+        """Esc 关闭面板（Textual 8.x 已移除 Screen.cancel 内置动作，需自行定义）。"""
+        self.dismiss()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        char = str(event.option.id)
+        self.dismiss()
+        self._app._insert_punctuation(char)
+
+
 class JarvisApp(App):
     """JARVIS TUI。侧边栏 Y/Ctrl+Insert 复制会话 ID；Ctrl+C/Q 退出。"""
 
@@ -452,6 +521,7 @@ class JarvisApp(App):
         Binding("ctrl+insert", "copy_session_or_selection", "复制", priority=True),
         Binding("ctrl+shift+c", "copy_session_or_selection", "复制", priority=True),
         Binding("ctrl+shift+y", "copy_picker", "复制内容", show=False),
+        Binding("ctrl+.", "punct_panel", "标点面板", show=False),
         Binding("tab", "accept_suggestion", "接受建议", show=False),
         Binding("escape", "cancel", "取消", show=False),
         Binding("ctrl+q", "quit", "退出"),
@@ -853,6 +923,10 @@ class JarvisApp(App):
             "会话：Ctrl+B 开侧边栏 → 点选 → Y 复制 ID / D 删除；或 /delete-session 2 按序号。"
             " 复制：对话区拖选（松开自动复制）；/copy 或 Ctrl+Shift+Y 选复制内容；Ctrl+Insert。退出：/exit 或 Ctrl+Q。",
         )
+        # #02: conhost 标点提示（tui.ime_hint auto/on/off；auto 时仅 conhost 显示）
+        hint = ime_hint_line(self._ime_hint_mode(), is_conhost_like())
+        if hint:
+            self._write_system(log, hint)
         for line in self._startup_lines:
             self._write_system(log, line)
         self._refresh_session_sidebar()
@@ -1207,6 +1281,31 @@ class JarvisApp(App):
             self.notify(message, timeout=2)
         else:
             self.notify("复制失败（CMD 下请用 Ctrl+Insert）", timeout=3)
+
+    def action_punct_panel(self) -> None:
+        """打开标点快插面板（#02）；关闭后焦点回输入框。"""
+
+        def after_close(_result) -> None:
+            self.query_one("#input", Input).focus()
+
+        self.push_screen(PunctPanelModal(self), after_close)
+
+    def _ime_hint_mode(self) -> str:
+        """#02: 读 tui.ime_hint（off/on/auto），缺失或非法值回落 auto。"""
+        if not self.config:
+            return "auto"
+        tui = getattr(self.config, "tui", None) or {}
+        mode = str(tui.get("ime_hint", "auto")).strip().lower()
+        return mode if mode in ("off", "on", "auto") else "auto"
+
+    def _insert_punctuation(self, char: str) -> None:
+        """#02: 标点插入——输入框有选区则替换，否则在光标处插入。"""
+        box = self.query_one("#input", Input)
+        if box.selection:
+            box.replace(char, *box.selection)
+        else:
+            box.insert_text_at_cursor(char)
+        box.focus()
 
     def action_copy_picker(self) -> None:
         """打开复制内容选择器（#01）；关闭后焦点回输入框。"""
