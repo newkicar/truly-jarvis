@@ -1,7 +1,7 @@
 # TUI 四项 UX 问题（tui-ux4）
 
 **Type:** enhancement
-**Status:** ready-for-agent
+**Status:** done
 
 ## 背景（用户报告 + 根因取证）
 
