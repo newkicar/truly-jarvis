@@ -242,6 +242,87 @@ class EditParamsModal(ModalScreen):
         self.dismiss(None)
 
 
+class CopyPickerModal(ModalScreen):
+    """复制内容选择器（#01）：最近 AI 回复 / 最近代码块 / 整段会话。
+
+    Enter 确认复制（走 app 的级联剪贴板写入），Esc 关闭。
+    """
+
+    BINDINGS = [
+        Binding("escape", "cancel", "取消"),
+    ]
+
+    DEFAULT_CSS = """
+    CopyPickerModal {
+        align: center middle;
+        background: $surface;
+    }
+
+    #copy_picker {
+        width: 52;
+        height: auto;
+        border: thick $primary;
+        background: $panel;
+        padding: 1 2;
+    }
+
+    #copy_picker_title {
+        color: $accent;
+        text-style: bold;
+    }
+
+    #copy_list {
+        height: 6;
+        border: round $surface;
+        background: $surface;
+    }
+    """
+
+    def __init__(self, app: "JarvisApp") -> None:
+        super().__init__()
+        self._app = app
+
+    def compose(self) -> ComposeResult:
+        with Static(id="copy_picker"):
+            yield Label("复制到剪贴板（↑↓ 选择，Enter 确认）", id="copy_picker_title")
+            yield OptionList(id="copy_list", can_focus=True)
+
+    def on_mount(self) -> None:
+        listing = self.query_one("#copy_list", OptionList)
+        listing.add_options(
+            [
+                Option("最近 AI 回复", id="ai"),
+                Option("最近代码块", id="code"),
+                Option("整段会话", id="session"),
+            ]
+        )
+        listing.highlighted = 0
+        listing.focus()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        text = self._pick_text(str(event.option.id))
+        self.dismiss()
+        if text.strip():
+            self._app._copy_to_clipboard(text, "已复制到剪贴板")
+        else:
+            self._app.notify("没有可复制的内容", timeout=2)
+
+    def _pick_text(self, kind: str) -> str:
+        agent = self._app.agent
+        if agent is None:
+            return ""
+        thread_id = self._app.thread_id
+        if kind == "ai":
+            return commands.last_ai_text(agent, thread_id, limit=100000)
+        if kind == "code":
+            return commands.last_code_block(
+                commands.last_ai_text(agent, thread_id, limit=100000)
+            )
+        if kind == "session":
+            return commands.render_session_text(agent, thread_id)
+        return ""
+
+
 class PathCompletionOverlay(OptionList):
     """@ / 触发的建议列表（overlay，不抢输入焦点）。"""
 
@@ -348,6 +429,7 @@ class JarvisApp(App):
         Binding("d", "delete_highlighted_session", "删会话", show=False),
         Binding("ctrl+insert", "copy_session_or_selection", "复制", priority=True),
         Binding("ctrl+shift+c", "copy_session_or_selection", "复制", priority=True),
+        Binding("ctrl+shift+y", "copy_picker", "复制内容", show=False),
         Binding("tab", "accept_suggestion", "接受建议", show=False),
         Binding("escape", "cancel", "取消", show=False),
         Binding("ctrl+q", "quit", "退出"),
@@ -596,7 +678,7 @@ class JarvisApp(App):
         if not self.config:
             return False
         tui = getattr(self.config, "tui", None) or {}
-        return bool(tui.get("copy_on_select", False))
+        return bool(tui.get("copy_on_select", True))
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -720,7 +802,7 @@ class JarvisApp(App):
         self._write_system(
             log,
             "会话：Ctrl+B 开侧边栏 → 点选 → Y 复制 ID / D 删除；或 /delete-session 2 按序号。"
-            " 复制：对话区拖选（松开自动复制）；/copy-session 或 Ctrl+Insert。退出：/exit 或 Ctrl+Q。",
+            " 复制：对话区拖选（松开自动复制）；/copy 或 Ctrl+Shift+Y 选复制内容；Ctrl+Insert。退出：/exit 或 Ctrl+Q。",
         )
         for line in self._startup_lines:
             self._write_system(log, line)
@@ -748,6 +830,9 @@ class JarvisApp(App):
             return
         if text == "/help":
             log.write(commands.TUI_HELP)
+            return
+        if text == "/copy":
+            self.action_copy_picker()
             return
         if text.startswith("/"):
             parts = text.split()
@@ -1039,6 +1124,14 @@ class JarvisApp(App):
             self.notify(message, timeout=2)
         else:
             self.notify("复制失败（CMD 下请用 Ctrl+Insert）", timeout=3)
+
+    def action_copy_picker(self) -> None:
+        """打开复制内容选择器（#01）；关闭后焦点回输入框。"""
+
+        def after_close(_result) -> None:
+            self.query_one("#input", Input).focus()
+
+        self.push_screen(CopyPickerModal(self), after_close)
 
     def action_copy_session_or_selection(self) -> None:
         """复制：侧边栏高亮会话 ID > 日志区拖选 > 当前 thread_id。"""

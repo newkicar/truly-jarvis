@@ -32,6 +32,7 @@ _HELP_COMMANDS = """\
   /sessions       列出历史会话
   /delete-session [thread_id]  删除历史会话（可写序号；省略 id 则删当前）
   /copy-session   复制当前会话 ID 到剪贴板
+  /copy           复制最近 AI 回复 / 代码块 / 整段会话到剪贴板（TUI）
   /doctor         诊断配置与会话健康（模型/权限/checkpoint）
   /history        查看当前会话时间线（带序号，可用于回退）
   /replay <id>    从指定 checkpoint 重跑（序号 / 短 id / 完整 id）
@@ -53,6 +54,7 @@ TUI_HELP = (
     _HELP_COMMANDS
     + "会话：侧边栏点选后 Y 复制 ID、D 删除；或 /delete-session 2 按序号删。\n"
     + f"复制：对话区鼠标拖选（松开自动复制，{JARVIS_JSON} tui.copy_on_select）；"
+    + "/copy 或 Ctrl+Shift+Y 选择复制内容（AI 回复 / 代码块 / 整段会话）；"
     + "Ctrl+Insert / Y（侧边栏会话）；/copy-session 复制 thread_id。\n"
     + "退出：Ctrl+C 或 Ctrl+Q；集成终端若 Ctrl+C 直接杀进程，请用 /exit。\n"
     + "HITL 审批时: 点击按钮选择（放行/永久放行/拒绝/编辑参数），Esc 放弃。\n"
@@ -215,6 +217,35 @@ def last_ai_text(agent, thread_id: str, limit: int = 300) -> str:
     if pairs and pairs[-1][0] == "ai":
         return pairs[-1][1][:limit]
     return ""
+
+
+def last_code_block(text: str) -> str:
+    """取文本中最后一个围栏代码块（含围栏行）；无围栏返回空串（copy picker 用）。"""
+    lines = (text or "").splitlines()
+    last_block: list[str] = []
+    i = 0
+    while i < len(lines):
+        if lines[i].lstrip().startswith("```"):
+            block = [lines[i]]
+            i += 1
+            while i < len(lines) and not lines[i].lstrip().startswith("```"):
+                block.append(lines[i])
+                i += 1
+            if i < len(lines):
+                block.append(lines[i])
+            last_block = block
+        i += 1
+    return "\n".join(last_block)
+
+
+def render_session_text(agent, thread_id: str, max_messages: int = 500) -> str:
+    """当前会话历史（user/AI，从旧到新）拼成可复制文本（copy picker 整段会话用）。"""
+    pairs = thread_history_text(agent, thread_id, max_messages=max_messages)
+    lines = []
+    for role, content in pairs:
+        prefix = "[user]" if role == "user" else "[JARVIS]"
+        lines.append(f"{prefix} {content}")
+    return "\n\n".join(lines)
 
 
 def first_human_text(agent, thread_id: str, limit: int = 18) -> str:
@@ -865,6 +896,8 @@ def dispatch_command(agent, thread_id: str, command: str, sched=None, vault_path
         return text, new_thread, None
     if cmd == "/copy-session":
         return copy_session_id_text(thread_id), None, None
+    if cmd == "/copy":
+        return "/copy 是 TUI 交互命令（picker 选择复制内容）；CLI 请用 /copy-session 复制会话 ID", None, None
     if cmd == "/doctor":
         from src.config import load_config
         from src.mcps import load_mcp_tools
