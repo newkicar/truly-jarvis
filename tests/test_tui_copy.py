@@ -11,6 +11,8 @@ from src.tui_log import (
     copy_via_win32,
 )
 from src.tui import CopyPickerModal, JarvisApp
+from textual.app import App
+from textual.widgets import OptionList
 
 F = '```'
 FENCE = F
@@ -153,3 +155,42 @@ def test_copy_picker_modal_without_agent():
     app = JarvisApp(None, None, {"default": "ask", "tools": {}})
     modal = CopyPickerModal(app)
     assert modal._pick_text("ai") == ""
+
+
+class _PickerHost(App):
+    """最小宿主：Textual 8.x 下校验复制选择器 modal 的 compose / Esc 兼容性。"""
+
+    def __init__(self, modal: CopyPickerModal) -> None:
+        super().__init__()
+        self._modal = modal
+
+    def on_ready(self) -> None:
+        self.push_screen(self._modal)
+
+
+async def test_copy_picker_modal_composes_and_esc_closes():
+    """textual 8.x 回归：OptionList 不再接受 can_focus 构造参数；
+    Screen.cancel 内置动作移除后 modal 需自行定义 action_cancel，Esc 才能关闭。"""
+    app = JarvisApp(None, None, {"default": "ask", "tools": {}})
+    host = _PickerHost(CopyPickerModal(app))
+    async with host.run_test(size=(80, 30)) as pilot:
+        for _ in range(100):
+            if isinstance(host.screen, CopyPickerModal):
+                break
+            await pilot.pause()
+        modal = host.screen
+        assert isinstance(modal, CopyPickerModal)
+        for _ in range(100):
+            try:
+                modal.query_one("#copy_list", OptionList)  # compose 未崩溃
+                break
+            except Exception:  # noqa: BLE001
+                await pilot.pause()
+        else:
+            raise AssertionError("copy_list 未挂载")
+        await pilot.press("escape")
+        for _ in range(100):
+            if not isinstance(host.screen, CopyPickerModal):
+                break
+            await pilot.pause()
+        assert not isinstance(host.screen, CopyPickerModal)
