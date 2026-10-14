@@ -4,6 +4,7 @@
 所有函数「接收 agent/thread_id → 返回文本」，可被 CLI 与 TUI 直接复用。
 """
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -247,6 +248,61 @@ def render_session_text(agent, thread_id: str, max_messages: int = 500) -> str:
         lines.append(f"{prefix} {content}")
     return "\n\n".join(lines)
 
+def virtual_path_mappings(config) -> dict[str, str]:
+    """/workspace/、/vault/、/memories/ 及各 skill 层虚拟前缀 → 真实磁盘目录的映射。
+
+    用于「映射可见化」（#04）：@ 引用锚点行、shell 守卫报错指路、@ 补全双路径。
+    config 为 None（未装配 Config 的兜底场景）返回空 dict。
+    """
+    if config is None:
+        return {}
+    mapping: dict[str, str] = {}
+    root = getattr(config, "project_root", None)
+    if root:
+        mapping["/workspace/"] = str(Path(root))
+    vault = getattr(config, "vault_path", None)
+    if vault:
+        mapping["/vault/"] = str(Path(vault))
+    mem = getattr(config, "memory_dir", None)
+    if mem:
+        mapping["/memories/"] = str(Path(mem))
+    try:
+        from src.skill_paths import skill_backend_routes
+
+        for vpath, fs_path in skill_backend_routes(config).items():
+            mapping.setdefault(vpath, str(fs_path))
+    except Exception:
+        pass
+    return mapping
+
+
+def path_anchor_lines(text: str, mapping: dict[str, str]) -> list[str]:
+    """text 中出现的虚拟路径 → 真实路径的 dim 锚点行（去重，上限 5 条）。
+
+    纯函数：mapping 为空或 text 无虚拟前缀命中时返回 []。
+    前缀按长度倒序匹配（长前缀优先，避免短前缀先吃掉长前缀的命中）。
+    """
+    if not text or not mapping:
+        return []
+    prefixes = sorted(
+        (p for p in mapping if p.startswith("/")), key=len, reverse=True
+    )
+    anchors: list[str] = []
+    seen: set[str] = set()
+    for prefix in prefixes:
+        pat = re.compile(re.escape(prefix) + r"[\w./-]*")
+        for m in pat.finditer(text):
+            virtual = m.group(0)
+            if virtual in seen:
+                continue
+            seen.add(virtual)
+            root = mapping[prefix]
+            rel = virtual[len(prefix):]
+            real = str(Path(root) / rel) if rel else str(Path(root))
+            anchors.append(f"[dim]路径锚点: {virtual} → {real}[/dim]")
+            if len(anchors) >= 5:
+                return anchors
+    return anchors
 
 def first_human_text(agent, thread_id: str, limit: int = 18) -> str:
     """取指定 thread 首条人类消息文本（压单行、截断 limit 字）；无消息或出错返回空串。

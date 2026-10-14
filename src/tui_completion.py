@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 from src.path_completion import PathSuggestion, at_query, collect_completion_paths
@@ -26,6 +27,46 @@ class OverlayState:
         return self.kind != "none" and bool(self.items)
 
 
+def _real_path_for(item_path: str, path_mapping: dict[str, str] | None) -> str | None:
+    """item_path 为虚拟前缀形式（/workspace/x、/vault/x …）时返回映射后的真实路径。
+
+    前缀按长度倒序匹配；非虚拟路径或 mapping 未覆盖时返回 None。
+    """
+    if not path_mapping:
+        return None
+    for prefix in sorted(
+        (p for p in path_mapping if p.startswith("/")), key=len, reverse=True
+    ):
+        if item_path.startswith(prefix):
+            root = path_mapping[prefix]
+            rel = item_path[len(prefix) :]
+            return str(Path(root) / rel) if rel else str(Path(root))
+    return None
+
+
+def _style_item(
+    s: PathSuggestion,
+    path_mapping: dict[str, str] | None,
+    at_reference_style: str,
+) -> SuggestionItem:
+    """#04: 按 at_reference_style 生成补全条目（缺省 "virtual" 保持旧行为）。
+
+    dual = 标签/插入值保持虚拟路径，hint 追加真实路径；
+    real = 插入值与标签改为真实磁盘路径（#10 起文件工具本就接受真实路径），hint 提示虚拟路径。
+    """
+    if at_reference_style == "virtual":
+        return SuggestionItem(insert=s.path, label=s.path, hint=s.hint)
+    real = _real_path_for(s.path, path_mapping)
+    if at_reference_style == "real":
+        if real:
+            return SuggestionItem(insert=real, label=real, hint=f"虚拟路径 {s.path}")
+        return SuggestionItem(insert=s.path, label=s.path, hint=s.hint)
+    # dual
+    if real:
+        hint = f"{s.hint} · {real}" if s.hint else real
+        return SuggestionItem(insert=s.path, label=s.path, hint=hint)
+    return SuggestionItem(insert=s.path, label=s.path, hint=s.hint)
+
 def resolve_overlay_state(
     value: str,
     cursor: int,
@@ -33,6 +74,8 @@ def resolve_overlay_state(
     vault_path,
     workspace_root,
     memories_root,
+    path_mapping: dict[str, str] | None = None,
+    at_reference_style: str = "virtual",
 ) -> OverlayState:
     slash = slash_query(value, cursor)
     if slash is not None and (cursor == len(value) or value[:cursor].strip() == value[:cursor]):
@@ -53,7 +96,7 @@ def resolve_overlay_state(
             query=query,
         )
         items = tuple(
-            SuggestionItem(insert=s.path, label=s.path, hint=s.hint) for s in suggestions
+            _style_item(s, path_mapping, at_reference_style) for s in suggestions
         )
         return OverlayState(kind="path", at_index=at_index, items=items)
 

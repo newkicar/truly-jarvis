@@ -41,6 +41,7 @@ class InheritedEnvShellBackend(LocalShellBackend):
         max_output_bytes: int = 100_000,
         env: dict[str, str] | None = None,
         virtual_prefixes: tuple[str, ...] = (),
+        prefix_map: dict[str, str] | None = None,
     ) -> None:
         super().__init__(
             root_dir=root_dir,
@@ -51,6 +52,8 @@ class InheritedEnvShellBackend(LocalShellBackend):
             inherit_env=True,
         )
         self._virtual_prefixes = tuple(p.strip("/") for p in virtual_prefixes if p.strip("/"))
+        # #04: 虚拟前缀 → 真实目录映射（key 形如 "/workspace/"），守卫报错指路用。
+        self._prefix_map = dict(prefix_map or {})
         # (?<![:\w]) 排除 URL 路径段（https://x/workspace/）；
         # (?![\w]) 兼容无尾斜杠形式（dir /workspace、cd "/vault"）。
         alt = "|".join(re.escape(p) for p in self._virtual_prefixes) or r"(?!)"
@@ -76,13 +79,21 @@ class InheritedEnvShellBackend(LocalShellBackend):
         if not m:
             return None
         prefix = m.group(0)
+        hint = ""
+        root = self._prefix_map.get(prefix.rstrip("/") + "/")
+        if root:
+            hint = (
+                f"\n虚拟前缀 {prefix}/ 对应真实目录：{root}——"
+                "shell 里请改用项目根相对路径或真实路径，"
+                f"{prefix}/ 前缀只用于文件工具（write_file/ls/read_file 等）。"
+            )
         return ExecuteResponse(
             output=(
                 f"Error: shell 命令包含文件工具专用的虚拟前缀 {prefix!r}——shell 不认识虚拟路径，"
                 "cmd 会把它当开关参数静默忽略或报语法错误。\n"
                 f"shell 的工作目录就是项目根（{self.cwd}）。请改用相对路径"
                 "（如 tmp-javis-demo/xxx）或真实磁盘路径；/workspace/ 前缀只用于文件工具"
-                "（write_file/ls/read_file 等，会自动创建父目录）。"
+                f"（write_file/ls/read_file 等，会自动创建父目录）。{hint}"
             ),
             exit_code=1,
             truncated=False,

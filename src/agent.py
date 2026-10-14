@@ -230,6 +230,13 @@ def _make_backend(config: Config) -> CompositeBackend:
         )
     for vpath, fs_path in skill_backend_routes(config).items():
         routes[vpath] = FilesystemBackend(root_dir=str(fs_path), virtual_mode=True)
+    # #04: 虚拟前缀 → 真实目录映射（shell 守卫报错指路 + @ 引用锚点行/双路径补全）。
+    prefix_map: dict[str, str] = {"/memories/": str(config.memory_dir)}
+    if config.vault_path is not None:
+        prefix_map["/vault/"] = str(config.vault_path)
+    for vpath, fs_path in skill_backend_routes(config).items():
+        prefix_map.setdefault(vpath, str(fs_path))
+    prefix_map.setdefault("/workspace/", str(config.project_root))
     # 虚拟前缀守卫：execute 收到这些前缀时执行前拦截（shell 不认识虚拟路径）。
     # virtual_mode=False（#10）：文件工具接受任意磁盘路径——绝对路径按原样解析、
     # 相对路径以项目根为基准；虚拟前缀路由仍优先匹配，降级为快捷方式。
@@ -240,6 +247,7 @@ def _make_backend(config: Config) -> CompositeBackend:
         root_dir=str(config.project_root),
         virtual_mode=False,
         virtual_prefixes=("/workspace/", *routes.keys()),
+        prefix_map=prefix_map,
     )
     routes["/workspace/"] = workspace
     return CompositeBackend(default=workspace, routes=routes)

@@ -680,6 +680,14 @@ class JarvisApp(App):
         tui = getattr(self.config, "tui", None) or {}
         return bool(tui.get("copy_on_select", True))
 
+    def _at_reference_style(self) -> str:
+        """#04: @ 引用呈现方式（virtual/dual/real，缺省 dual）。"""
+        if not self.config:
+            return "dual"
+        tui = getattr(self.config, "tui", None) or {}
+        style = tui.get("at_reference_style", "dual")
+        return style if style in ("virtual", "dual", "real") else "dual"
+
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         with Horizontal(id="main_row"):
@@ -825,6 +833,11 @@ class JarvisApp(App):
         input_widget.value = ""
         log = self.query_one("#messages", RichLog)
         log.write(user_message_markup(text))
+        # #04: 消息含虚拟前缀（/workspace/ 等）时追加 dim 锚点行，指出真实目录。
+        for line in commands.path_anchor_lines(
+            text, commands.virtual_path_mappings(self.config)
+        ):
+            log.write(line)
         if text == "/exit":
             self.exit()
             return
@@ -1005,6 +1018,8 @@ class JarvisApp(App):
             vault_path=self._vault_path(),
             workspace_root=self._workspace_root(),
             memories_root=self._memories_root(),
+            path_mapping=commands.virtual_path_mappings(self.config),
+            at_reference_style=self._at_reference_style(),
         )
         self._overlay_state = state
         if not state.active:
