@@ -284,6 +284,35 @@ def consume_stream_events(
     return consumed
 
 
+# #03: 图片拒绝判定（多模态 auto 回落的触发条件）。
+# 端点 400/415/422 报错文本未必含 "image"/"vision"（如 OpenAI 兼容网关的
+# 通用 Bad Request），关键词集放宽 + 状态码兜底；命中则纯文本重试一次。
+_IMAGE_REJECT_KEYWORDS = (
+    "image",
+    "vision",
+    "multimodal",
+    "modality",
+    "unsupported media",
+    "unsupported content",
+    "not supported",
+    "not support",
+    "cannot be processed",
+    "bad request",
+    "不支持",
+    "无法处理",
+    "图片",
+    "图像",
+)
+
+
+def _looks_like_image_rejection(exc: BaseException) -> bool:
+    """判断异常是否指向图片输入被拒（关键词或 4xx 状态码）。"""
+    text = str(exc).lower()
+    if any(k in text for k in _IMAGE_REJECT_KEYWORDS):
+        return True
+    return getattr(exc, "status_code", None) in (400, 415, 422)
+
+
 def run_agent_turn(
     agent,
     thread_id: str,
@@ -445,13 +474,13 @@ def run_agent_turn(
                     and isinstance(user_input, list)
                     and model_image_input == "auto"
                     and user_input_fallback is not None
-                    and any(k in str(exc).lower() for k in ("image", "vision"))
+                    and _looks_like_image_rejection(exc)
                 ):
                     _image_fallback_done = True
                     user_input = user_input_fallback
                     status_cb = callbacks.get("on_status")
                     if status_cb:
-                        status_cb("模型拒绝图片，已改为路径引用重试")
+                        status_cb("模型端点拒绝图片输入，已改为路径引用自动重试")
                     continue
                 # 内部 _stream_with_resilience 上抛前已 finalize，这里不重复清理。
                 raise

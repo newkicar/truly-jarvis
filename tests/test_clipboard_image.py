@@ -158,3 +158,57 @@ def test_run_agent_turn_non_image_error_still_raises():
             user_input_fallback="图片 #1 路径: x",
         )
     assert len(agent.inputs) == 1
+
+
+class _FakeImageAgentStatus400(_FakeImageAgent):
+    """拒绝图片时报错文本不含 image/vision（通用 Bad Request + status_code=400）。"""
+
+    def stream_events(self, payload, *, version, config):
+        self.inputs.append(payload)
+        content = payload["messages"][0]["content"]
+        if isinstance(content, list):
+            err = ValueError("Bad Request: payload rejected (code 1001)")
+            err.status_code = 400
+            raise err
+        return _FakeStream()
+
+
+class _FakeImageAgentStatus500(_FakeImageAgent):
+    """服务端 5xx 与图片无关：不该触发回落，异常原样上抛。"""
+
+    def stream_events(self, payload, *, version, config):
+        self.inputs.append(payload)
+        content = payload["messages"][0]["content"]
+        if isinstance(content, list):
+            err = ValueError("Internal Server Error")
+            err.status_code = 500
+            raise err
+        return _FakeStream()
+
+
+def test_auto_fallback_triggers_on_plain_400_without_image_words():
+    agent = _FakeImageAgentStatus400()
+    statuses = []
+    ok = run_agent_turn(
+        agent, "t-400", _multimodal_input(),
+        handle_interrupts=lambda i: None,
+        callbacks={"on_status": statuses.append},
+        model_image_input="auto",
+        user_input_fallback="图片 #1 路径: C:\\x.png",
+    )
+    assert ok is True
+    assert len(agent.inputs) == 2
+    assert isinstance(agent.inputs[1]["messages"][0]["content"], str)
+
+
+def test_auto_fallback_not_triggered_on_5xx():
+    agent = _FakeImageAgentStatus500()
+    with pytest.raises(ValueError, match="Internal Server Error"):
+        run_agent_turn(
+            agent, "t-500", _multimodal_input(),
+            handle_interrupts=lambda i: None,
+            callbacks={},
+            model_image_input="auto",
+            user_input_fallback="图片 #1 路径: C:\\x.png",
+        )
+    assert len(agent.inputs) == 1
