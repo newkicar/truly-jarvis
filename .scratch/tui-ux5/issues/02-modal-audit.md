@@ -3,7 +3,7 @@
 **What to build:** 按 01 规约审计 PermissionModal（preview 区改弹性：`#perm_preview` 1fr → min-content，max 12 行）/ PunctPanelModal（list h14）/ CopyPickerModal（list h6）；新增「24 行短终端 mount 各 modal，断言按钮行可见可点」测试。
 
 **Type:** task
-**Status:** open
+**Status:** done
 **Blocked by:** 01
 
 ## 验收

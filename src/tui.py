@@ -162,7 +162,8 @@ class PermissionModal(ModalScreen):
     }
     #perm_box {
         width: 80%;
-        height: 70%;
+        height: auto;
+        max-height: 70%;
         border: thick $primary;
         background: $panel;
         padding: 1 2;
@@ -176,6 +177,7 @@ class PermissionModal(ModalScreen):
     }
     #perm_preview {
         height: 1fr;
+        min-height: 2;
         max-height: 12;
         overflow-y: auto;
         border: round $surface;
@@ -233,33 +235,73 @@ class PermissionModal(ModalScreen):
         self.dismiss({"decision": decision})
 
 
+def modal_edit_result(args: dict, values: dict) -> dict:
+    """纯函数：把编辑框当前值折成「确认」结果（留空回落原值）。"""
+    return {k: (str(values.get(k, "")).strip() or args[k]) for k in args}
+
+
 class EditParamsModal(ModalScreen):
-    """编辑工具参数（从权限审批进入），逐 key Input，留空用原值。"""
+    """编辑工具参数（从权限审批进入），逐 key Input，留空用原值。
+
+    布局遵循 Modal 规约（工单 01）：内容容器 80%/max 70% + 滚动区
+    overflow-y:auto + 按钮行固定模态底部（modal_screen 尾部 → 永远可见）。
+    """
 
     BINDINGS = [Binding("escape", "cancel", "取消")]
+
+    CSS = """
+    EditParamsModal {
+        align: center middle;
+        background: $surface;
+    }
+    #edit_box {
+        width: 80%;
+        height: auto;
+        max-height: 70%;
+        border: thick $primary;
+        background: $panel;
+        padding: 1 2;
+    }
+    #edit_title {
+        color: $accent;
+        text-style: bold;
+    }
+    #edit_params {
+        height: auto;
+        max-height: 1fr;
+        overflow-y: auto;
+    }
+    #edit_params > .param_input {
+        width: 100%;
+        height: 2;
+        margin: 0 0 1 0;
+    }
+    #edit_buttons {
+        height: auto;
+        align-horizontal: center;
+    }
+    """
 
     def __init__(self, args: dict):
         super().__init__()
         self.args = dict(args or {})
 
     def compose(self) -> ComposeResult:
-        yield Label("编辑参数（留空使用原值）")
-        for k, v in self.args.items():
-            yield Input(str(v), placeholder=k, id=f"param_{k}", classes="param_input")
-        with Horizontal():
-            yield Button("确认", id="btn_ok", variant="primary")
-            yield Button("取消", id="btn_cancel", variant="default")
+        with Static(id="edit_box"):
+            yield Label("编辑参数（留空使用原值）", id="edit_title")
+            with Vertical(id="edit_params"):
+                for k, v in self.args.items():
+                    yield Input(str(v), placeholder=k, id=f"param_{k}", classes="param_input")
+            with Horizontal(id="edit_buttons"):
+                yield Button("确认", id="btn_ok", variant="primary")
+                yield Button("取消", id="btn_cancel", variant="default")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn_cancel":
             self.dismiss(None)
             return
-        edited = {}
-        for k in self.args:
-            inp = self.query_one(f"#param_{k}", Input)
-            val = inp.value.strip()
-            edited[k] = val if val else self.args[k]
-        self.dismiss(edited)
+        values = {k: self.query_one(f"#param_{k}", Input).value for k in self.args}
+        self.dismiss(modal_edit_result(self.args, values))
 
     def action_cancel(self) -> None:
         self.dismiss(None)

@@ -3,7 +3,7 @@
 **What to build:** 统一 Modal 布局规约：内容容器 `width: 80%; height: auto; max-height: 70%`；body `overflow-y: auto`；按钮行固定模态底部。EditParamsModal（当前零 CSS，弹窗过长按钮被遮的事故主因）按规约重写。
 
 **Type:** task
-**Status:** open
+**Status:** done
 **Blocked by:** 无
 
 ## 验收
