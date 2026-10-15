@@ -916,10 +916,11 @@ def rollback(agent, thread_id: str, checkpoint_id: str, vault_path: Path | None 
 
 
 def current_permissions(permission_state: dict) -> dict:
-    """把内存 permission_state 还原成 javis.json 的 permissions 配置 dict。
+    """把内存 permission_state 还原成 jarvis.json 的 permissions 配置 dict。
 
     state 结构: {"default": rule, "tools": {tool: rule}}；
     default 视为 "*" 键，tools 里与 default 相同的规则可省略（保持文件简洁）。
+    heuristics 为 True 时带 "heuristics": true 键（False 省略，不吞用户配置）。
     """
     out: dict = {}
     default = permission_state["default"]
@@ -929,20 +930,45 @@ def current_permissions(permission_state: dict) -> dict:
         if rule == default:
             continue
         out[tool] = rule
+    if permission_state.get("heuristics"):
+        out["heuristics"] = True
     return out
 
 
-def always_approve(permission_state: dict, tool: str) -> bool:
-    """把某 gated 工具设为 allow 并持久化到 javis.json（always approve 入口）。
+def always_approve(
+    permission_state: dict,
+    tool: str,
+    args: dict | None = None,
+    prefix: str | None = None,
+) -> bool:
+    """永久放行并持久化到 jarvis.json（always approve 入口，工单 03/04）。
+
+    - execute 且带 args/prefix：按命令前缀写回 "<prefix> *": allow
+      （前缀未显式给定时由 args 的 command 提取，shell 包装两级剥离）；
+    - 其余（含 args=None 的旧调用）：整工具 allow，行为与旧版一致。
 
     返回 True 表示已持久化；False 表示该工具不在 gated 列表、无法持久化。
-    仅改 state + 写回 javis.json，无需重建 agent（运行时即生效）。
+    仅改 state + 写回 jarvis.json，无需重建 agent（运行时即生效）。
     """
-    from src.permissions import GATED_TOOLS, apply_permission_override, dump_permissions_json
+    from src.permissions import (
+        GATED_TOOLS,
+        apply_permission_override,
+        approve_prefix,
+        dump_permissions_json,
+        extract_command_prefix,
+    )
+    from src.tool_call import command
 
     if tool not in GATED_TOOLS:
         return False
-    apply_permission_override(permission_state, tool, "allow")
+    if tool == "execute" and (args or prefix):
+        p = prefix or (extract_command_prefix(command(args)) if args else None)
+        if p and p != "*":
+            approve_prefix(permission_state, p)
+        else:
+            apply_permission_override(permission_state, tool, "allow")
+    else:
+        apply_permission_override(permission_state, tool, "allow")
     dump_permissions_json(
         current_permissions(permission_state),
         project_root() / "jarvis.json",

@@ -3,7 +3,7 @@
 **What to build:** tui.py 新 PrefixModal（单 Input 预填 `extract_command_prefix(inv.path)` + 说明行「将写回: "<prefix> *": allow（jarvis.json）」+ 确认/取消，按 01 规约布局）；PermissionModal「永久放行」btn_always/'s' 分流：execute → push PrefixModal（确认后 approve_prefix + dump_permissions_json 写回），文件工具 → 原 always_approve 流程；CLI `on_always_approve` 传 args（execute 时提示输入/确认前缀）。
 
 **Type:** task
-**Status:** open
+**Status:** done
 **Blocked by:** 01, 03
 
 ## 验收

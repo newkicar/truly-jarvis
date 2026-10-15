@@ -162,7 +162,12 @@ def collect_interrupt_decisions(
                 decisions.append({"type": "reject", "message": REJECT_MESSAGE})
             elif decision == "always_approve":
                 if permission_state is not None:
-                    commands.always_approve(permission_state, inv.name)
+                    commands.always_approve(
+                        permission_state,
+                        inv.name,
+                        args=inv.args,
+                        prefix=result.get("prefix"),
+                    )
                     if on_always_approve:
                         on_always_approve(inv.name)
                 decisions.append({"type": "approve"})
@@ -211,11 +216,22 @@ def cli_prompt_action(
         if choice == "n":
             return {"decision": "reject"}
         if choice == "a":
-            if permission_state is not None and commands.always_approve(permission_state, inv.name):
-                if on_always_approve:
-                    on_always_approve(inv.name)
-            else:
-                print(f"    无法持久化 {inv.name} 的 always approve（非 gated tool）")
+            from src.permissions import GATED_TOOLS, extract_command_prefix
+            from src.tool_call import command as _command
+
+            if permission_state is None or inv.name not in GATED_TOOLS:
+                print(f"    无法持久化 {inv.name} 的 always approve（非 gated tool 或未配置）")
+                return {"decision": "always_approve"}
+            if inv.name == "execute":
+                default = extract_command_prefix(_command(inv.args or {}))
+                p = read(
+                    f"    将写回 '{default} *': allow，命令前缀（回车=默认；输入「全」= 整工具） > "
+                ).strip()
+                if not p:
+                    p = default
+                elif p == "全":
+                    p = "*"
+                return {"decision": "always_approve", "prefix": p}
             return {"decision": "always_approve"}
         if choice == "e":
             print("    编辑参数（留空使用原值）:")

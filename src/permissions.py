@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import shlex
 from pathlib import Path
 
 from src.guard import GuardMiddleware
@@ -50,6 +51,63 @@ def resolve_tool_action(rule: object, value: str) -> str:
     return "ask"
 
 
+# Shell 包装命令：首 token → 识别旗标。经这些包装执行时，真正的前缀要在两级之后
+# （"powershell -Command git ..." → git），否则前缀规则记不到真实命令。
+SHELL_WRAPPER_PREFIXES = {
+    "cmd": ("/c",),
+    "powershell": ("-command", "-c"),
+    "pwsh": ("-command", "-c"),
+    "bash": ("-c",),
+    "sh": ("-c",),
+    "wsl": ("-e",),
+}
+
+
+def extract_command_prefix(cmd: str) -> str:
+    """提取可审批的命令前缀：首 token（小写）；shell 包装两级剥离。
+
+    提取不到（空/引号错配）返回 "*"（调用方回落整工具放行）。
+    """
+    if not isinstance(cmd, str) or not cmd.strip():
+        return "*"
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        tokens = cmd.strip().split()
+    if not tokens:
+        return "*"
+    head = tokens[0].lower()
+    flags = SHELL_WRAPPER_PREFIXES.get(head)
+    rest = tokens[1:]
+    if flags and rest and rest[0].lower() in flags:
+        inner = rest[1:]
+        if inner and inner[0].strip():
+            return inner[0].strip().split()[0].lower()
+        return "*"
+    return head
+
+
+# 只读启发式表（工单 05）：permissions.heuristics 开启时，命中这些命令 → 自动放行。
+# 小写元组；含空格的条目按前两 token 匹配（git status），否则按首 token。
+HEURISTIC_SAFE_COMMANDS = (
+    "get-date", "whoami", "hostname", "get-location", "pwd",
+    "ls", "dir", "get-childitem", "get-content",
+    "git status", "git log", "git diff",
+    "get-process", "tasklist", "echo",
+)
+
+
+def heuristic_safe(cmd: str) -> bool:
+    """命令是否命中只读启发式表（大小写不敏感，前 1–2 token）。"""
+    if not isinstance(cmd, str):
+        return False
+    toks = cmd.lower().split()
+    if not toks:
+        return False
+    one, two = toks[0], " ".join(toks[:2])
+    return any(one == item if " " not in item else two == item for item in HEURISTIC_SAFE_COMMANDS)
+
+
 def _action_for_args(state: dict, tool: str, args: dict) -> str:
     """按 state 当前规则 + 一次工具调用的 args 解析动作（allow/ask/deny）。
 
@@ -71,14 +129,24 @@ def _action_for_args(state: dict, tool: str, args: dict) -> str:
             if decision in VALID_ACTIONS:
                 return decision
 
-    active_rule = state["tools"].get(tool, state["default"])
-    if isinstance(active_rule, str):
-        return active_rule if active_rule in VALID_ACTIONS else "ask"
     if tool == "execute":
         value = command(args)
     else:
         value = arg_value(args, "file_path", "path", "pattern", "command")
-    return resolve_tool_action(active_rule, value)
+    active_rule = state["tools"].get(tool, state["default"])
+    if isinstance(active_rule, str):
+        action = active_rule if active_rule in VALID_ACTIONS else "ask"
+    else:
+        action = resolve_tool_action(active_rule, value)
+    # 只读启发式（工单 05）：permissions.heuristics 开启时，只读命令免逐次审批
+    if (
+        action == "ask"
+        and tool == "execute"
+        and state.get("heuristics")
+        and heuristic_safe(value)
+    ):
+        return "allow"
+    return action
 
 
 def _extract_args_from_request(request) -> dict:
@@ -140,6 +208,7 @@ def build_permission_interrupts(
         "hooks": hook_rules,
         "thread_id": "",
         "project_root": project_root,
+        "heuristics": bool(permissions.get("heuristics", False)),
     }
     return _build_interrupt_on(state), state
 
@@ -186,6 +255,28 @@ def apply_permission_override(state: dict, tool: str, action: str, value: str = 
         rule[value] = action
     else:
         state["tools"][tool] = action
+
+
+def approve_prefix(state: dict, prefix: str, *, tool: str = "execute") -> None:
+    """按命令前缀永久放行（工单 03）：写回 "<prefix> *": allow。
+
+    字符串规则先升格为 {"*": 原值}（保持原语义），再追加前缀规则；
+    fnmatch 最后匹配胜出（前缀规则追加在尾部，命中即 allow）。
+    prefix 为 "*" 或提取不到 → 回落整工具 allow。
+    """
+    prefix = (prefix or "").strip()
+    if prefix in ("", "*", "全"):
+        # 空 / 提取失败 / 显式「全工具」→ 整工具 allow（与 commands.always_approve 语义对齐）
+        apply_permission_override(state, tool, "allow")
+        return
+    rule = state["tools"].get(tool, state["default"])
+    if isinstance(rule, dict):
+        target = rule
+    else:
+        base = rule if isinstance(rule, str) and rule in VALID_ACTIONS else "ask"
+        target = {"*": base}
+        state["tools"][tool] = target
+    target[f"{prefix} *"] = "allow"
 
 
 class PermissionDenyMiddleware(GuardMiddleware):

@@ -3,7 +3,7 @@
 **What to build:** `HEURISTIC_SAFE_COMMANDS` 小写元组（get-date、whoami、hostname、get-location、pwd、ls、dir、get-childitem、get-content、git status、git log、git diff、get-process、tasklist、echo）；`_action_for_args` 尾段：action=="ask" 且 tool=="execute" 且 state.get("heuristics") 且命令小写前 1–2 token 命中 → "allow"；`build_permission_interrupts` 读 jarvis.json `permissions.heuristics`（默认 False）入 state；`current_permissions` 仅 True 时带该键（dump_permissions_json 是整体替换 data["permissions"]，序列化/写回路径勿吞用户配置）。
 
 **Type:** task
-**Status:** open
+**Status:** done
 **Blocked by:** 03
 
 ## 验收

@@ -80,7 +80,7 @@ def _stream_replay(agent, thread_id: str, checkpoint_id: str, permission_state: 
     workspace_root = config.project_root if config else None
 
     def on_always_approve(name: str) -> None:
-        print(f"    已设置 {name} = allow（已写入 javis.json，以后自动放行）")
+        print(f"    已永久放行 {name}（已写入 jarvis.json，以后自动放行）")
 
     streaming.run_agent_turn(
         agent,
@@ -127,7 +127,7 @@ def _stream_turn(agent, thread_id: str, user_input: str, permission_state: dict 
     max_steps = int(getattr(config, "execution_max_steps", 200)) if config else 200
 
     def on_always_approve(name: str) -> None:
-        print(f"    已设置 {name} = allow（已写入 javis.json，以后自动放行）")
+        print(f"    已永久放行 {name}（已写入 jarvis.json，以后自动放行）")
 
     try:
         streaming.run_agent_turn(

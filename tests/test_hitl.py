@@ -165,7 +165,7 @@ def test_handle_interrupts_edit_returns_edited_action(monkeypatch):
 
 
 def test_handle_interrupts_always_approve_updates_state_and_json(monkeypatch, tmp_path):
-    """CLI a：always approve → permission_state 更新并写 javis.json。"""
+    """CLI a + 「全」：execute 整工具放行 → permission_state 更新并写 jarvis.json（工单 03 兜底路径）。"""
     import src.main as main
     from src import streaming
 
@@ -188,12 +188,13 @@ def test_handle_interrupts_always_approve_updates_state_and_json(monkeypatch, tm
     monkeypatch.setattr(perms, "apply_permission_override", fake_apply)
 
     real_cli = streaming.cli_prompt_action
+    _seq = iter(["a", "全"])  # 第一次=选 a；第二次=前缀「全」=整工具放行（工单 03 兜底）
 
     def inject_input_cli(inv, **kwargs):
         return real_cli(
             inv,
             permission_state=kwargs.get("permission_state"),
-            input_fn=lambda _: "a",
+            input_fn=lambda _: next(_seq),  # 序列见上方 _seq（第一次 a，第二次 全）
             on_always_approve=kwargs.get("on_always_approve"),
         )
 
@@ -203,4 +204,11 @@ def test_handle_interrupts_always_approve_updates_state_and_json(monkeypatch, tm
     assert resume["decisions"][0]["type"] == "approve"
     assert state["tools"]["execute"] == "allow"
     assert written["permissions"] == {"execute": "allow"}
+    # 工单 03 主路径：带具体前缀 → dict 规则写回
+    state2 = {"default": "ask", "tools": {"execute": "ask"}}
+    written2: dict = {}
+    perms.dump_permissions_json = lambda p_, path_: written2.update(p=p_) or None
+    cmds.always_approve(state2, "execute", args={"command": "git status"}, prefix="git")
+    assert state2["tools"]["execute"] == {"*": "ask", "git *": "allow"}
+    assert written2["p"]["execute"] == {"*": "ask", "git *": "allow"}
     assert written["path"] == tmp_path / "jarvis.json"

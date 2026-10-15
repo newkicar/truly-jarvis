@@ -149,7 +149,7 @@ class PermissionModal(ModalScreen):
 
     BINDINGS = [
         Binding("a", "choose('approve')", "放行", show=False),
-        Binding("s", "choose('always_approve')", "永久放行", show=False),
+        Binding("s", "always", "永久放行", show=False),
         Binding("d", "choose('reject')", "拒绝", show=False),
         Binding("e", "edit_params", "编辑参数", show=False),
         Binding("escape", "choose('cancel')", "放弃", show=False),
@@ -218,7 +218,7 @@ class PermissionModal(ModalScreen):
         if event.button.id == "btn_approve":
             self.dismiss({"decision": "approve"})
         elif event.button.id == "btn_always":
-            self.dismiss({"decision": "always_approve"})
+            self.action_always()
         elif event.button.id == "btn_reject":
             self.dismiss({"decision": "reject"})
         elif event.button.id == "btn_edit":
@@ -233,6 +233,87 @@ class PermissionModal(ModalScreen):
 
     def action_choose(self, decision: str) -> None:
         self.dismiss({"decision": decision})
+
+    def action_always(self) -> None:
+        """永久放行：execute → PrefixModal（工单 04，前缀可编辑）；文件工具 → 原整工具流程。"""
+        from src.permissions import extract_command_prefix
+        from src.tool_call import command
+
+        if self.inv.name != "execute":
+            self.dismiss({"decision": "always_approve"})
+            return
+        default = extract_command_prefix(command(self.inv.args or {}))
+
+        def got(prefix) -> None:
+            if not prefix:
+                return  # 取消：留在审批 Modal
+            self.dismiss({"decision": "always_approve", "prefix": prefix})
+
+        self.app.push_screen(PrefixModal(default), got)
+
+
+class PrefixModal(ModalScreen):
+    """execute 永久放行前缀确认（工单 04）：预填提取出的命令前缀，可编辑。
+
+    确认后 dismiss(prefix 字符串)；取消/Esc dismiss(None) → 调用方留在审批 Modal。
+    布局遵循 Modal 规约（工单 01）。
+    """
+
+    BINDINGS = [Binding("escape", "cancel", "取消")]
+
+    CSS = """
+    PrefixModal {
+        align: center middle;
+        background: $surface;
+    }
+    #prefix_box {
+        width: 80%;
+        height: auto;
+        max-height: 70%;
+        border: thick $primary;
+        background: $panel;
+        padding: 1 2;
+    }
+    #prefix_title {
+        color: $accent;
+        text-style: bold;
+    }
+    #prefix_hint {
+        color: $text-muted;
+    }
+    #prefix_input {
+        width: 100%;
+        height: 2;
+        margin: 1 0;
+    }
+    #prefix_buttons {
+        height: auto;
+        align-horizontal: center;
+    }
+    """
+
+    def __init__(self, default_prefix: str):
+        super().__init__()
+        self.default_prefix = default_prefix or "*"
+
+    def compose(self) -> ComposeResult:
+        with Static(id="prefix_box"):
+            yield Label("永久放行（按命令前缀）", id="prefix_title")
+            yield Label(f'将写回 jarvis.json: "{self.default_prefix} *": allow', id="prefix_hint")
+            yield Input(self.default_prefix, id="prefix_input")
+            with Horizontal(id="prefix_buttons"):
+                yield Button("确认", id="btn_prefix_ok", variant="primary")
+                yield Button("取消", id="btn_prefix_cancel", variant="default")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn_prefix_cancel":
+            self.dismiss(None)
+            return
+        val = self.query_one("#prefix_input", Input).value.strip()
+        self.dismiss(val or None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
 
 
 def modal_edit_result(args: dict, values: dict) -> dict:

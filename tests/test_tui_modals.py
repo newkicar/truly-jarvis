@@ -1,4 +1,4 @@
-"""Modal 布局规约测试（工单 01/02）：24 行短终端下按钮行必须可见可点。
+"""Modal 布局规约 + PrefixModal 测试（工单 01/02/04）。
 
 规约（tui.py 各 Modal 共同遵守）：
 - 内容容器 width:80%; height:auto; max-height:70%
@@ -9,10 +9,17 @@
 import pytest
 
 from textual.app import App, ComposeResult
-from textual.widgets import Button, OptionList, Static
+from textual.widgets import Button, Input, OptionList, Static
 
 from src.commands import ToolInvocation
-from src.tui import CopyPickerModal, EditParamsModal, PermissionModal, PunctPanelModal, modal_edit_result
+from src.tui import (
+    CopyPickerModal,
+    EditParamsModal,
+    PermissionModal,
+    PunctPanelModal,
+    PrefixModal,
+    modal_edit_result,
+)
 
 
 class _HostApp:
@@ -40,38 +47,39 @@ def _inv(name: str = "execute", path: str = "git log", args: dict | None = None)
     return ToolInvocation(name=name, path=path, args=args or {})
 
 
+def _start(size=(80, 24)):
+    host = _ModalHost()
+    return host
+
+
 def test_modal_edit_result_pure() -> None:
     assert modal_edit_result({"a": 1, "b": "x"}, {"a": "  ", "b": "y"}) == {"a": 1, "b": "y"}
     assert modal_edit_result({}, {}) == {}
 
 
-async def _mount(modal, size=(80, 24)):
-    """mount modal 到宿主；返回 (host, close)，close() 负责 Esc 关闭 + 收尾。"""
-    host = _ModalHost()
+@pytest.mark.asyncio
+async def _mount_and_check(modal, checker, size=(80, 24)) -> None:
+    host = _start()
     cm = host.run_test(size=size)
     pilot = await cm.__aenter__()
-    host.push_screen(modal)
-    await pilot.pause()
-
-    async def close() -> None:
-        await pilot.press("escape")
+    try:
+        host.push_screen(modal)
         await pilot.pause()
+        await checker(host, pilot)
+    finally:
         host.exit()
         await pilot.pause()
         await cm.__aexit__(None, None, None)
 
-    return host, close
-
 
 @pytest.mark.asyncio
 async def test_permission_modal_buttons_visible_at_24_rows() -> None:
-    host, close = await _mount(PermissionModal(_inv()))
-    try:
+    async def check(host, pilot) -> None:
         for bid in ("btn_approve", "btn_always", "btn_reject", "btn_edit"):
             btn = host.screen.query_one(f"#{bid}", Button)
             assert btn.visible, f"{bid} 被遮住了（24 行短屏）"
-    finally:
-        await close()
+
+    await _mount_and_check(PermissionModal(_inv()), check)
 
 
 @pytest.mark.asyncio
@@ -81,40 +89,80 @@ async def test_permission_modal_long_preview_keeps_buttons() -> None:
         "powershell -Command Get-ChildItem -Recurse D:\\ | Select-Object "
         "FullName, Length, LastWriteTime | Sort-Object | Format-Table -AutoSize | Out-String -Width 300"
     )
-    host, close = await _mount(PermissionModal(_inv("execute", long_cmd, {"command": long_cmd})))
-    try:
+
+    async def check(host, pilot) -> None:
         for bid in ("btn_approve", "btn_always", "btn_reject", "btn_edit"):
             btn = host.screen.query_one(f"#{bid}", Button)
             assert btn.visible, f"{bid} 被长 preview 推出屏幕"
-    finally:
-        await close()
+
+    await _mount_and_check(PermissionModal(_inv("execute", long_cmd, {"command": long_cmd})), check)
 
 
 @pytest.mark.asyncio
 async def test_edit_params_modal_many_keys_buttons_visible() -> None:
     args = {f"k{i:02d}": f"v{i}" for i in range(12)}
-    host, close = await _mount(EditParamsModal(args))
-    try:
+
+    async def check(host, pilot) -> None:
         for bid in ("btn_ok", "btn_cancel"):
             btn = host.screen.query_one(f"#{bid}", Button)
             assert btn.visible, f"{bid} 在多参数时不可见（24 行短屏）"
-    finally:
-        await close()
+
+    await _mount_and_check(EditParamsModal(args), check)
 
 
 @pytest.mark.asyncio
 async def test_copy_picker_visible_at_24_rows() -> None:
-    host, close = await _mount(CopyPickerModal(_HostApp()))
-    try:
+    async def check(host, pilot) -> None:
         assert host.screen.query_one("#copy_list", OptionList).visible
-    finally:
-        await close()
+
+    await _mount_and_check(CopyPickerModal(_HostApp()), check)
 
 
 @pytest.mark.asyncio
 async def test_punct_panel_visible_at_24_rows() -> None:
-    host, close = await _mount(PunctPanelModal(_HostApp()))
-    try:
+    async def check(host, pilot) -> None:
         assert host.screen.query_one("#punct_list", OptionList).visible
+
+    await _mount_and_check(PunctPanelModal(_HostApp()), check)
+
+
+@pytest.mark.asyncio
+async def test_prefix_modal_layout_and_input() -> None:
+    async def check(host, pilot) -> None:
+        inp = host.screen.query_one("#prefix_input", Input)
+        assert inp.value == "git"
+        assert host.screen.query_one("#btn_prefix_ok", Button).visible
+        assert host.screen.query_one("#btn_prefix_cancel", Button).visible
+        inp.value = "npm"
+
+    await _mount_and_check(PrefixModal("git"), check)
+
+
+@pytest.mark.asyncio
+async def test_permission_modal_s_opens_prefix_modal_for_execute() -> None:
+    """execute 按 s → PrefixModal；Esc 取消回审批；文件工具 s → 直接完成。"""
+    host = _start()
+    cm = host.run_test(size=(80, 24))
+    pilot = await cm.__aenter__()
+    try:
+        host.push_screen(PermissionModal(_inv("execute", "git log --oneline", {"command": "git log --oneline"})))
+        await pilot.pause()
+        await pilot.press("s")
+        await pilot.pause()
+        assert isinstance(host.screen, PrefixModal), "execute 应按 s 弹 PrefixModal"
+        # 取消（Esc）→ 回到审批 Modal
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(host.screen, PermissionModal)
+
+        host.screen.dismiss()
+        await pilot.pause()
+        host.push_screen(PermissionModal(_inv("write_file", "/tmp/x.py", {"file_path": "/tmp/x.py"})))
+        await pilot.pause()
+        await pilot.press("s")
+        await pilot.pause()
+        assert not isinstance(host.screen, PermissionModal), "文件工具 s 应直接完成（无二级 Modal）"
     finally:
-        await close()
+        host.exit()
+        await pilot.pause()
+        await cm.__aexit__(None, None, None)

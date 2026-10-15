@@ -3,7 +3,7 @@
 **What to build:** `permissions.extract_command_prefix(cmd)`（首 token；shell 包装两级提取：cmd /c、powershell|pwsh -Command|-c、bash|sh -c、wsl -e）+ `approve_prefix(state, prefix)`（当前值为字符串规则时先升格 `{"*": 原值}`，再写回 `"<prefix> *": "allow"`）+ `commands.always_approve` 签名改 `(state, tool, args=None)`：execute+args → 前缀路径，文件工具 → 原整工具行为，无 args → 完全向后兼容。
 
 **Type:** task
-**Status:** open
+**Status:** done
 **Blocked by:** 无
 
 ## 验收
