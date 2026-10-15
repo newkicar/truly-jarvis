@@ -1,6 +1,6 @@
 """主代理组装。
 
-model + CompositeBackend（default=LocalShellBackend；/workspace /vault /memories 路由）
+model + CompositeBackend（default=InheritedEnvShellBackend 无限制；/workspace(虚拟) /vault /memories /skills 路由）
 + subagents + memory + checkpointer(SqliteSaver) + store。见设计文档 §5.2/§6。
 """
 import sys
@@ -249,7 +249,15 @@ def _make_backend(config: Config) -> CompositeBackend:
         virtual_prefixes=("/workspace/", *routes.keys()),
         prefix_map=prefix_map,
     )
-    routes["/workspace/"] = workspace
+    # tui-ux4-hotfix #04: /workspace/ 路由专用虚拟模式 FilesystemBackend——
+    # 共享 InheritedEnvShellBackend(virtual_mode=False) 时 ls/glob 上报真实磁盘绝对路径，
+    # CompositeBackend 重拼前缀产出 /workspaceD:\... 破坏路径，模型 read_file 失败（@ 引用卡点）。
+    # 虚拟模式下条目上报 /<相对路径> 再被干净重拼为 /workspace/...。
+    # default 仍是 InheritedEnvShellBackend（#10 路径放开 + execute 守卫不变）。
+    routes["/workspace/"] = FilesystemBackend(
+        root_dir=str(config.project_root),
+        virtual_mode=True,
+    )
     return CompositeBackend(default=workspace, routes=routes)
 
 
