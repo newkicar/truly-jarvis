@@ -50,7 +50,7 @@
 - 测试批回归：A（backend/路由 ~95）/ B（TUI/UX ~259）/ C1（config 48 绿 + 3 既有失败勿修）/ C2+C3（RAG 前 2 例）。
 
 ## 验收
-- [ ] 12 张工单全 done
-- [ ] 测试批全绿（C1 三处既有失败除外）
+- [x] 12 张工单全 done
+- [x] 测试批全绿（C1 三处既有失败除外：absolutizes_paths / parses_mcps_dict / obsidian_vault 回退，28 绿；沙箱外复跑确认）
 - [ ] 用户在 git bash 跑 `python -m src.input_probe` 回传输出；中文标点实测进框
-- [ ] 不合并 main（用户明确「先不并回 main」）
+- [x] 不合并 main（用户明确「先不并回 main」）——tui-ux5 @ b807987 保留在 .worktrees/tui-ux5
