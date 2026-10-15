@@ -201,14 +201,6 @@ class CopyableRichLog(RichLog):
             self.screen.clear_selection()
         self.refresh()
 
-    def on_text_selected(self, event: events.TextSelected) -> None:
-        """拖选结束后复制（等 Textual 完成选区再读，避免空剪贴板）。"""
-        if not self.copy_on_select:
-            return
-        ok, text = self.copy_selection_to_clipboard()
-        if not text:
-            return
-        if ok and self.app is not None:
-            self.app.notify(f"已复制 {len(text)} 字符", timeout=2)
-        elif self.app is not None:
-            self.app.notify("复制失败，请用 Ctrl+Insert", timeout=3)
+    # 拖选松开自动复制不在本 widget 实现：Textual 8.2.8 的 TextSelected 只由
+    # Screen 在 MouseUp 时 post（bubble=True，路径 Screen→App），widget 级
+    # handler 收不到事件。行为统一挂在 JarvisApp.on_text_selected（src/tui.py）。

@@ -1273,6 +1273,27 @@ class JarvisApp(App):
             return None
         return str(option.id)
 
+    def on_text_selected(self, event: events.TextSelected) -> None:
+        """#01: 对话区鼠标拖选松开后自动复制系统剪贴板。
+
+        Textual 8.2.8 中 TextSelected 由 Screen 在每次 MouseUp 时 post
+        （bubble=True）——widget 级 handler 收不到，必须挂在 App。
+        无选区（单击/选区外松开）时静默。
+        """
+        try:
+            log = self.query_one("#messages", CopyableRichLog)
+        except Exception:
+            return
+        if not log.copy_on_select:
+            return
+        ok, text = log.copy_selection_to_clipboard()
+        if not text:
+            return
+        if ok:
+            self.notify(f"已复制 {len(text)} 字符", timeout=2)
+        else:
+            self.notify("复制失败，请用 Ctrl+Insert", timeout=3)
+
     def _copy_to_clipboard(self, text: str, message: str) -> None:
         from src.tui_log import copy_text_to_system_clipboard
 
