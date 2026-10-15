@@ -142,3 +142,58 @@ def test_install_skipped_when_original_run_drifted(monkeypatch) -> None:
             delattr(win32.EventMonitor, attr)
     assert ime_shim.install() is False
     assert getattr(win32.EventMonitor, "_jarvis_ime_drift", False) is True
+
+# ---- #11 NUL-uChar 重建（ConPTY IME 确认记录形态） ----
+
+
+def _set_key(rec, vk=0, scan=0, u_char="", mods=0, down=1):
+    ke = rec.Event.KeyEvent
+    ke.bKeyDown = down
+    ke.wVirtualKeyCode = vk
+    ke.wVirtualScanCode = scan
+    ke.uChar.UnicodeChar = u_char
+    ke.dwControlKeyState = mods
+
+
+def test_nul_u_char_rebuilt_cjk_merged(monkeypatch) -> None:
+    """NUL-uChar + 无修饰键 + 重建结果非 ASCII：并入字符流。"""
+    monkeypatch.setattr(ime_shim, "_map_vk", lambda vk: "\u201c")  # “
+    rec = _make_record(ime_shim.KEY_EVENT)
+    _set_key(rec, vk=0x27, u_char="\x00")
+    keys, _ = ime_shim.fold_input_records([rec])
+    assert keys == ["\u201c"]
+
+
+def test_nul_u_char_with_shift_not_merged(monkeypatch) -> None:
+    """NUL-uChar + SHIFT 按下（0x0001）：不并入。"""
+    monkeypatch.setattr(ime_shim, "_map_vk", lambda vk: "\u201c")
+    rec = _make_record(ime_shim.KEY_EVENT)
+    _set_key(rec, vk=0x27, u_char="\x00", mods=0x0001)
+    keys, _ = ime_shim.fold_input_records([rec])
+    assert keys == []
+
+
+def test_nul_u_char_ascii_result_ignored(monkeypatch) -> None:
+    """NUL-uChar 但重建结果 ASCII：不并入（ASCII 键走正常路径）。"""
+    monkeypatch.setattr(ime_shim, "_map_vk", lambda vk: "a")
+    rec = _make_record(ime_shim.KEY_EVENT)
+    _set_key(rec, vk=0x41, u_char="\x00")
+    keys, _ = ime_shim.fold_input_records([rec])
+    assert keys == []
+
+
+def test_nul_u_char_unmapped_vk_ignored(monkeypatch) -> None:
+    """NUL-uChar 且 MapVirtualKeyW 无法映射（返回空）：不并入、不炸。"""
+    monkeypatch.setattr(ime_shim, "_map_vk", lambda vk: "")
+    rec = _make_record(ime_shim.KEY_EVENT)
+    _set_key(rec, vk=0x70, u_char="\x00")
+    keys, _ = ime_shim.fold_input_records([rec])
+    assert keys == []
+
+
+def test_normal_u_char_regression_unchanged() -> None:
+    """回归：正常 uChar（，）仍原样追加，不进重建路径。"""
+    rec = _make_record(ime_shim.KEY_EVENT)
+    _set_key(rec, vk=0xBA, u_char="，")
+    keys, _ = ime_shim.fold_input_records([rec])
+    assert keys == ["，"]

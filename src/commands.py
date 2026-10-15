@@ -716,6 +716,10 @@ def format_doctor_report(config, agent, thread_id: str, *, mcp_tool_count: int |
     else:
         lines.append("会话状态:   正常")
 
+    from src.input_probe import doctor_input_channel_line
+
+    lines.append(doctor_input_channel_line())
+
     return "\n".join(lines)
 
 

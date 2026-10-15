@@ -8,6 +8,10 @@ WINDOW_BUFFER_SIZE_EVENT(0x0004) 两类控制台输入记录；console 在输入
 可以正常输入；但需要输入法组合确认的字符（“ ” ‘ ’ … 等）以 UNICODE_EVENT
 记录下发，进不了应用——用户报告的「中文双引号单引号输入不进去」。
 
+NUL-uChar 重建（#11）：部分 ConPTY/IME 组合下确认字符会以 uChar 为 NUL 的
+KEY_EVENT 下发；此时用 MapVirtualKeyW(VK) 重建字符，仅当「无修饰键 + 结果非 ASCII」
+才并入字符流（ord≥0x80 子包控制键检查），最终形态以 #10 input_probe 探测输出为准。
+
 install()（仅 win32，幂等）monkey-patch EventMonitor.run：保留原有按键处理
 与窗口尺寸逻辑，另把 UNICODE_EVENT/IME_EVENT 记录并入按键字符流，走同一
 parser.feed 路径。
@@ -54,6 +58,27 @@ def union_offset() -> int:
     return _UNION_OFFSET
 
 
+def _map_vk(vk: int) -> str:
+    """VK → 字符（Win32 MapVirtualKeyW(vk, 0)）；非 win32/失败/无字符键返回 "".
+
+    #11 NUL-uChar 重建（ConPTY IME 确认记录形态）；单测 monkeypatch 本函数。
+    """
+    if sys.platform != "win32":
+        return ""
+    if not isinstance(vk, int) or vk <= 0 or vk > 0xFFFF:
+        return ""
+    try:
+        from ctypes import windll
+
+        code = windll.user32.MapVirtualKeyW(vk, 0)
+    except Exception:
+        return ""
+    if not code:
+        return ""
+    ch = chr(code)
+    return "" if ch == "\x00" else ch
+
+
 def _read_wchar_at(base: int, offset: int) -> str:
     raw = bytes((ctypes.c_ubyte * 2).from_address(base + offset))
     return raw.decode("utf-16-le", errors="ignore")
@@ -69,6 +94,9 @@ def fold_input_records(
     - IME_EVENT：仅 IMESF_COMMIT 时取 union 偏移 +4 的 wCharCode 并入；
       IMESF_COMP（pre-edit 组合字）与 IMESF_END 不并入——pre-edit 逐字
       上屏会闪烁/重影，console 自带 IME 窗已展示组合过程。
+    - KEY_EVENT NUL-uChar（#11）：UnicodeChar 为 NUL/空（ConPTY IME 确认记录形态）时，
+      经 MapVirtualKeyW(VK) 重建字符，仅「无修饰键（dwControlKeyState & 0x0007 == 0）
+      且结果非 ASCII（ord≥0x80）」才并入；正常 uChar 原样追加，不再追加空串。
     """
     off = union_offset()
     keys: List[str] = []
@@ -82,7 +110,15 @@ def fold_input_records(
             # 与原循环一致：修饰键单独按下（无字符、非虚拟键）跳过
             if key_event.dwControlKeyState and key_event.wVirtualKeyCode == 0:
                 continue
-            keys.append(key_event.uChar.UnicodeChar)
+            u_char = key_event.uChar.UnicodeChar
+            if not u_char or u_char == "\x00":
+                # #11 NUL-uChar 重建（ConPTY IME 确认记录形态）：
+                # MapVirtualKeyW(VK) 重建字符，仅「无修饰键 + 非 ASCII」才并入。
+                rebuilt = _map_vk(key_event.wVirtualKeyCode)
+                if rebuilt and ord(rebuilt) >= 0x80 and not (key_event.dwControlKeyState & 0x0007):
+                    keys.append(rebuilt)
+            else:
+                keys.append(u_char)
         elif event_type == UNICODE_EVENT:
             ch = _read_wchar_at(ctypes.addressof(rec), off)
             if ch:
