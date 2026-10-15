@@ -43,6 +43,22 @@ _Avoid_: 与 vault 混称（workspace = 当前做的事，vault = 可选笔记�
 本机日期、时间与 IP 推算城市等「随环境变化」的信息。**会话启动时**仅把**当天日期 + 星期**写入 system prompt（不含时分秒）。问精确时间、所在城市时用主代理 `execute` 读本机，**不**写死 `javis.json` 或 profile，**不**读 user-profile 找所在地。
 _Avoid_: 在 javis.json 里配 location、读 user-profile 找所在地、为问时间单独做专项 skill/工具
 
+**撤回（undo）**：
+当前线程**消息层**回退到最近 N 条用户消息之前（`/undo [N]`，TUI 空闲态 1.5s 双 Esc）；不动文件/Inbox，被撤回轮次里未决的 HITL 中断一并作废。文件层的回退是**文件快照回退**（/rollback），不是撤回。
+_Avoid_: 与 /rollback（文件层）、/replay（重跑）、/fork（分叉）混称
+
+**永久放行（前缀）**：
+对 `execute` 指自动放行某**命令前缀**（如 `git *`，用户可在 Modal 编辑前缀粒度；shell 包装命令自动提两级）；对文件工具指整工具放行。写回 javis.json 的 permissions 规则集即时生效。
+_Avoid_: 全局放行（execute 无条件的 `allow` 已废弃为默认路径）
+
+**manual-only skill**：
+SKILL.md frontmatter 带 `disable-model-invocation: true` 的 skill：模型上下文不可见其介绍，仅用户可 `/use <skill>` 手动调用；`/skills` 清单以 `[manual]` 标记。
+_Avoid_: 隐藏 skill、禁用 skill、私有 skill
+
+**输入通道**：
+键盘输入到达 TUI 的路径分两种：console 事件通道（ReadConsoleInputW；git bash 隐藏控制台下同样生效）与字节流通道。IME/标点输入类 bug 先定通道与记录形态（input_probe）再谈修复。
+_Avoid_: 默认按 conhost 假设、不分通道直接改解码
+
 ## 文档
 
 - 使用与命令：[`README.md`](README.md)
