@@ -233,7 +233,13 @@ def main(argv=None) -> int:
         try:
             if use_tui:
                 from src.tui import JarvisApp
+                from src import ime_shim
 
+                if not ime_shim.install():
+                    startup_lines.append(
+                        "警告：IME 输入补全 shim 未安装（Textual 版本改形）；"
+                        "conhost 下部分全角标点可能输入不了，可 Ctrl+. 快插。"
+                    )
                 JarvisApp(
                     config,
                     agent,

@@ -1,7 +1,8 @@
 """标点快插面板支持模块（#02）。
 
-conhost 老终端下中文标点 IME 候选窗输入不可靠；本项目不造 IME，
-提供 Ctrl+. 标点快插面板（PunctPanelModal，见 tui.py）+ conhost 启动提示。
+主修复 = src/ime_shim.py（补 Textual win32 驱动丢弃的 UNICODE/IME 输入记录，
+conhost 下输入法确认的 “ ” ‘ ’ … 等组合字符直接可输）。
+本模块 = 兜底：Ctrl+. 标点快插面板（PunctPanelModal，见 tui.py）+ conhost 启动提示。
 """
 
 from __future__ import annotations
@@ -65,8 +66,8 @@ def is_conhost_like() -> bool:
 def ime_hint_markup() -> str:
     """conhost 标点输入提示的 Rich markup（dim 样式）。"""
     return (
-        "[dim]提示：conhost 下部分中文标点 IME 候选窗不可用；"
-        "按 Ctrl+. 可快插标点（，。…“”《》等）。[/dim]"
+        "[dim]提示：已启用 conhost IME 输入补全（全角标点如“”‘’…可直接输入）；"
+        "若个别标点仍输不进，按 Ctrl+. 可快插标点。[/dim]"
     )
 
 
