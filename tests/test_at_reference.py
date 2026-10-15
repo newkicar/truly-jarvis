@@ -151,3 +151,21 @@ def test_completion_real_style_without_mapping_falls_back(tmp_path):
     )
     item = next(i for i in state.items if "app.py" in i.insert)
     assert item.insert == "/workspace/src/app.py"
+
+
+
+def test_is_virtual_path_reference_positive(tmp_path):
+    """#04: @ 引用插入的 /workspace/... 是路径引用（应发模型，而非 未知命令）。"""
+    mapping = commands.virtual_path_mappings(make_fake_config(tmp_path))
+    assert commands.is_virtual_path_reference("/workspace/AGENTS.md", mapping) is True
+    assert commands.is_virtual_path_reference("/workspace/AGENTS.md 读一下", mapping) is True
+    assert commands.is_virtual_path_reference("/vault/notes.md", mapping) is True
+    assert commands.is_virtual_path_reference("/memories/pref.md", mapping) is True
+
+
+def test_is_virtual_path_reference_negative(tmp_path):
+    mapping = commands.virtual_path_mappings(make_fake_config(tmp_path))
+    assert commands.is_virtual_path_reference("/bogus", mapping) is False
+    assert commands.is_virtual_path_reference("/history 5", mapping) is False
+    assert commands.is_virtual_path_reference("普通消息 /workspace/x", mapping) is False
+    assert commands.is_virtual_path_reference("/workspace/AGENTS.md", None) is False

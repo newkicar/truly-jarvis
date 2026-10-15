@@ -276,6 +276,22 @@ def virtual_path_mappings(config) -> dict[str, str]:
     return mapping
 
 
+def is_virtual_path_reference(text: str, mapping: dict[str, str] | None) -> bool:
+    """text 首个空白分隔 token 是已知虚拟前缀路径引用时返回 True（#04）。
+
+    前缀来自 virtual_path_mappings（/workspace/、/vault/、/memories/、各 skill 层）。
+    供 TUI 区分「@ 引用等路径引用（发模型）」与「斜杠命令（走分发）」。
+    """
+    if not text or not mapping:
+        return False
+    tokens = text.split()
+    if not tokens:
+        return False
+    first = tokens[0]
+    prefixes = tuple(p for p in mapping if p.startswith("/"))
+    return any(first.startswith(p) for p in prefixes)
+
+
 def path_anchor_lines(text: str, mapping: dict[str, str]) -> list[str]:
     """text 中出现的虚拟路径 → 真实路径的 dim 锚点行（去重，上限 5 条）。
 

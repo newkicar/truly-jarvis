@@ -61,10 +61,15 @@ def skill_virtual_sources(config: Config) -> list[str]:
 
 
 def skill_backend_routes(config: Config) -> dict[str, Path]:
-    """除 /workspace/ 外需单独挂 FilesystemBackend 的 skill 层。"""
+    """所有 skill 层都单独挂 virtual_mode=True FilesystemBackend（含 /workspace/ 前缀的项目层）。
+
+    项目 skill 层不能靠 unrestricted 的 workspace 默认后端（virtual_mode=False）：
+    它返回真实绝对路径，CompositeBackend 对 ls 结果重新前缀化（route_prefix 直接
+    拼接 entry_path、丢分隔符）会产出 workspace 后接绝对盘符路径的坏路径，使
+    deepagents 的 skill 发现 download 失败（OSError EINVAL）并中断整轮。故项目层
+    也用独立虚拟后端挂到自身路由键下（前缀长度倒序，/workspace/skills/ 优先于 /workspace/）。
+    """
     routes: dict[str, Path] = {}
     for layer in discover_skill_layers(config):
-        if layer.virtual_path.startswith("/workspace/"):
-            continue
         routes[layer.virtual_path] = layer.fs_path
     return routes

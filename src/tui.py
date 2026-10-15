@@ -949,9 +949,8 @@ class JarvisApp(App):
         log = self.query_one("#messages", RichLog)
         log.write(user_message_markup(text))
         # #04: 消息含虚拟前缀（/workspace/ 等）时追加 dim 锚点行，指出真实目录。
-        for line in commands.path_anchor_lines(
-            text, commands.virtual_path_mappings(self.config)
-        ):
+        vpmapping = commands.virtual_path_mappings(self.config)
+        for line in commands.path_anchor_lines(text, vpmapping):
             log.write(line)
         if text == "/exit":
             self.exit()
@@ -962,7 +961,9 @@ class JarvisApp(App):
         if text == "/copy":
             self.action_copy_picker()
             return
-        if text.startswith("/"):
+        # #04: /workspace/、/vault/ 等虚拟前缀路径引用（如 @ 引用）发模型；
+        # 其余 / 开头仍走命令分发（未知命令照旧报「未知命令」）。
+        if text.startswith("/") and not commands.is_virtual_path_reference(text, vpmapping):
             parts = text.split()
             if parts[0] == "/replay":
                 if len(parts) != 2:

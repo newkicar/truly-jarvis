@@ -57,13 +57,47 @@ def test_discover_skill_layers_order(tmp_path, monkeypatch):
     assert vpaths.index(USER_SKILLS_VPATH) < vpaths.index("/workspace/skills/")
 
 
-def test_skill_backend_routes_excludes_workspace(tmp_path, monkeypatch):
+def test_skill_backend_routes_includes_project_layer(tmp_path, monkeypatch):
+    """#03 fix: 项目 skill 层（/workspace/ 前缀）也必须单独挂虚拟后端，不再排除。"""
     monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
     ensure_user_home()
-    cfg = make_fake_config(tmp_path / "proj")
+    project = tmp_path / "proj"
+    project_skills = project / "skills"
+    project_skills.mkdir(parents=True)
+    cfg = replace(make_fake_config(project), skills=(project_skills,))
     routes = skill_backend_routes(cfg)
     assert USER_SKILLS_VPATH in routes
-    assert all(not k.startswith("/workspace/") for k in routes)
+    assert "/workspace/skills/" in routes
+    assert routes["/workspace/skills/"] == project_skills
+
+
+def test_backend_lists_project_skill_clean_paths(tmp_path, monkeypatch):
+    """#03 regression: /workspace/skills/ 经 _make_backend 的 CompositeBackend 返回干净路径。
+
+    修前：unrestricted 的 /workspace/ 默认后端 virtual_mode=False 返回真实绝对路径，
+    CompositeBackend 重新前缀化（route_prefix 直接拼 entry_path）产出坏路径，使
+    deepagents skill 发现 download 报 OSError 并中断整轮。
+    """
+    from deepagents.middleware.skills import _list_skills
+
+    from src.agent import _make_backend
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
+    ensure_user_home()
+    project = tmp_path / "proj"
+    project_skills = project / "skills"
+    (project_skills / "proj-skill").mkdir(parents=True)
+    (project_skills / "proj-skill" / "SKILL.md").write_text(
+        "---\nname: proj-skill\ndescription: d\n---\n", encoding="utf-8"
+    )
+    cfg = replace(make_fake_config(project), skills=(project_skills,))
+    backend = _make_backend(cfg)
+    ls = backend.ls("/workspace/skills/")
+    assert ls.error is None
+    for entry in ls.entries or []:
+        assert entry["path"].startswith("/workspace/skills/"), entry["path"]
+    names = [s["name"] for s in _list_skills(backend, "/workspace/skills/")]
+    assert "proj-skill" in names
 
 
 def test_skill_virtual_sources_includes_user_layer(tmp_path, monkeypatch):
