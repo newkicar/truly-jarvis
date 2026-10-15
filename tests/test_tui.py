@@ -474,7 +474,7 @@ async def test_switch_session_finalizes_old_thread(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_new_session_clears_old_display():
+async def test_new_session_clears_old_display(monkeypatch):
     """#12: 新建会话时显示栏旧内容清空。"""
     from unittest.mock import patch
 
@@ -487,7 +487,7 @@ async def test_new_session_clears_old_display():
         joined = "".join(l.text for l in log.lines)
         assert "旧会话" in joined
         # monkeypatch finalize + uuid
-        commands.finalize_turn = lambda agent, tid: None
+        monkeypatch.setattr(commands, "finalize_turn", lambda agent, tid: None)
         with patch("uuid.uuid4", return_value=type("U", (), {"hex": "abc"})()):
             app.action_new_session()
         await pilot.pause()
@@ -520,7 +520,7 @@ async def test_switch_session_loads_last_ai_reply(monkeypatch):
     async with app.run_test() as pilot:
         log = app.query_one("#messages")
         log.write("[b]旧会话内容[/b]")
-        commands.finalize_turn = lambda agent, tid: None
+        monkeypatch.setattr(commands, "finalize_turn", lambda agent, tid: None)
         app._switch_session("target-thread")
         await pilot.pause()
         joined = "".join(l.text for l in log.lines)
