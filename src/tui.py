@@ -1122,6 +1122,18 @@ class JarvisApp(App):
                     partial(self._undo_worker, undo_n), thread=True
                 )
                 return
+            if parts[0] == "/use":
+                # #09: 手动调用 manual-only skill → 完整指令作为本轮 user 消息投递
+                msg, err = commands.expand_use_command(self.config, text)
+                if err is not None:
+                    log.write(err)
+                    return
+                log.write(f"使用 skill「{parts[1]}」…")
+                self._show_spinner()
+                self._worker = self.run_worker(
+                    partial(self._stream_agent, user_input=msg), thread=True
+                )
+                return
             cmd = parts[0]
             log.write(system_message_markup(f"正在执行 {cmd}…"))
             self._worker = self.run_worker(partial(self._run_command_worker, text), thread=True)

@@ -39,6 +39,8 @@ _HELP_COMMANDS = """\
   /replay <id>    从指定 checkpoint 重跑（序号 / 短 id / 完整 id）
   /fork <id>      从指定 checkpoint 分叉出新分支（序号 / 短 id / 完整 id）
   /undo [N]     撤回最近 N 条用户消息（仅消息层；文件不动；缺省 1）
+  /skills       列出可用 skills（manual 需 /use 手动触发）
+  /use <skill> [说明]  手动调用 manual-only skill（注入完整指令）
   /snapshot       记录当前文件状态到当前 checkpoint（git 快照）
   /snapshots      列出文件快照（git）
   /rollback <id>  按 checkpoint 回退项目文件到对应 git 提交（序号 / 短 id）
@@ -1028,6 +1030,40 @@ def always_approve(
     return True
 
 
+def expand_use_command(config, text: str) -> tuple[str | None, str | None]:
+    """#09: /use <skill> [说明] → (模型消息, 错误文本)，二者恰一非 None。
+
+    manual-only skill 不在模型上下文，只能由用户触发；说明用 maxsplit=2 保留多 token。
+    """
+    from src.skill_discovery import build_skill_use_message
+
+    parts = text.split(None, 2)
+    if len(parts) < 2:
+        return None, "用法: /use <skill> [说明]（/skills 查看可用 skill）"
+    skill_name = parts[1]
+    extra = parts[2].strip() if len(parts) == 3 else ""
+    msg = build_skill_use_message(config, skill_name, extra)
+    if msg is None:
+        return None, f"未找到 skill「{skill_name}」或其 SKILL.md 不可读（/skills 查看可用）"
+    return msg, None
+
+
+def skills_report(config) -> str:
+    """#09: /skills — 列出可用 skills（manual 打 [manual]，模型不会自动调用）。"""
+    from src.skill_discovery import discover_skill_catalog
+
+    skills = discover_skill_catalog(config)
+    if not skills:
+        return "未发现 SKILL.md（skill 需含 name/description frontmatter 的 SKILL.md）"
+    lines = [f"可用 skills（{len(skills)}）:"]
+    for skill in skills:
+        tag = " [manual]" if skill.manual_only else ""
+        desc = skill.description[:60] + ("…" if len(skill.description) > 60 else "")
+        lines.append(f"  - {skill.name}{tag}: {desc or '(无 description)'}")
+    lines.append("[manual] = 模型不会自动调用；用 /use <skill> [说明] 手动触发")
+    return "\n".join(lines)
+
+
 def dispatch_command(agent, thread_id: str, command: str, sched=None, vault_path: Path | None = None):
     """处理会话命令，返回 (结果文本, 新 thread_id, replay_checkpoint_id)。
 
@@ -1048,6 +1084,14 @@ def dispatch_command(agent, thread_id: str, command: str, sched=None, vault_path
         return copy_session_id_text(thread_id), None, None
     if cmd == "/copy":
         return "/copy 是 TUI 交互命令（picker 选择复制内容）；CLI 请用 /copy-session 复制会话 ID", None, None
+    if cmd == "/skills":
+        from src.config import load_config
+
+        try:
+            cfg = load_config()
+        except Exception as exc:
+            return f"读取配置失败: {exc}", None, None
+        return skills_report(cfg), None, None
     if cmd == "/doctor":
         from src.config import load_config
         from src.mcps import load_mcp_tools

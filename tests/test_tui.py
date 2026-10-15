@@ -645,3 +645,70 @@ async def test_esc_outside_window_only_notifies_no_exit():
         await pilot.pause()
         assert not agent.updates  # 仅 notify，不撤回
         assert app.is_running  # 空闲单 Esc 不退出应用
+
+
+class _UseTuiConfig:
+    """#09: /use 测试最小 Config（足以驱动 skill 发现）。"""
+
+    def __init__(self, root):
+        self.project_root = root
+        self.skills = ()
+
+
+class _UseAgentTui(FakeAgent):
+    """#09: 记录 /use 投递给模型的 input（展开后的 skill 消息）。"""
+
+    def __init__(self):
+        super().__init__(reply="技能已执行")
+        self.inputs = []
+
+    def stream_events(self, *args, **kwargs):
+        self.inputs.append(args[0] if args else kwargs.get("input"))
+        return super().stream_events(*args, **kwargs)
+
+
+def _write_tui_manual_skill(tmp_path, monkeypatch) -> None:
+    jh = tmp_path / "jh"
+    sk = jh / "skills" / "manual-skill"
+    sk.mkdir(parents=True)
+    (sk / "SKILL.md").write_text(
+        "---\n"
+        "name: manual-skill\n"
+        "description: 手动专用 skill。\n"
+        "disable-model-invocation: true\n"
+        "---\n\n"
+        "# M\n"
+        "步骤一：做点事\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("JARVIS_HOME", str(jh))
+
+
+@pytest.mark.asyncio
+async def test_slash_use_missing_skill_shows_error(tmp_path, monkeypatch):
+    _write_tui_manual_skill(tmp_path, monkeypatch)
+    agent = FakeAgent()
+    app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "/use no-such-skill")
+        joined = await _wait_for_text(pilot, "未找到")
+        assert "未找到 skill「no-such-skill」" in joined
+        assert agent._calls == 0
+
+
+@pytest.mark.asyncio
+async def test_slash_use_manual_skill_streams_expanded_message(tmp_path, monkeypatch):
+    _write_tui_manual_skill(tmp_path, monkeypatch)
+    agent = _UseAgentTui()
+    app = JarvisApp(_UseTuiConfig(tmp_path), agent, {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "/use manual-skill 请执行")
+        joined = await _wait_for_text(pilot, "技能已执行")
+        assert agent.inputs, "stream_events 应被调用（/use 走流式路径）"
+        msg = agent.inputs[0]
+        if isinstance(msg, dict):
+            msg = msg["messages"][-1]["content"]  # run_agent_turn 以消息 dict 投递
+        assert isinstance(msg, str)
+        assert msg.startswith("[skill:manual-skill]")
+        assert "步骤一：做点事" in msg
+        assert "任务：请执行" in msg

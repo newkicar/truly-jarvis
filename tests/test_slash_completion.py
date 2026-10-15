@@ -16,3 +16,10 @@ def test_filter_commands_prefix():
 
 def test_filter_commands_empty_returns_all():
     assert len(filter_commands(query="")) == len(SLASH_COMMANDS)
+
+
+def test_tui_ux5_entries_present():
+    names = [c.name for c in SLASH_COMMANDS]
+    assert "/undo" in names  # 工单 07
+    assert "/skills" in names  # 工单 09
+    assert "/use" in names  # 工单 09

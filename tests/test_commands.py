@@ -1079,3 +1079,67 @@ def test_last_ai_text_compat():
         ]),
     })()
     assert commands.last_ai_text(agent, "t1") == "最后回复"
+
+
+def _cfg_manual(tmp_path):
+    """#09: 含 manual-only skill 的最小 Config（字段对齐 test_skill_discovery._cfg）。"""
+    from src.config import Config
+
+    sk = tmp_path / "skills" / "manual-skill"
+    sk.mkdir(parents=True)
+    (sk / "SKILL.md").write_text(
+        "---\n"
+        "name: manual-skill\n"
+        "description: 手动专用 skill。\n"
+        "disable-model-invocation: true\n"
+        "---\n\n"
+        "# M\n"
+        "步骤一：做点事\n",
+        encoding="utf-8",
+    )
+    return Config(
+        project_root=tmp_path,
+        base_url="http://x",
+        api_key="k",
+        model_id="m",
+        tavily_key="t",
+        vault_path=tmp_path / "vault",
+        memory_dir=tmp_path / "memory",
+        checkpoint_db=tmp_path / "cp.sqlite",
+        schedules_dir=tmp_path / "schedules",
+        skills=(tmp_path / "skills",),
+        mcps={},
+        permissions={},
+        hooks={},
+        agents={},
+        rag_ollama_base_url="http://localhost:11434",
+        rag_embed_model="embed",
+        execution_max_steps=200,
+        tui={},
+    )
+
+
+def test_dispatch_skills_lists_manual_tag(tmp_path, monkeypatch):
+    import src.config as config_mod
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
+    cfg = _cfg_manual(tmp_path)
+    monkeypatch.setattr(config_mod, "load_config", lambda: cfg)
+    text, new_thread, replay = commands.dispatch_command(FakeAgent([]), "t", "/skills")
+    assert new_thread is None and replay is None
+    assert "manual-skill [manual]" in text
+    assert "/use" in text
+
+
+def test_expand_use_command_missing_skill_and_usage(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
+    cfg = _cfg_manual(tmp_path)
+    msg, err = commands.expand_use_command(cfg, "/use")
+    assert msg is None and "用法" in err
+    msg, err = commands.expand_use_command(cfg, "/use no-such-skill")
+    assert msg is None and "未找到" in err
+    msg, err = commands.expand_use_command(cfg, "/use manual-skill 请执行")
+    assert err is None
+    assert msg.startswith("[skill:manual-skill]")
+    assert "步骤一：做点事" in msg
+    assert "任务：请执行" in msg

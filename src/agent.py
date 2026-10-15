@@ -33,6 +33,7 @@ from src.permissions import (
 )
 from src.config_agents import build_config_subagents
 from src.rag import make_semantic_search_tool
+from src.skill_discovery import manual_only_skill_names
 from src.skill_paths import skill_backend_routes, skill_virtual_sources
 from src.subagents import build_knowledge_keeper, build_researcher
 from src.vault_guard import VaultWriteGuardMiddleware
@@ -351,6 +352,7 @@ def build_agent(
     # #08 Plan/Act 模式闸门（与 deny_middleware 共享同一 permission_state 引用）
     from src.plan_mode import PlanModeMiddleware
 
+    backend = _make_backend(config)  # #08: 构造一次，模型 backend 与 skills middleware 共享
     skills = skill_virtual_sources(config)
     main_tools: list = [make_quick_search_tool(config.tavily_key)]
     if mcp_tools:
@@ -378,18 +380,27 @@ def build_agent(
     )
     middleware.append(StepBudgetMiddleware(config.execution_max_steps))
     middleware.append(DoomLoopMiddleware())
+    # #08: manual-only skill（disable-model-invocation）不进模型上下文；仅主代理挂 skills 中间件
+    from src.jarvis_skills import JarvisSkillsMiddleware
+
+    middleware.append(
+        JarvisSkillsMiddleware(
+            backend=backend,
+            sources=skills,
+            flagged=manual_only_skill_names(config),
+        )
+    )
     if inbox_snapshot is not None:
         middleware.append(inbox_snapshot)
 
     compiled = create_deep_agent(
         model=model,
-        backend=_make_backend(config),
+        backend=backend,
         subagents=[researcher, knowledge_keeper, *config_subagents],  # type: ignore[list-item]
         system_prompt=build_main_prompt(config=config),
         tools=main_tools,
         middleware=middleware,  # type: ignore[list-item]
         memory=memory,
-        skills=skills,
         interrupt_on=interrupt_on,  # HITL 审批（javis.json permissions）
         checkpointer=checkpointer,
         store=store,

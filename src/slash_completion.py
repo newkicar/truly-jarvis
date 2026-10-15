@@ -15,6 +15,7 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("/help", "/help", "显示完整命令帮助"),
     SlashCommand("/exit", "/exit", "退出 JARVIS"),
     SlashCommand("/sessions", "/sessions", "列出历史会话"),
+    SlashCommand("/skills", "/skills", "列出可用 skills（manual 需 /use 手动触发）"),
     SlashCommand("/delete-session", "/delete-session [id]", "删除历史会话（可写序号）"),
     SlashCommand("/copy-session", "/copy-session", "复制当前会话 ID"),
     SlashCommand("/copy", "/copy", "复制 AI 回复 / 代码块 / 整段会话（TUI）"),
@@ -22,10 +23,12 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("/history", "/history", "当前会话边界点时间线"),
     SlashCommand("/replay", "/replay <id>", "从 checkpoint 重跑"),
     SlashCommand("/fork", "/fork <id>", "从 checkpoint 分叉新会话"),
+    SlashCommand("/undo", "/undo [N]", "撤回最近 N 条用户消息（仅消息层）"),
     SlashCommand("/snapshot", "/snapshot", "记录项目 git 文件快照"),
     SlashCommand("/snapshots", "/snapshots", "列出 git 文件快照"),
     SlashCommand("/rollback", "/rollback <id>", "回退项目文件并还原 Inbox"),
     SlashCommand("/reload-schedules", "/reload-schedules", "热重载定时任务配置"),
+    SlashCommand("/use", "/use <skill> [说明]", "手动调用 manual-only skill"),
 )
 
 

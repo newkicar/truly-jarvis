@@ -2,7 +2,7 @@
 
 默认启动 Textual TUI；`--cli` 参数回退到标准库 input 交互循环。
 `--init [目录]` 在当前或指定目录初始化 javis.json 与目录结构。
-CLI 支持 /exit、/sessions、/delete-session、/history、/replay、/fork、/snapshot、/rollback 等命令。
+CLI 支持 /exit、/sessions、/delete-session、/use、/skills、/history、/replay、/fork、/snapshot、/rollback 等命令。
 """
 import sys
 
@@ -46,6 +46,16 @@ def _run_session(agent, thread_id: str, sched=None, permission_state: dict | Non
             break
         if user_input == "/help":
             print(commands.CLI_HELP)
+            continue
+
+        if user_input.startswith("/") and user_input.split(None, 1)[0] == "/use":
+            # #09: /use <skill> [说明] 手动调用 manual-only skill（完整指令作为本轮 user 消息）
+            msg, err = commands.expand_use_command(config, user_input)
+            if err is not None:
+                print(err)
+                continue
+            print("使用 skill…")
+            _stream_turn(agent, thread_id, msg, permission_state, config)
             continue
 
         if user_input.startswith("/"):
