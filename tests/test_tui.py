@@ -527,3 +527,121 @@ async def test_switch_session_loads_last_ai_reply(monkeypatch):
         assert "对方之前的回复" in joined, f"应加载历史 AI 回复，实际: {joined[:100]}"
         assert "已切换" in joined
         assert app.thread_id == "target-thread"
+
+
+class _UndoSnap:
+    """undo 测试用的 checkpoint 快照 mock（工单 07）。"""
+
+    def __init__(self, cid, source, messages):
+        self.config = {"configurable": {"thread_id": "default", "checkpoint_id": cid}}
+        self.metadata = {"source": source}
+        self.values = {"messages": messages}
+        self.next = ()
+
+
+class _UndoAgentTui(FakeAgent):
+    """带 checkpoint 历史的 FakeAgent：跑 commands.undo + transcript 重建（工单 07）。"""
+
+    def __init__(self):
+        super().__init__(reply="AI 好")
+        from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage
+        self._rm = RemoveMessage
+        m1, a1 = HumanMessage("问题 1", id="m1"), AIMessage("回答 1", id="m2")
+        m2, a2 = HumanMessage("问题 2", id="m3"), AIMessage("回答 2", id="m4")
+        self._snaps = [
+            _UndoSnap("c0", "input", [m1]),
+            _UndoSnap("c1", "update", [m1, a1]),
+            _UndoSnap("c2", "input", [m1, a1, m2]),
+            _UndoSnap("c3", "update", [m1, a1, m2, a2]),
+        ]
+        self._head = self._snaps[-1]
+        self.updates = []
+
+    def get_state_history(self, config=None):
+        return [self._head] + [s for s in reversed(self._snaps) if s is not self._head]
+
+    def get_state(self, config):
+        return self._head
+
+    def update_state(self, config, values=None, as_node=None):
+        self.updates.append((config, values, as_node))
+        if values is None:
+            cid = config["configurable"].get("checkpoint_id")
+            self._head = next(
+                s for s in self._snaps
+                if s.config["configurable"]["checkpoint_id"] == cid
+            )
+        else:
+            msgs = list(self._head.values["messages"])
+            doomed = {rm.id for rm in values["messages"] if isinstance(rm, self._rm)}
+            self._head = _UndoSnap(
+                self._head.config["configurable"]["checkpoint_id"],
+                "update",
+                [m for m in msgs if m.id not in doomed],
+            )
+        return config
+
+
+async def _wait_for_text(pilot, text: str, steps: int = 100) -> str:
+    """轮询对话区直到出现目标文本（worker + call_from_thread 跨线程落地）。"""
+    log = pilot.app.query_one(CopyableRichLog)
+    joined = ""
+    for _ in range(steps):
+        joined = "".join(l.text for l in log.lines)
+        if text in joined:
+            return joined
+        await pilot.pause()
+    return joined
+
+
+@pytest.mark.asyncio
+async def test_slash_undo_command_rolls_back_and_rebuilds_transcript():
+    agent = _UndoAgentTui()
+    app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "/undo")
+        joined = await _wait_for_text(pilot, "已撤回")
+        assert "已撤回 1 条消息" in joined
+        assert agent.updates, "undo 应触发 update_state"
+        cfg, values, _as_node = agent.updates[0]
+        assert values is None
+        assert cfg["configurable"]["checkpoint_id"] == "c1"  # c2 的（末个输入点）父 checkpoint
+        assert "[user] 问题 1" in joined  # transcript 已按回退后状态重建
+
+
+@pytest.mark.asyncio
+async def test_slash_undo_arg_validation():
+    agent = _UndoAgentTui()
+    app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "/undo abc")
+        joined = await _wait_for_text(pilot, "用法")
+        assert "用法: /undo [N]" in joined
+        assert not agent.updates
+
+
+@pytest.mark.asyncio
+async def test_idle_double_esc_undoes_last_turn():
+    agent = _UndoAgentTui()
+    app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        app.action_cancel()  # 第一次 Esc：置位（空闲无 worker），不撤回、不退出
+        await pilot.pause()
+        assert not agent.updates
+        assert app.is_running
+        app.action_cancel()  # 第二次 Esc（1.5s 窗口内）：隐式撤回上一轮
+        joined = await _wait_for_text(pilot, "已撤回")
+        assert "已撤回 1 条消息" in joined
+        assert agent.updates
+
+
+@pytest.mark.asyncio
+async def test_esc_outside_window_only_notifies_no_exit():
+    agent = _UndoAgentTui()
+    app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        app._esc_primed_at = time.monotonic() - 2.0  # 窗口已过期
+        app.action_cancel()
+        await pilot.pause()
+        assert not agent.updates  # 仅 notify，不撤回
+        assert app.is_running  # 空闲单 Esc 不退出应用

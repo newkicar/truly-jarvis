@@ -38,6 +38,7 @@ _HELP_COMMANDS = """\
   /history        查看当前会话时间线（带序号，可用于回退）
   /replay <id>    从指定 checkpoint 重跑（序号 / 短 id / 完整 id）
   /fork <id>      从指定 checkpoint 分叉出新分支（序号 / 短 id / 完整 id）
+  /undo [N]     撤回最近 N 条用户消息（仅消息层；文件不动；缺省 1）
   /snapshot       记录当前文件状态到当前 checkpoint（git 快照）
   /snapshots      列出文件快照（git）
   /rollback <id>  按 checkpoint 回退项目文件到对应 git 提交（序号 / 短 id）
@@ -58,6 +59,7 @@ TUI_HELP = (
     + "/copy 或 Ctrl+Shift+Y 选择复制内容（AI 回复 / 代码块 / 整段会话）；"
     + "Ctrl+Insert / Y（侧边栏会话）；/copy-session 复制 thread_id。\n"
     + "退出：Ctrl+C 或 Ctrl+Q；集成终端若 Ctrl+C 直接杀进程，请用 /exit。\n"
+    + "撤回：/undo [N] 撤回最近 N 条用户消息；TUI 空闲时双 Esc（1.5s 内）撤回上一轮，单 Esc 不退出。\n"
     + "HITL 审批时: 点击按钮选择（放行/永久放行/拒绝/编辑参数），Esc 放弃。\n"
 )
 
@@ -857,6 +859,56 @@ def fork(agent, thread_id: str, checkpoint_id: str):
     return f"已从 {full_id} 分叉（保留原历史），当前会话 {new_thread}", new_thread
 
 
+def undo(agent, thread_id: str, n: int = 1) -> str:
+    """撤回最近 n 条用户消息（消息层 time travel；文件/Inbox 不动，HITL 悬挂随回退作废）。
+
+    按「用户消息输入点」（get_state_history source=="input"）逐个回退：
+    - 输入点有前驱 checkpoint：update_state 回退到父 checkpoint（_rollback 同款原语）；
+    - 首个输入点位于线程起点：外科式删除 head 状态中末条 HumanMessage 及其后全部
+      （RemoveMessage + as_node="model"，fork 先例）。
+    """
+    from langchain_core.messages import HumanMessage, RemoveMessage
+
+    history = list(agent.get_state_history(thread_config(thread_id)))
+    history.reverse()  # get_state_history 新→旧；undo 需要旧→新
+    input_idxs = [
+        i
+        for i, s in enumerate(history)
+        if (getattr(s, "metadata", None) or {}).get("source") == "input"
+    ]
+    if not input_idxs:
+        return "没有可撤回的消息"
+    clamped = n > len(input_idxs)
+    n = max(1, min(n, len(input_idxs)))
+    for k in range(1, n + 1):
+        idx = input_idxs[-k]
+        if idx > 0:
+            parent = history[idx - 1].config.get("configurable", {})
+            agent.update_state(thread_config(thread_id, parent.get("checkpoint_id")), None)
+        else:
+            # 首个输入点即线程起点（无前驱 checkpoint 可回退）：
+            # 外科式删除 head 状态中末条 HumanMessage 及其后全部消息。
+            head = agent.get_state(thread_config(thread_id))
+            messages = (head.values or {}).get("messages") or []
+            cut = None
+            for i, m in enumerate(messages):
+                if isinstance(m, HumanMessage):
+                    cut = i
+            if cut is None:
+                continue
+            removals = [
+                RemoveMessage(id=m.id) for m in messages[cut:] if getattr(m, "id", None)
+            ]
+            if removals:
+                agent.update_state(
+                    thread_config(thread_id),
+                    {"messages": removals},
+                    as_node="model",
+                )
+    suffix = "（已超出，撤回至空白）" if clamped else ""
+    return f"已撤回 {n} 条消息（仅消息层；文件未动；HITL 悬挂已作废）{suffix}"
+
+
 def snapshot(agent, thread_id: str) -> str:
     state = agent.get_state(thread_config(thread_id))
     cid = state.config.get("configurable", {}).get("checkpoint_id")
@@ -1018,6 +1070,13 @@ def dispatch_command(agent, thread_id: str, command: str, sched=None, vault_path
     if cmd == "/fork" and len(parts) == 2:
         text, new_thread = fork(agent, thread_id, parts[1])
         return text, new_thread, None
+    if cmd == "/undo":
+        if len(parts) > 2:
+            return "用法: /undo [N]", None, None
+        if len(parts) == 2 and (not parts[1].isdigit() or int(parts[1]) < 1):
+            return "用法: /undo [N]（N 为正整数）", None, None
+        undo_n = int(parts[1]) if len(parts) == 2 else 1
+        return undo(agent, thread_id, undo_n), None, None
     if cmd == "/snapshot":
         return snapshot(agent, thread_id), None, None
     if cmd == "/snapshots":

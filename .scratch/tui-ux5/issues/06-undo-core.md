@@ -3,7 +3,7 @@
 **What to build:** `commands.undo(agent, tid, n=1)`：history = get_state_history（旧→新）；input_idxs = source=="input"；无输入点 → 文案「没有可撤回」；k 次回退：idx=input_idxs[-1-k]，idx>0 → `agent.update_state(thread_config(tid, 父checkpoint), None)`（_rollback 同款原语）；idx==0（撤到空白）→ 外科式：head 状态 messages 中末条 HumanMessage 起全部 RemoveMessage(id=m.id)，`update_state(thread_config(tid), {"messages": [...]}, as_node="model")`（fork 先例）。纯消息层：不动文件/Inbox；HITL 悬挂随回退作废。
 
 **Type:** task
-**Status:** open
+**Status:** done
 **Blocked by:** 无
 
 ## 验收

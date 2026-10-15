@@ -4,7 +4,8 @@ import sys
 from collections import defaultdict
 from functools import partial
 from pathlib import Path
-from time import time
+from rich.markup import escape
+from time import monotonic
 from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -37,6 +38,10 @@ from src.tui_format import (
     system_message_markup,
     user_message_markup,
 )
+
+
+# 空闲双 Esc 撤回窗口（秒）：窗口内第二次 Esc 触发上一轮消息层撤回（工单 07）。
+ESC_UNDO_WINDOW = 1.5
 
 
 def read_os_clipboard() -> str:
@@ -825,6 +830,7 @@ class JarvisApp(App):
         self._spinner_frame = 0
         self._image_seq = 0  # #03: 剪贴板图片附件序号（[Image #N]）
         self._image_attachments: dict[int, str] = {}  # #03: 占位符号 → 临时图片文件
+        self._esc_primed_at = 0.0  # 空闲双 Esc 撤回窗口计时（monotonic；工单 07）
         self.title = "JARVIS"
         self._restore_theme()
         self._update_sub_title()
@@ -1102,6 +1108,20 @@ class JarvisApp(App):
                     partial(self._stream_agent, checkpoint_id=full_id), thread=True
                 )
                 return
+            if parts[0] == "/undo":
+                if len(parts) > 2:
+                    log.write("用法: /undo [N]")
+                    return
+                if len(parts) == 2 and (not parts[1].isdigit() or int(parts[1]) < 1):
+                    log.write("用法: /undo [N]（N 为正整数）")
+                    return
+                undo_n = int(parts[1]) if len(parts) == 2 else 1
+                log.write(system_message_markup(f"正在撤回 {undo_n} 条消息…"))
+                self._show_spinner()
+                self._worker = self.run_worker(
+                    partial(self._undo_worker, undo_n), thread=True
+                )
+                return
             cmd = parts[0]
             log.write(system_message_markup(f"正在执行 {cmd}…"))
             self._worker = self.run_worker(partial(self._run_command_worker, text), thread=True)
@@ -1137,6 +1157,37 @@ class JarvisApp(App):
         except Exception as exc:
             result, new_thread = f"命令失败: {exc}", None
         self.call_from_thread(self._apply_command_result, result, new_thread)
+
+    def _undo_worker(self, n: int) -> None:
+        """后台线程跑 commands.undo（checkpoint 读写可能阻塞；工单 07）。"""
+        try:
+            result = commands.undo(self.agent, self.thread_id, n)
+        except Exception as exc:  # noqa: BLE001
+            result = f"撤回失败: {exc}"
+        self.call_from_thread(self._apply_undo_result, result)
+
+    def _apply_undo_result(self, result: str) -> None:
+        """撤回后重建对话区 transcript + 写结果横幅（工单 07）。"""
+        log = self.query_one("#messages", CopyableRichLog)
+        log.clear()
+        rendered = commands.render_session_text(self.agent, self.thread_id)
+        if rendered:
+            log.write(escape(rendered))  # 转义 [user]/[JARVIS] 前缀，防止被 Rich markup 吞掉
+        else:
+            log.write("[dim]（会话已清空）[/dim]")
+        log.write(system_message_markup(result))
+        self._refresh_session_sidebar()
+        self.query_one("#input", Input).focus()
+
+    def _trigger_implicit_undo(self) -> None:
+        """双 Esc 隐式撤回：作废本线程悬挂 HITL，然后撤回 1 条（与 /undo 1 同 worker 路径）。"""
+        self._mark_hitl_resolved(self.thread_id, set(self._pending_hitl_keys))
+        self._pending_hitl_keys.clear()
+        self._bump_hitl_generation()
+        log = self.query_one("#messages", RichLog)
+        log.write(system_message_markup("正在撤回 1 条消息…"))
+        self._show_spinner()
+        self._worker = self.run_worker(partial(self._undo_worker, 1), thread=True)
 
     def _cancel_stream_worker(self) -> None:
         if self._worker is not None:
@@ -1494,12 +1545,25 @@ class JarvisApp(App):
         self.action_copy_session_or_selection()
 
     def action_cancel(self) -> None:
-        if self._worker is not None:
+        worker = self._worker
+        if worker is not None and not worker.is_finished:
             log = self.query_one("#messages", CopyableRichLog)
             self._hide_ai_stream()
             self._bump_hitl_generation()
             log.write("[i][dim]（已取消）[/dim][/i]")
-            self._worker.cancel()
+            worker.cancel()
+            return
+        # 空闲：双 Esc（ESC_UNDO_WINDOW 内）撤回上一轮；单 Esc 不退出应用。
+        now = monotonic()
+        if self._esc_primed_at and now - self._esc_primed_at <= ESC_UNDO_WINDOW:
+            self._esc_primed_at = 0.0
+            self._trigger_implicit_undo()
+        else:
+            self._esc_primed_at = now
+            self.notify(
+                f"再按一次 Esc（{ESC_UNDO_WINDOW:g}s 内）可撤回上一轮",
+                timeout=ESC_UNDO_WINDOW,
+            )
 
     def action_new_session(self) -> None:
         import uuid
