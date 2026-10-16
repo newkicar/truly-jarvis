@@ -5,6 +5,16 @@
 
 from __future__ import annotations
 
+import sys
+
+import pytest
+
+if sys.platform != "win32":
+    pytest.skip(
+        "Windows-only test (textual win32 driver / msvcrt)",
+        allow_module_level=True,
+    )
+
 import ctypes
 
 import textual.drivers.win32 as win32
