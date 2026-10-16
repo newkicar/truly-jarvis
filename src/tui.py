@@ -1171,15 +1171,22 @@ class JarvisApp(App):
         self.call_from_thread(self._apply_command_result, result, new_thread)
 
     def _undo_worker(self, n: int) -> None:
-        """后台线程跑 commands.undo（checkpoint 读写可能阻塞；工单 07）。"""
+        """后台线程跑 commands.undo（checkpoint 读写可能阻塞；工单 07）。
+
+        撤回前先取末条用户消息全文，撤回成功后回填输入框（对标 codex/opencode）。
+        """
+        try:
+            restored = commands.last_user_input(self.agent, self.thread_id)
+        except Exception:  # noqa: BLE001
+            restored = ""
         try:
             result = commands.undo(self.agent, self.thread_id, n)
         except Exception as exc:  # noqa: BLE001
             result = f"撤回失败: {exc}"
-        self.call_from_thread(self._apply_undo_result, result)
+        self.call_from_thread(self._apply_undo_result, result, restored)
 
-    def _apply_undo_result(self, result: str) -> None:
-        """撤回后重建对话区 transcript + 写结果横幅（工单 07）。"""
+    def _apply_undo_result(self, result: str, restored: str = "") -> None:
+        """撤回后重建对话区 transcript + 写结果横幅（工单 07）；成功时把被撤回的用户消息回填输入框。"""
         log = self.query_one("#messages", CopyableRichLog)
         log.clear()
         rendered = commands.render_session_text(self.agent, self.thread_id)
@@ -1189,7 +1196,11 @@ class JarvisApp(App):
             log.write("[dim]（会话已清空）[/dim]")
         log.write(system_message_markup(result))
         self._refresh_session_sidebar()
-        self.query_one("#input", Input).focus()
+        input_box = self.query_one("#input", Input)
+        input_box.focus()
+        if restored and result.startswith("已撤回"):
+            input_box.value = restored
+            input_box.cursor_position = len(restored)
 
     def _trigger_implicit_undo(self) -> None:
         """双 Esc 隐式撤回：作废本线程悬挂 HITL，然后撤回 1 条（与 /undo 1 同 worker 路径）。"""

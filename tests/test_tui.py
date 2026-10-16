@@ -647,6 +647,108 @@ async def test_esc_outside_window_only_notifies_no_exit():
         assert app.is_running  # 空闲单 Esc 不退出应用
 
 
+class _LastUserAgent(FakeAgent):
+    """last_user_input 单测用最小 fake：get_state 返回指定消息列表。"""
+
+    def __init__(self, messages, raise_exc=False):
+        super().__init__()
+        self._messages = messages
+        self._raise = raise_exc
+
+    def get_state(self, config):
+        if self._raise:
+            raise RuntimeError("checkpoint 不可用")
+        return _UndoSnap("c9", "update", self._messages)
+
+
+def test_last_user_input_str_content():
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    agent = _LastUserAgent(
+        [HumanMessage("问题 2", id="m3"), AIMessage("回答 2", id="m4")]
+    )
+    assert commands.last_user_input(agent, "default") == "问题 2"
+
+
+def test_last_user_input_multimodal_content_joins_text_blocks():
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    agent = _LastUserAgent(
+        [
+            HumanMessage(
+                [
+                    {"type": "text", "text": "第一行"},
+                    {"type": "image", "url": "data:image/png;base64,xx"},
+                    {"type": "text", "text": "第二行"},
+                ],
+                id="m9",
+            ),
+            AIMessage("ok", id="m10"),
+        ]
+    )
+    assert commands.last_user_input(agent, "default") == "第一行\n第二行"
+
+
+def test_last_user_input_no_human_returns_empty():
+    from langchain_core.messages import AIMessage
+
+    agent = _LastUserAgent([AIMessage("a1", id="m1"), AIMessage("a2", id="m2")])
+    assert commands.last_user_input(agent, "default") == ""
+
+
+def test_last_user_input_get_state_error_returns_empty():
+    from langchain_core.messages import HumanMessage
+
+    agent = _LastUserAgent([HumanMessage("x", id="m1")], raise_exc=True)
+    assert commands.last_user_input(agent, "default") == ""
+
+
+class _BrokenUndoAgent(FakeAgent):
+    """undo/last_user_input 都会抛异常的 agent（模拟 checkpoint 不可用）。"""
+
+    def get_state_history(self, config=None):
+        raise RuntimeError("checkpoint 不可用")
+
+    def get_state(self, config):
+        raise RuntimeError("checkpoint 不可用")
+
+
+@pytest.mark.asyncio
+async def test_slash_undo_restores_user_message_to_input():
+    agent = _UndoAgentTui()
+    app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "/undo")
+        await _wait_for_text(pilot, "已撤回")
+        inp = pilot.app.query_one("#input", Input)
+        assert inp.value == "问题 2"  # 被撤回的用户消息回填输入框
+        assert inp.cursor_position == len("问题 2")
+
+
+@pytest.mark.asyncio
+async def test_double_esc_restores_user_message_to_input():
+    agent = _UndoAgentTui()
+    app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        app.action_cancel()
+        await pilot.pause()
+        app.action_cancel()  # 双 Esc：隐式撤回上一轮
+        await _wait_for_text(pilot, "已撤回")
+        inp = pilot.app.query_one("#input", Input)
+        assert inp.value == "问题 2"
+
+
+@pytest.mark.asyncio
+async def test_undo_failure_does_not_restore_input():
+    agent = _BrokenUndoAgent()
+    app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "/undo")
+        joined = await _wait_for_text(pilot, "撤回失败")
+        assert "撤回失败" in joined
+        assert pilot.app.query_one("#input", Input).value == ""
+
+
 class _UseTuiConfig:
     """#09: /use 测试最小 Config（足以驱动 skill 发现）。"""
 

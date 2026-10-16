@@ -343,6 +343,37 @@ def first_human_text(agent, thread_id: str, limit: int = 18) -> str:
     return ""
 
 
+def last_user_input(agent, thread_id: str) -> str:
+    """取 thread 最后一条人类消息全文（撤回后回填 TUI 输入框，对标 codex/opencode）。
+
+    - content 为 str：原样返回；
+    - content 为多模态 list：拼接全部 text 块（换行分隔；图片等块无法回填文本框，丢弃）；
+    - 无人类消息或读取异常：返回空串（调用方据此不回填）。
+    """
+    try:
+        state = agent.get_state(thread_config(thread_id))
+    except Exception:
+        return ""
+    messages = (getattr(state, "values", None) or {}).get("messages") or []
+    for msg in reversed(messages):
+        if getattr(msg, "type", "") != "human":
+            continue
+        content = getattr(msg, "content", "") or ""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = [
+                block["text"]
+                for block in content
+                if isinstance(block, dict)
+                and block.get("type") == "text"
+                and block.get("text")
+            ]
+            return "\n".join(parts)
+        return ""
+    return ""
+
+
 def session_label(agent, thread_id: str) -> str:
     """侧边栏显示标签：首条用户消息摘要优先，空则回落 thread_id。"""
     return first_human_text(agent, thread_id) or thread_id
