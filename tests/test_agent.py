@@ -169,10 +169,11 @@ def test_build_agent_no_mcp_tools_still_has_quick_search(tmp_path, monkeypatch):
 
 
 def test_build_agent_registers_skill_sources(tmp_path, monkeypatch):
-    """skills= 应含用户全局层。"""
+    """ADR-0007：skills 不再经 skills= kwarg，改由主代理挂 JarvisSkillsMiddleware（sources 含用户全局层与项目层），子代理不挂。"""
     import src.agent as agent_mod
     from dataclasses import replace
     from src.agent import create_deep_agent
+    from src.jarvis_skills import JarvisSkillsMiddleware
 
     monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
     from src.project_paths import ensure_user_home
@@ -190,8 +191,15 @@ def test_build_agent_registers_skill_sources(tmp_path, monkeypatch):
 
     monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
     build_agent(cfg, model=ToolCapableFake(reply="ok"))
-    assert USER_SKILLS_VPATH in captured.get("skills", [])
-    assert "/workspace/skills/" in captured.get("skills", [])
+    assert "skills" not in captured  # 停传 skills=（ADR-0007）
+    skills_mws = [m for m in captured.get("middleware", []) if isinstance(m, JarvisSkillsMiddleware)]
+    assert skills_mws, "主代理应挂 JarvisSkillsMiddleware"
+    assert USER_SKILLS_VPATH in skills_mws[0].sources
+    assert "/workspace/skills/" in skills_mws[0].sources
+    for sub in captured.get("subagents", []):
+        assert not any(
+            isinstance(m, JarvisSkillsMiddleware) for m in sub.get("middleware", [])
+        ), f"子代理 {sub.get('name')} 不应挂 skills 中间件（ADR-0007）"
 
 
 def test_build_agent_loads_memory_md_files(tmp_path, monkeypatch):
