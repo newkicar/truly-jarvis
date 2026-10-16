@@ -366,9 +366,14 @@ def build_agent(
     )
 
     # 异常兜底放最外层：任何工具/内层中间件的异常都转成错误数据，不炸穿整轮。
+    # 400 自愈：每次模型调用前清洗历史里的畸形工具调用（invalid_tool_calls）及其引用
+    # ToolMessage（见 src/sanitize_history.py，拼在 core 中间件之后运行）
+    from src.sanitize_history import SanitizeHistoryMiddleware
+
     middleware: list = [ToolErrorBoundaryMiddleware()]
     middleware.extend(
         [
+            SanitizeHistoryMiddleware(),
             CodeInterpreterMiddleware(subagents=True),
             TodoListMiddleware(),
             deny_middleware,
