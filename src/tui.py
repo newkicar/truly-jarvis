@@ -1108,17 +1108,13 @@ class JarvisApp(App):
                 )
                 return
             if parts[0] == "/undo":
-                if len(parts) > 2:
-                    log.write("用法: /undo [N]")
+                if len(parts) > 1:
+                    log.write("用法: /undo（无参）；/undo 只撤回最近 1 条，多轮请反复调用")
                     return
-                if len(parts) == 2 and (not parts[1].isdigit() or int(parts[1]) < 1):
-                    log.write("用法: /undo [N]（N 为正整数）")
-                    return
-                undo_n = int(parts[1]) if len(parts) == 2 else 1
-                log.write(system_message_markup(f"正在撤回 {undo_n} 条消息…"))
+                log.write(system_message_markup("正在撤回 1 条消息…"))
                 self._show_spinner()
                 self._worker = self.run_worker(
-                    partial(self._undo_worker, undo_n), thread=True
+                    partial(self._undo_worker, 1), thread=True
                 )
                 return
             if parts[0] == "/use":

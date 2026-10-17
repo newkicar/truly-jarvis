@@ -23,7 +23,7 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("/history", "/history", "当前会话边界点时间线"),
     SlashCommand("/replay", "/replay <id>", "从 checkpoint 重跑"),
     SlashCommand("/fork", "/fork <id>", "从 checkpoint 分叉新会话"),
-    SlashCommand("/undo", "/undo [N]", "撤回最近 N 条用户消息（仅消息层）"),
+    SlashCommand("/undo", "/undo", "撤回最近 1 条用户消息（多轮反复调用）"),
     SlashCommand("/snapshot", "/snapshot", "记录项目 git 文件快照"),
     SlashCommand("/snapshots", "/snapshots", "列出 git 文件快照"),
     SlashCommand("/rollback", "/rollback <id>", "回退项目文件并还原 Inbox"),

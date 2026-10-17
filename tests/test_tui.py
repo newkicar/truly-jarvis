@@ -618,7 +618,7 @@ async def test_slash_undo_arg_validation():
     async with app.run_test() as pilot:
         await _type_and_enter(pilot, "/undo abc")
         joined = await _wait_for_text(pilot, "用法")
-        assert "用法: /undo [N]" in joined
+        assert "用法: /undo（无参）" in joined
         assert not agent.updates
 
 

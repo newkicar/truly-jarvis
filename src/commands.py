@@ -38,7 +38,7 @@ _HELP_COMMANDS = """\
   /history        查看当前会话时间线（带序号，可用于回退）
   /replay <id>    从指定 checkpoint 重跑（序号 / 短 id / 完整 id）
   /fork <id>      从指定 checkpoint 分叉出新分支（序号 / 短 id / 完整 id）
-  /undo [N]     撤回最近 N 条用户消息（仅消息层；文件不动；缺省 1）
+  /undo       撤回最近 1 条用户消息（仅消息层；文件不动；多轮请反复调用）
   /skills       列出可用 skills（manual 需 /use 手动触发）
   /use <skill> [说明]  手动调用 manual-only skill（注入完整指令）
   /snapshot       记录当前文件状态到当前 checkpoint（git 快照）
@@ -61,7 +61,7 @@ TUI_HELP = (
     + "/copy 或 Ctrl+Shift+Y 选择复制内容（AI 回复 / 代码块 / 整段会话）；"
     + "Ctrl+Insert / Y（侧边栏会话）；/copy-session 复制 thread_id。\n"
     + "退出：Ctrl+C 或 Ctrl+Q；集成终端若 Ctrl+C 直接杀进程，请用 /exit。\n"
-    + "撤回：/undo [N] 撤回最近 N 条用户消息；TUI 空闲时双 Esc（1.5s 内）撤回上一轮，单 Esc 不退出。\n"
+    + "撤回：/undo 撤回最近 1 条用户消息（多轮请反复调用）；TUI 空闲时双 Esc（1.5s 内）撤回上一轮，单 Esc 不退出。\n"
     + "HITL 审批时: 点击按钮选择（放行/永久放行/拒绝/编辑参数），Esc 放弃。\n"
 )
 
@@ -1130,12 +1130,9 @@ def dispatch_command(agent, thread_id: str, command: str, sched=None, vault_path
         text, new_thread = fork(agent, thread_id, parts[1])
         return text, new_thread, None
     if cmd == "/undo":
-        if len(parts) > 2:
-            return "用法: /undo [N]", None, None
-        if len(parts) == 2 and (not parts[1].isdigit() or int(parts[1]) < 1):
-            return "用法: /undo [N]（N 为正整数）", None, None
-        undo_n = int(parts[1]) if len(parts) == 2 else 1
-        return undo(agent, thread_id, undo_n), None, None
+        if len(parts) > 1:
+            return "用法: /undo（无参）；/undo 只撤回最近 1 条，多轮请反复调用", None, None
+        return undo(agent, thread_id, 1), None, None
     if cmd == "/snapshot":
         return snapshot(agent, thread_id), None, None
     if cmd == "/snapshots":
