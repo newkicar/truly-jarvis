@@ -816,3 +816,108 @@ async def test_slash_use_manual_skill_streams_expanded_message(tmp_path, monkeyp
         assert msg.startswith("[skill:manual-skill]")
         assert "步骤一：做点事" in msg
         assert "任务：请执行" in msg
+
+
+# ---- tui-ux6 #04：Shift+Enter 多行输入（continuation buffer）----
+
+
+class _MultiLineAgent(FakeAgent):
+    """tui-ux6 #04: 记录 stream_events 收到的 user_input（验证多行拼接投递）。"""
+
+    def __init__(self):
+        super().__init__(reply="AI 收到")
+        self.inputs = []
+
+    def stream_events(self, *args, **kwargs):
+        self.inputs.append(args[0] if args else kwargs.get("input"))
+        return super().stream_events(*args, **kwargs)
+
+
+def _last_stream_text(agent: _MultiLineAgent) -> str:
+    """从投递 input 提取用户消息文本（run_agent_turn 以消息 dict 投递）。"""
+    msg = agent.inputs[0]
+    if isinstance(msg, dict):
+        msg = msg["messages"][-1]["content"]
+    if isinstance(msg, list):
+        msg = "\n".join(
+            b.get("text", "") for b in msg if isinstance(b, dict) and b.get("type") == "text"
+        )
+    return msg
+
+
+@pytest.mark.asyncio
+async def test_shift_enter_continuation_joins_lines_on_submit():
+    agent = _MultiLineAgent()
+    app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        inp = pilot.app.query_one("#input", Input)
+        inp.focus()
+        inp.value = "第一行"
+        await pilot.press("shift+enter")
+        await pilot.pause()
+        assert inp.value == ""
+        assert app._continuation == ["第一行"]
+        panel = pilot.app.query_one("#continuation")
+        assert panel.has_class("-active")
+        inp.value = "第二行"
+        await pilot.press("enter")
+        await _wait_for_text(pilot, "AI 收到")
+        assert _last_stream_text(agent) == "第一行\n第二行"
+        assert app._continuation == []
+        assert not panel.has_class("-active")
+
+
+@pytest.mark.asyncio
+async def test_ctrl_j_continuation_synonym():
+    agent = _MultiLineAgent()
+    app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        inp = pilot.app.query_one("#input", Input)
+        inp.focus()
+        inp.value = "行 A"
+        await pilot.press("ctrl+j")
+        await pilot.pause()
+        assert app._continuation == ["行 A"]
+        assert inp.value == ""
+        inp.value = "行 B"
+        await pilot.press("enter")
+        await _wait_for_text(pilot, "AI 收到")
+        assert _last_stream_text(agent) == "行 A\n行 B"
+
+
+@pytest.mark.asyncio
+async def test_slash_command_shift_enter_no_newline():
+    agent = _MultiLineAgent()
+    app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        inp = pilot.app.query_one("#input", Input)
+        inp.focus()
+        inp.value = "/history"
+        await pilot.press("shift+enter")
+        await pilot.pause()
+        assert app._continuation == []  # / 命令不支持换行
+        assert inp.value == "/history"  # 保留原值，等 Enter 直接提交
+        await pilot.press("enter")
+        joined = await _wait_for_text(pilot, "正在执行 /history")
+        assert "正在执行 /history" in joined
+        assert agent.inputs == []  # / 命令走 dispatch，不投递流式
+
+
+@pytest.mark.asyncio
+async def test_empty_backspace_pops_last_continuation():
+    agent = _MultiLineAgent()
+    app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        inp = pilot.app.query_one("#input", Input)
+        inp.focus()
+        inp.value = "第一行"
+        await pilot.press("shift+enter")
+        inp.value = "第二行"
+        await pilot.press("shift+enter")
+        await pilot.pause()
+        assert app._continuation == ["第一行", "第二行"]
+        assert inp.value == ""
+        await pilot.press("backspace")  # 空框 Backspace → 弹回末条续行
+        await pilot.pause()
+        assert inp.value == "第二行"
+        assert app._continuation == ["第一行"]

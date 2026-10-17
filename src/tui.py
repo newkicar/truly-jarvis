@@ -99,6 +99,10 @@ class PasteInput(Input):
         # focus_next；补全活跃时由 app.on_key 先行拦截，仍为接受建议）。
         Binding("tab", "app.toggle_mode", "Plan/Act", show=False),
         Binding("shift+tab", "app.toggle_mode_reverse", "Plan/Act 反向", show=False),
+        # #04 tui-ux6：Shift+Enter 换行（续行缓冲）；Ctrl+J 为常绑退路
+        #（ConPTY 对 shift 修饰键透传不保证，需用户实测回传）。
+        Binding("shift+enter", "app.continuation_newline", "换行", show=False),
+        Binding("ctrl+j", "app.continuation_newline", "换行(退路)", show=False),
     ]
 
     def action_paste(self) -> None:
@@ -142,6 +146,25 @@ class PasteInput(Input):
             self.action_paste()
             return
         await super()._on_mouse_down(event)
+
+    async def on_event(self, event: events.Event) -> None:
+        """tui-ux6 #04：空输入框 Backspace → 弹回末条续行（与换行动作同款逻辑）。
+
+        Textual 8.x 无 Widget.on_key 钩子（Key 事件走 on_event → 绑定链 →
+        私有 _on_key），故在 on_event 层拦截：stop + prevent_default 后手动
+        触发换行动作（弹栈路径），不再交给 Input 默认 backspace。
+        """
+        if (
+            isinstance(event, events.Key)
+            and event.key == "backspace"
+            and not self.value
+            and getattr(self.app, "_continuation", None)
+        ):
+            event.stop()
+            event.prevent_default()
+            self.app.action_continuation_newline()
+            return
+        await super().on_event(event)
 
 
 class PermissionModal(ModalScreen):
@@ -749,6 +772,19 @@ class JarvisApp(App):
         display: block;
     }
 
+    #continuation {
+        height: auto;
+        display: none;
+        margin: 0 1 0 0;
+        padding: 0 1;
+        background: $panel 40%;
+        color: $text 40%;
+    }
+
+    #continuation.-active {
+        display: block;
+    }
+
     #status_spinner {
         height: 1;
         display: none;
@@ -830,6 +866,8 @@ class JarvisApp(App):
         self._image_seq = 0  # #03: 剪贴板图片附件序号（[Image #N]）
         self._image_attachments: dict[int, str] = {}  # #03: 占位符号 → 临时图片文件
         self._esc_primed_at = 0.0  # 空闲双 Esc 撤回窗口计时（monotonic；工单 07）
+        self._continuation: list[str] = []  # #04 tui-ux6: 已确认续行（Shift+Enter 多行输入）
+        self._cmd_newline_hinted = False  # 「/ 命令不支持换行」通知只提示一次
         self.title = "JARVIS"
         self._restore_theme()
         self._update_sub_title()
@@ -943,6 +981,7 @@ class JarvisApp(App):
                         )
                         yield Static("", id="ai_stream")
                 yield Static("", id="todo_panel")
+                yield Static("", id="continuation")
                 with Horizontal(id="editor_frame"):
                     yield Static("›", id="prompt")
                     yield PasteInput(placeholder="输入消息，/ 开头为命令，@ 引用路径", id="input")
@@ -1403,12 +1442,53 @@ class JarvisApp(App):
             event.prevent_default()
             event.stop()
 
+    # --- tui-ux6 #04：Shift+Enter 多行输入（continuation buffer） ----------------
+
+    def action_continuation_newline(self) -> None:
+        """Shift+Enter / Ctrl+J：压续行入栈；空框时弹末条回框；/ 命令首行不换行。"""
+        inp = self.query_one("#input", Input)
+        value = inp.value.strip()
+        if not value:
+            # 空框：弹末条续行回框（空 Backspace 同路径）
+            if self._continuation:
+                inp.value = self._continuation.pop()
+                self._refresh_continuation()
+            return
+        if not self._continuation and value.startswith("/"):
+            # / 命令不支持换行：Enter 直接提交，notify 只提示一次
+            if not self._cmd_newline_hinted:
+                self.notify("命令不支持换行，按 Enter 提交", severity="warning")
+                self._cmd_newline_hinted = True
+            return
+        self._continuation.append(value)
+        inp.value = ""
+        inp.focus()
+        self._refresh_continuation()
+
+    def _refresh_continuation(self) -> None:
+        """#continuation dim 面板堆叠显示已确认续行；空则隐藏。"""
+        panel = self.query_one("#continuation", Static)
+        panel.update("\n".join(self._continuation))
+        if self._continuation:
+            panel.add_class("-active")
+        else:
+            panel.remove_class("-active")
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
         overlay = self._path_completion_overlay()
         overlay.hide()
         self._completion_active = False
         self._overlay_state = OverlayState(kind="none", at_index=0, items=())
-        self._handle_user_message(event.value)
+        # tui-ux6 #04：提交值 = 已确认续行 + 当前行，换行拼接（末行空则只拼续行）
+        value = event.value
+        if self._continuation:
+            value = (
+                "\n".join([*self._continuation, value]) if value else "\n".join(self._continuation)
+            )
+        self._continuation.clear()
+        self._cmd_newline_hinted = False
+        self._refresh_continuation()
+        self._handle_user_message(value)
 
     def _stream_agent(
         self,
