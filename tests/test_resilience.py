@@ -362,7 +362,7 @@ class FlakyAgent:
         self.exc = exc
         self.calls = 0
 
-    def stream_events(self, payload, *, version, config):
+    def stream_events(self, payload, *, version, config, control=None):
         self.calls += 1
         if self.calls == 1:
             raise self.exc
@@ -415,7 +415,7 @@ def test_run_agent_turn_recursion_error_lands_softly():
         def __init__(self):
             self.calls = 0
 
-        def stream_events(self, payload, *, version, config):
+        def stream_events(self, payload, *, version, config, control=None):
             self.calls += 1
             raise GraphRecursionError("recursion limit reached")
 
@@ -444,7 +444,7 @@ def test_run_agent_turn_uses_max_steps_config():
     class RecordingAgent(FlakyAgent):
         seen_configs = []
 
-        def stream_events(self, payload, *, version, config):
+        def stream_events(self, payload, *, version, config, control=None):
             self.seen_configs.append(config)
             return super().stream_events(payload, version=version, config=config)
 
@@ -634,7 +634,7 @@ def test_run_agent_turn_force_handoff_on_recursion_error():
                 {"values": {"messages": [{"role": "user", "content": "task"}]}},
             )()
 
-        def stream_events(self, payload, *, version, config):
+        def stream_events(self, payload, *, version, config, control=None):
             self.calls += 1
             raise GraphRecursionError("limit")
 
@@ -664,7 +664,7 @@ def test_run_agent_turn_handoff_falls_back_without_model():
     class BareAgent:
         checkpointer = None
 
-        def stream_events(self, payload, *, version, config):
+        def stream_events(self, payload, *, version, config, control=None):
             raise GraphRecursionError("limit")
 
     fallbacks = []

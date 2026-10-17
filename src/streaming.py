@@ -252,15 +252,29 @@ def consume_stream_events(
     *,
     is_cancelled: Callable[[], bool] = lambda: False,
     on_cancelled: Callable[[], None] | None = None,
+    control: Any = None,
 ) -> int:
-    """消费 stream_events interleave 循环，返回 message delta 计数。"""
+    """消费 stream_events interleave 循环，返回 message delta 计数。
+
+    tui-ux6 #03（ADR-0008）：取消命中时若 control 非 None，request_drain("user-cancel")
+    请求图排空——正在执行的当前 superstep（含慢工具/命令）跑完后停止，后续步骤被跳过，
+    流最终抛 GraphDrained 自然上抛；drain 期间抑制全部后续回调。control=None 保持旧
+    语义：取消命中立即返回（图继续按自身节奏跑满）。
+    """
     consumed = 0
     subagent_depth = 0
+    draining = False
     for kind, item in stream.interleave("messages", "tool_calls", "subagents"):
-        if is_cancelled():
+        if is_cancelled() and not draining:
             if on_cancelled:
                 on_cancelled()
-            return consumed
+            if control is None:
+                return consumed
+            control.request_drain("user-cancel")
+            draining = True
+            continue
+        if draining:
+            continue
         if kind == "subagents":
             status = str(getattr(item, "status", "") or "").lower()
             name = getattr(item, "name", "?")
@@ -288,13 +302,20 @@ def consume_stream_events(
         else:
             segment: list[str] = []
             for delta in iter_text_deltas(item.text):
-                if is_cancelled():
+                if is_cancelled() and not draining:
                     if on_cancelled:
                         on_cancelled()
-                    return consumed
+                    if control is None:
+                        return consumed
+                    control.request_drain("user-cancel")
+                    draining = True
+                if draining:
+                    break
                 consumed += 1
                 segment.append(delta)
                 callbacks["on_message_delta"](delta)
+            if draining:
+                continue
             if segment and callbacks.get("on_message_end"):
                 callbacks["on_message_end"]("".join(segment))
     return consumed
@@ -353,7 +374,8 @@ def run_agent_turn(
     韧性：retryable API 错误按决策表退避重试（状态经 callbacks["on_status"] 可见），
     步数超限软着陆收尾而非裸异常。
     """
-    from langgraph.errors import GraphRecursionError
+    from langgraph.errors import GraphDrained, GraphRecursionError
+    from langgraph.runtime import RunControl
     from langgraph.types import Command
     from src.permissions import sync_permission_context
 
@@ -397,9 +419,18 @@ def run_agent_turn(
                     callbacks["on_message_delta"](text)
             return True
     def _run_stream(stream_input: Any, config: dict):
-        stream = agent.stream_events(stream_input, version="v3", config=config)
+        # tui-ux6 #03: 每个 stream 尝试（含 HITL resume 每轮）独立 RunControl——
+        # 本 attempt 的 Esc drain 不泄漏到下一次 stream。
+        control = RunControl()
+        stream = agent.stream_events(
+            stream_input, version="v3", config=config, control=control
+        )
         consumed = consume_stream_events(
-            stream, callbacks, is_cancelled=is_cancelled, on_cancelled=on_cancelled
+            stream,
+            callbacks,
+            is_cancelled=is_cancelled,
+            on_cancelled=on_cancelled,
+            control=control,
         )
         return consumed, stream
 
@@ -411,6 +442,10 @@ def run_agent_turn(
         while True:
             try:
                 return _run_stream(stream_input, config)
+            except GraphDrained:
+                # tui-ux6 #03: Esc drain 取消不是 API 错误——不进重试/退避路径，
+                # checkpoint 清理由 run_agent_turn 外层 finally 统一处理。
+                raise
             except Exception as exc:
                 should_retry = (
                     not is_cancelled()
@@ -517,6 +552,11 @@ def run_agent_turn(
             if resume is None:
                 outcome = "abandon"
                 return False
+        outcome = "cancel"
+        return False
+    except GraphDrained:
+        # tui-ux6 #03: Esc drain（ADR-0008）——图按「当前 superstep 跑完即停」语义停止；
+        # 不重试、不交接（与步数超限 force_handoff 不同路）；finally 走 finalize + on_turn_incomplete。
         outcome = "cancel"
         return False
     finally:

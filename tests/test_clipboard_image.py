@@ -85,7 +85,7 @@ class _FakeImageAgent:
     def __init__(self):
         self.inputs = []
 
-    def stream_events(self, payload, *, version, config):
+    def stream_events(self, payload, *, version, config, control=None):
         self.inputs.append(payload)
         content = payload["messages"][0]["content"]
         if isinstance(content, list):
@@ -144,7 +144,7 @@ def test_run_agent_turn_on_mode_no_fallback():
 
 def test_run_agent_turn_non_image_error_still_raises():
     class _AuthAgent(_FakeImageAgent):
-        def stream_events(self, payload, *, version, config):
+        def stream_events(self, payload, *, version, config, control=None):
             self.inputs.append(payload)
             raise ValueError("401 unauthorized")
 
@@ -163,7 +163,7 @@ def test_run_agent_turn_non_image_error_still_raises():
 class _FakeImageAgentStatus400(_FakeImageAgent):
     """拒绝图片时报错文本不含 image/vision（通用 Bad Request + status_code=400）。"""
 
-    def stream_events(self, payload, *, version, config):
+    def stream_events(self, payload, *, version, config, control=None):
         self.inputs.append(payload)
         content = payload["messages"][0]["content"]
         if isinstance(content, list):
@@ -176,7 +176,7 @@ class _FakeImageAgentStatus400(_FakeImageAgent):
 class _FakeImageAgentStatus500(_FakeImageAgent):
     """服务端 5xx 与图片无关：不该触发回落，异常原样上抛。"""
 
-    def stream_events(self, payload, *, version, config):
+    def stream_events(self, payload, *, version, config, control=None):
         self.inputs.append(payload)
         content = payload["messages"][0]["content"]
         if isinstance(content, list):

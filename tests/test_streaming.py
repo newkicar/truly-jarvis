@@ -1,4 +1,9 @@
 """streaming 消费层测试。"""
+import threading
+import time
+
+import pytest
+
 from src import streaming
 
 
@@ -107,7 +112,7 @@ def test_run_agent_turn_replay_uses_checkpoint_config():
         def __init__(self):
             self.calls = []
 
-        def stream_events(self, payload, *, version, config):
+        def stream_events(self, payload, *, version, config, control=None):
             self.calls.append((payload, version, config))
             return _Stream()
 
@@ -146,7 +151,7 @@ def test_run_agent_turn_replay_emits_saved_turn_without_stream():
         def get_state_history(self, config=None):
             return iter([FakeState()])
 
-        def stream_events(self, payload, *, version, config):
+        def stream_events(self, payload, *, version, config, control=None):
             self.stream_calls.append((payload, version, config))
             raise AssertionError("completed replay must not re-run stream_events")
 
@@ -190,7 +195,7 @@ def test_run_agent_turn_abandon_calls_finalize():
         checkpointer = None
         finalized = False
 
-        def stream_events(self, payload, *, version, config):
+        def stream_events(self, payload, *, version, config, control=None):
             return _Stream()
 
     agent = FakeAgent()
@@ -220,3 +225,216 @@ def test_run_agent_turn_abandon_calls_finalize():
 
     assert ok is False
     assert agent.finalized is True
+
+
+# ---------------------------------------------------------------------------
+# tui-ux6 #03 — Esc 真切断：RunControl drain（ADR-0008）
+# ---------------------------------------------------------------------------
+
+
+class _DrainCtl:
+    """假 control：记录 request_drain 调用。"""
+
+    def __init__(self):
+        self.drain_calls = 0
+        self.reason = None
+
+    def request_drain(self, reason):
+        self.drain_calls += 1
+        self.reason = reason
+
+
+class _DrainStream:
+    """假 stream：对齐真实 Pregel——drain 请求后的下一个 yield 边界抛 GraphDrained。
+
+    检查点必须放在 yield 之后（生成器恢复时求值）：消费层在取到 item 的循环体里才请求
+    drain，早于下一次 next()；若检查点在两个 yield 之间，会在 drain 请求之前被求值
+    （off-by-one），GraphDrained 永远不触发。
+    """
+
+    def __init__(self, ctl):
+        self.ctl = ctl
+
+    def interleave(self, *kinds):
+        yield ("messages", _Msg("ab"))
+        if self.ctl.drain_calls > 0:
+            from langgraph.errors import GraphDrained
+
+            raise GraphDrained("user-cancel")
+        yield ("messages", _Msg("cd"))
+        if self.ctl.drain_calls > 0:
+            from langgraph.errors import GraphDrained
+
+            raise GraphDrained("user-cancel")
+
+
+def test_consume_stream_cancel_requests_drain_and_suppresses_callbacks():
+    """取消命中 → request_drain("user-cancel") 恰好一次 + 后续回调全部抑制 + GraphDrained 透传。
+
+    时序对齐真实图：flag 在 item 1 收尾（on_message_end）后翻转；item 2 取出时
+    top-check 请求 drain 并抑制 item 2 全部回调；再取下一项时流按图语义抛
+    GraphDrained（_DrainStream 在 drain 已请求且无更多 item 时模拟）。
+    """
+    from langgraph.errors import GraphDrained
+
+    ctl = _DrainCtl()
+    flags = {"cancelled": False}
+    deltas = []
+    segments = []
+    tool_calls = []
+    cancelled_at = []
+
+    def on_cancelled():
+        cancelled_at.append(True)
+
+    stream = _DrainStream(ctl)
+    with pytest.raises(GraphDrained):
+        streaming.consume_stream_events(
+            stream,
+            {
+                "on_subagent": lambda *a: None,
+                "on_tool_call": lambda n, *a: tool_calls.append(n),
+                "on_message_delta": lambda d: deltas.append(d),
+                "on_message_end": lambda seg: (
+                    flags.__setitem__("cancelled", True),
+                    segments.append(seg),
+                ),
+            },
+            is_cancelled=lambda: flags["cancelled"],
+            on_cancelled=on_cancelled,
+            control=ctl,
+        )
+    assert ctl.drain_calls == 1
+    assert ctl.reason == "user-cancel"
+    assert deltas == ["a", "b"]  # 只消费到 item 1 的 delta
+    assert segments == ["ab"]  # item 1 的 on_message_end 在取消前已发生
+    assert tool_calls == []  # item 2（tool_calls）被 drain 抑制
+    assert cancelled_at == [True]  # on_cancelled 只触发一次
+
+
+def test_consume_stream_cancel_mid_delta_suppresses_partial_segment():
+    """取消在 delta 循环中途命中 → 请求 drain 后本条 segment 不再发 on_message_end，
+    后续 delta 不再消费，GraphDrained 透传。"""
+    from langgraph.errors import GraphDrained
+
+    class _MidDrainStream:
+        def interleave(self, *kinds):
+            yield ("messages", _Msg("abcd"))
+            if ctl2.drain_calls > 0:
+                raise GraphDrained("user-cancel")
+
+    ctl2 = _DrainCtl()
+    flags = {"cancelled": False}
+    deltas = []
+    segments = []
+
+    def on_message_delta(d):
+        deltas.append(d)
+        if len(deltas) == 2:
+            flags["cancelled"] = True
+
+    with pytest.raises(GraphDrained):
+        streaming.consume_stream_events(
+            _MidDrainStream(),
+            {
+                "on_subagent": lambda *a: None,
+                "on_tool_call": lambda *a: None,
+                "on_message_delta": on_message_delta,
+                "on_message_end": lambda seg: segments.append(seg),
+            },
+            is_cancelled=lambda: flags["cancelled"],
+            control=ctl2,
+        )
+    assert ctl2.drain_calls == 1
+    assert deltas == ["a", "b"]  # 取消后 "c"/"d" 不再消费
+    assert segments == []  # 部分 segment 的 on_message_end 被抑制
+
+
+def test_consume_stream_cancel_without_control_keeps_legacy_semantics():
+    """control=None：取消命中立即返回（旧语义），不请求 drain、不吞异常。"""
+    ctl = _DrainCtl()
+    flags = {"cancelled": False}
+    deltas = []
+    segments = []
+
+    stream = _DrainStream(ctl)
+    consumed = streaming.consume_stream_events(
+        stream,
+        {
+            "on_subagent": lambda *a: None,
+            "on_tool_call": lambda *a: None,
+            "on_message_delta": lambda d: deltas.append(d),
+            "on_message_end": lambda seg: (
+                flags.__setitem__("cancelled", True),
+                segments.append(seg),
+            ),
+        },
+        is_cancelled=lambda: flags["cancelled"],
+        control=None,
+    )
+    assert ctl.drain_calls == 0
+    assert deltas == ["a", "b"]
+    assert segments == ["ab"]
+    assert consumed == 2  # 旧语义立即返回，不继续消费 item 2
+
+
+def test_run_agent_turn_drain_stops_after_single_slow_tool():
+    """e2e（对标 scratch/probe_drain.py）：慢工具运行中取消 → drain 停图，
+    第二次模型调用不发生，run_agent_turn 返回 False（cancel 而非异常上抛）。"""
+    from deepagents import create_deep_agent
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+    from langchain_core.messages import AIMessage
+    from langchain_core.tools import tool
+
+    @tool
+    def slow(name: str) -> str:
+        """Slow tool for drain e2e."""
+        time.sleep(2.0)
+        return "tool done"
+
+    class TProbe(FakeMessagesListChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+            model_calls.append(1)
+            return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+    model_calls: list = []
+    model = TProbe(
+        responses=[
+            AIMessage(content="", tool_calls=[{"name": "slow", "args": {"name": "x"}, "id": "c1"}]),
+            AIMessage(content="finished"),
+        ],
+        messages=[],
+    )
+    agent = create_deep_agent(model=model, tools=[slow], checkpointer=None)
+
+    flags = {"cancelled": False}
+
+    def cancel_soon():
+        time.sleep(0.3)
+        flags["cancelled"] = True
+
+    th = threading.Thread(target=cancel_soon)
+    th.start()
+    t0 = time.monotonic()
+    ok = streaming.run_agent_turn(
+        agent,
+        "t-drain-e2e",
+        "go",
+        handle_interrupts=lambda _: None,
+        callbacks={
+            "on_subagent": lambda *a: None,
+            "on_tool_call": lambda *a: None,
+            "on_message_delta": lambda d: None,
+        },
+        is_cancelled=lambda: flags["cancelled"],
+    )
+    th.join(timeout=5)
+    wall = time.monotonic() - t0
+    assert ok is False
+    # 判别性断言：旧代码会跑满两轮模型调用（慢工具后还有第二次 LLM 调用）；
+    # drain 语义下第二次模型调用不发生。
+    assert len(model_calls) == 1
+    assert wall < 3.5, f"drain 未真切断：wall={wall:.2f}s"
