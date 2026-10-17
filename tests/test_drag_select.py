@@ -136,3 +136,41 @@ async def test_plain_text_828_strip_shape(monkeypatch):
         text = log.plain_text()
         assert "line A" in text and "line B" in text
         assert log.selected_plain_text() == ""
+
+@pytest.mark.asyncio
+async def test_drag_select_exact_range_and_highlight(monkeypatch):
+    """P4: 拖选后 selected_plain_text 必须 == 框选区文字（逐字符），且渲染带高亮底色。"""
+    monkeypatch.setattr(tui_log_mod, "copy_text_to_system_clipboard", lambda t: True)
+    app = DragSelectApp()
+    async with app.run_test() as pilot:
+        log = app.query_one("#log", CopyableRichLog)
+        for i, ch in enumerate("abcde", start=1):
+            log.write(f"ROW {i} {ch * 3}")
+        await _wait(pilot, lambda: log.plain_text().count("\n") >= 4)
+
+        # 框选 row1 的 x=2 起 → row3 的 x=4 止（mouse-up 格独占）
+        await _drag_select(pilot, (2, 1), (4, 3))
+        await _wait(
+            pilot,
+            lambda: log.selected_plain_text() == "W 2 bbb\nROW 3 ccc\nROW 4",
+            rounds=50,
+        )
+        assert log.selected_plain_text() == "W 2 bbb\nROW 3 ccc\nROW 4"
+
+        # 高亮：选区行渲染片段必须带 selection 底色
+        sel_style = log.get_component_rich_style(
+            "copyable-rich-log--selection", default=None
+        )
+        assert sel_style is not None, "selection 组件样式缺失"
+        highlighted = []
+        for row in (1, 2, 3):
+            strip = log.render_line(row - log.scroll_offset[1])
+            hit = any(
+                seg.style is not None and seg.style.bgcolor == sel_style.bgcolor
+                for seg in strip
+            )
+            highlighted.append(hit)
+        # 首行(部分) + 中间行 + 末行(部分) 都应有高亮 cell
+        assert all(highlighted), (
+            f"选区行缺少高亮底色: {highlighted} (sel bgcolor={sel_style.bgcolor!r})"
+        )

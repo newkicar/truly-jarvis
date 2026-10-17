@@ -10,6 +10,9 @@ from rich.console import Console
 from rich.text import Text
 from textual import events
 from textual.selection import Selection
+from rich.segment import Segment
+from rich.style import Style
+from textual.strip import Strip
 from textual.widgets import RichLog
 
 
@@ -134,6 +137,63 @@ class CopyableRichLog(RichLog):
     def focus_on_click(self) -> bool:
         """允许拖选；不抢底部输入框焦点。"""
         return False
+
+    def render_line(self, y: int) -> Strip:
+        """渲染叠加：offset meta（选区命中）+ 选区高亮底色（用户 P4：框选可见）。
+
+        Textual 8.2.8 的 RichLog 原生 strip 不带 offset meta，
+        Compositor.get_widget_and_offset_at 无法把鼠标坐标落到 (行, 列)，
+        选区会塌缩成「整个 widget 全选」。这里补上字符 offset，
+        并手动把 selection 组件样式叠在选区行上（RichLog 不走过 Visual 高亮路径）。
+        """
+        strip = super().render_line(y)
+        scroll_x, scroll_y = self.scroll_offset
+        content_row = scroll_y + y
+        strip = strip.apply_offsets(scroll_x, content_row)
+        selection = self.text_selection
+        if selection is not None:
+            span = selection.get_span(content_row)
+            if span is not None:
+                sel_style = self.get_component_rich_style(
+                    "copyable-rich-log--selection", default=None
+                )
+                if sel_style is not None:
+                    strip = self._overlay_selection(strip, span[0], span[1], sel_style)
+        return strip
+
+    @staticmethod
+    def _overlay_selection(
+        strip: Strip, x0: int, x1: int, sel_style: Style
+    ) -> Strip:
+        """把字符 span [x0, x1) 映射到 cell span 并叠加高亮样式。
+
+        -1 表示行尾；cell 坐标经 cell_len 换算（CJK 双 cell）；
+        用 Segment.divide 在 cell 切点处切段，中间段叠 sel_style。
+        """
+        from rich.cells import cell_len
+
+        segments = strip._segments  # noqa: SLF001
+        row_text = "".join(seg.text for seg in segments if not seg.control)
+        total_cells = strip.cell_length
+        x1_chars = len(row_text) if x1 < 0 else x1
+        start_cell = cell_len(row_text[:x0])
+        end_cell = min(cell_len(row_text[:x1_chars]), total_cells)
+        if end_cell <= start_cell:
+            return strip
+        parts = list(Segment.divide(segments, [start_cell, end_cell]))
+        new_segments: list[Segment] = []
+        for idx, part in enumerate(parts):
+            if idx == 1:
+                for seg in part:
+                    text, style, control = seg
+                    if control:
+                        new_segments.append(seg)
+                        continue
+                    new_style = (style + sel_style) if style else sel_style
+                    new_segments.append(Segment(text, new_style, control))
+            else:
+                new_segments.extend(part)
+        return Strip(Segment.simplify(new_segments), total_cells)
 
     def write(self, content, *args, **kwargs):
         result = super().write(content, *args, **kwargs)
