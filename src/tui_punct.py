@@ -29,6 +29,8 @@ PUNCT_ITEMS: tuple[tuple[str, str], ...] = (
     ("”", "右双引号"),
     ("‘", "左单引号"),
     ("’", "右单引号"),
+    ("「", "左角引号"),
+    ("」", "右角引号"),
     ("《", "左书名号"),
     ("》", "右书名号"),
     ("（", "全角左括号"),
@@ -64,17 +66,18 @@ def is_conhost_like() -> bool:
 
 
 def ime_hint_markup() -> str:
-    """conhost 标点输入提示的 Rich markup（dim 样式）。"""
+    """标点输入提示的 Rich markup（dim 样式；终端无关文案）。"""
     return (
-        "[dim]提示：已启用 conhost IME 输入补全（全角标点如“”‘’…可直接输入）；"
-        "若个别标点仍输不进，按 Ctrl+. 可快插标点。[/dim]"
+        "[dim]提示：全角标点如“”‘’…通常可直接输入法输入；"
+        "若个别标点仍输不进（ConPTY/IME 差异），按 Ctrl+. 打开标点快插面板选取。[/dim]"
     )
 
 
-def ime_hint_line(mode: str, conhost: bool) -> str:
-    """按 tui.ime_hint 配置（off/on/auto）给出 conhost 提示行，不需要提示时返回 ''。
+def ime_hint_line(mode: str, conhost: bool, windows_terminals: bool = False) -> str:
+    """按 tui.ime_hint 配置（off/on/auto）给出标点输入提示行，不需要提示时返回 ''。
 
-    auto：仅 conhost 环境提示；on：总是提示；off：不提示；非法值回落 auto。
+    auto：Windows 终端环境（conhost 或其他 Windows 终端，如 Windows Terminal）提示；
+    on：总是提示；off：不提示；非法值回落 auto。双参调用行为不变（第三参默认 False）。
     """
     m = str(mode).strip().lower()
     if m not in ("off", "on", "auto"):
@@ -83,4 +86,4 @@ def ime_hint_line(mode: str, conhost: bool) -> str:
         return ""
     if m == "on":
         return ime_hint_markup()
-    return ime_hint_markup() if conhost else ""
+    return ime_hint_markup() if (conhost or windows_terminals) else ""

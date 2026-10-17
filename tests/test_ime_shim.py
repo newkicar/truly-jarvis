@@ -175,12 +175,21 @@ def test_nul_u_char_rebuilt_cjk_merged(monkeypatch) -> None:
 
 
 def test_nul_u_char_with_shift_not_merged(monkeypatch) -> None:
-    """NUL-uChar + SHIFT 按下（0x0001）：不并入。"""
+    """NUL-uChar + LEFT_SHIFT_PRESSED 按下（0x0080）：不并入。"""
+    monkeypatch.setattr(ime_shim, "_map_vk", lambda vk: "\u201c")
+    rec = _make_record(ime_shim.KEY_EVENT)
+    _set_key(rec, vk=0x27, u_char="\x00", mods=0x0080)
+    keys, _ = ime_shim.fold_input_records([rec])
+    assert keys == []
+
+
+def test_nul_u_char_with_numlock_merged(monkeypatch) -> None:
+    """NUL-uChar + 只 NumLock(0x0001，非真实修饰键)按下：仍并入。NumLock 开启是常态，错阻则静默丢失整段 IME 确认字符。"""
     monkeypatch.setattr(ime_shim, "_map_vk", lambda vk: "\u201c")
     rec = _make_record(ime_shim.KEY_EVENT)
     _set_key(rec, vk=0x27, u_char="\x00", mods=0x0001)
     keys, _ = ime_shim.fold_input_records([rec])
-    assert keys == []
+    assert keys == ["\u201c"]
 
 
 def test_nul_u_char_ascii_result_ignored(monkeypatch) -> None:

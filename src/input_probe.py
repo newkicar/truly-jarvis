@@ -73,7 +73,7 @@ def doctor_input_channel_line() -> str:
         kernel32 = windll.kernel32
         cp = int(kernel32.GetConsoleCP())
         ft = int(kernel32.GetFileType(os.gethandle(0)))
-        return channel_line(cp, ft)
+        return f"{channel_line(cp, ft)} | 标点快插：TUI 内 Ctrl+. 开面板"
     except Exception:
         return "输入通道: n/a（无控制台句柄）"
 

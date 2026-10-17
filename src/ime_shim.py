@@ -9,8 +9,10 @@ WINDOW_BUFFER_SIZE_EVENT(0x0004) 两类控制台输入记录；console 在输入
 记录下发，进不了应用——用户报告的「中文双引号单引号输入不进去」。
 
 NUL-uChar 重建（#11）：部分 ConPTY/IME 组合下确认字符会以 uChar 为 NUL 的
-KEY_EVENT 下发；此时用 MapVirtualKeyW(VK) 重建字符，仅当「无修饰键 + 结果非 ASCII」
-才并入字符流（ord≥0x80 子包控制键检查），最终形态以 #10 input_probe 探测输出为准。
+KEY_EVENT 下发；此时用 MapVirtualKeyW(VK) 重建字符，仅当「无真实修饰键按下
+（dwControlKeyState & 0x00F8：Shift/Ctrl/Alt 未按下；NumLock/ScrollLock/Enhanced
+非修饰键，不阻挡重建）+ 结果非 ASCII」才并入字符流（ord≥0x80 子包控制键检查），
+最终形态以 #10 input_probe 探测输出为准。
 
 install()（仅 win32，幂等）monkey-patch EventMonitor.run：保留原有按键处理
 与窗口尺寸逻辑，另把 UNICODE_EVENT/IME_EVENT 记录并入按键字符流，走同一
@@ -95,7 +97,9 @@ def fold_input_records(
       IMESF_COMP（pre-edit 组合字）与 IMESF_END 不并入——pre-edit 逐字
       上屏会闪烁/重影，console 自带 IME 窗已展示组合过程。
     - KEY_EVENT NUL-uChar（#11）：UnicodeChar 为 NUL/空（ConPTY IME 确认记录形态）时，
-      经 MapVirtualKeyW(VK) 重建字符，仅「无修饰键（dwControlKeyState & 0x0007 == 0）
+      经 MapVirtualKeyW(VK) 重建字符，仅「无真实修饰键按下（dwControlKeyState & 0x00F8 == 0；
+      0x00F8 = Ctrl_L/R|Alt_L/R|Shift_L/R 实按位；NumLock(0x0001)/ScrollLock(0x0002)/
+      Enhanced(0x0004) 非真实修饰键，NumLock 开启是常态，误含即整段字符流丢失）
       且结果非 ASCII（ord≥0x80）」才并入；正常 uChar 原样追加，不再追加空串。
     """
     off = union_offset()
@@ -113,9 +117,11 @@ def fold_input_records(
             u_char = key_event.uChar.UnicodeChar
             if not u_char or u_char == "\x00":
                 # #11 NUL-uChar 重建（ConPTY IME 确认记录形态）：
-                # MapVirtualKeyW(VK) 重建字符，仅「无修饰键 + 非 ASCII」才并入。
+                # MapVirtualKeyW(VK) 重建字符，仅「无真实修饰键按下 + 非 ASCII」才并入。
+                # 0x00F8 = Ctrl_L/R|Alt_L/R|Shift_L/R 实按位；0x0007（NumLock/ScrollLock/
+                # Enhanced）非真实修饰键——误含会在 NumLock 开启时静默丢失整段 IME 确认字符。
                 rebuilt = _map_vk(key_event.wVirtualKeyCode)
-                if rebuilt and ord(rebuilt) >= 0x80 and not (key_event.dwControlKeyState & 0x0007):
+                if rebuilt and ord(rebuilt) >= 0x80 and not (key_event.dwControlKeyState & 0x00F8):
                     keys.append(rebuilt)
             else:
                 keys.append(u_char)
