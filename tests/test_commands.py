@@ -667,7 +667,11 @@ def test_repair_stuck_thread_rolls_back_to_last_good_checkpoint():
     agent = RepairAgent()
     assert commands.repair_stuck_thread(agent, "default") is True
     assert agent.checkpointer.updated == {
-        "configurable": {"thread_id": "default", "checkpoint_id": "good"}
+        "configurable": {
+            "thread_id": "default",
+            "checkpoint_id": "good",
+            "checkpoint_ns": "",
+        }
     }
 
 
@@ -744,7 +748,11 @@ def test_finalize_turn_rolls_back_pending_interrupt():
     assert commands.turn_needs_finalize(agent, "default") is True
     assert commands.finalize_turn(agent, "default") is True
     assert agent.checkpointer.updated == {
-        "configurable": {"thread_id": "default", "checkpoint_id": "good"}
+        "configurable": {
+            "thread_id": "default",
+            "checkpoint_id": "good",
+            "checkpoint_ns": "",
+        }
     }
 
 
@@ -910,7 +918,7 @@ class _FakeSnapshot:
 def _agent_with_thread(thread_id, messages):
     class FakeAgent:
         def get_state(self, config):
-            assert config == {"configurable": {"thread_id": thread_id}}
+            assert config == {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
             return _FakeSnapshot({"messages": messages})
 
     return FakeAgent()
@@ -991,9 +999,9 @@ def test_list_sessions_shows_summary():
 
 def test_thread_config_literal_single_source():
     """⑥: checkpoint 配置字面量的唯一出处。"""
-    assert commands.thread_config("t1") == {"configurable": {"thread_id": "t1"}}
+    assert commands.thread_config("t1") == {"configurable": {"thread_id": "t1", "checkpoint_ns": ""}}
     assert commands.thread_config("t1", "c9") == {
-        "configurable": {"thread_id": "t1", "checkpoint_id": "c9"}
+        "configurable": {"thread_id": "t1", "checkpoint_ns": "", "checkpoint_id": "c9"}
     }
 
 

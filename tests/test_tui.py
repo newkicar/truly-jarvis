@@ -603,10 +603,12 @@ async def test_slash_undo_command_rolls_back_and_rebuilds_transcript():
         joined = await _wait_for_text(pilot, "已撤回")
         assert "已撤回 1 条消息" in joined
         assert agent.updates, "undo 应触发 update_state"
-        cfg, values, _as_node = agent.updates[0]
-        assert values is None
-        assert cfg["configurable"]["checkpoint_id"] == "c1"  # c2 的（末个输入点）父 checkpoint
+        cfg, values, as_node = agent.updates[0]
+        assert as_node == "model"  # live head 外科式删除（fork 先例；不依赖历史输入点）
+        assert {rm.id for rm in values["messages"]} == {"m3", "m4"}
+        assert cfg["configurable"].get("checkpoint_id") is None  # thread_config 唯一出处
         assert "[user] 问题 1" in joined  # transcript 已按回退后状态重建
+        assert "问题 2" not in joined
 
 
 @pytest.mark.asyncio

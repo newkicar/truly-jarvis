@@ -22,7 +22,7 @@ from src.project_paths import (
 
 def thread_config(thread_id: str, checkpoint_id: str | None = None) -> dict:
     """LangGraph checkpoint 配置字面量的唯一出处（消掉散落各处的重复）。"""
-    configurable: dict = {"thread_id": thread_id}
+    configurable: dict = {"thread_id": thread_id, "checkpoint_ns": ""}
     if checkpoint_id:
         configurable["checkpoint_id"] = checkpoint_id
     return {"configurable": configurable}
@@ -899,49 +899,29 @@ def fork(agent, thread_id: str, checkpoint_id: str):
 def undo(agent, thread_id: str, n: int = 1) -> str:
     """撤回最近 n 条用户消息（消息层 time travel；文件/Inbox 不动，HITL 悬挂随回退作废）。
 
-    按「用户消息输入点」（get_state_history source=="input"）逐个回退：
-    - 输入点有前驱 checkpoint：update_state 回退到父 checkpoint（_rollback 同款原语）；
-    - 首个输入点位于线程起点：外科式删除 head 状态中末条 HumanMessage 及其后全部
-      （RemoveMessage + as_node="model"，fork 先例）。
+    基于 live head 状态的外科式删除（不依赖 get_state_history 的 append-only 全日志——
+    那种做法在第一次 undo 之后日志尾部即失效、后续撤回永远停在同一个 checkpoint）：
+    读当前 head 的 messages，定位倒数第 n 条 HumanMessage，删除它及其后全部
+    （RemoveMessage + as_node="model"，fork 先例）。反复调用每次再撤一轮，
+    撤到空白后继续调用返回「没有可撤回的消息」而非异常。
     """
     from langchain_core.messages import HumanMessage, RemoveMessage
 
-    history = list(agent.get_state_history(thread_config(thread_id)))
-    history.reverse()  # get_state_history 新→旧；undo 需要旧→新
-    input_idxs = [
-        i
-        for i, s in enumerate(history)
-        if (getattr(s, "metadata", None) or {}).get("source") == "input"
-    ]
-    if not input_idxs:
+    head = agent.get_state(thread_config(thread_id))
+    messages = (head.values or {}).get("messages") or []
+    human_idxs = [i for i, m in enumerate(messages) if isinstance(m, HumanMessage)]
+    if not human_idxs:
         return "没有可撤回的消息"
-    clamped = n > len(input_idxs)
-    n = max(1, min(n, len(input_idxs)))
-    for k in range(1, n + 1):
-        idx = input_idxs[-k]
-        if idx > 0:
-            parent = history[idx - 1].config.get("configurable", {})
-            agent.update_state(thread_config(thread_id, parent.get("checkpoint_id")), None)
-        else:
-            # 首个输入点即线程起点（无前驱 checkpoint 可回退）：
-            # 外科式删除 head 状态中末条 HumanMessage 及其后全部消息。
-            head = agent.get_state(thread_config(thread_id))
-            messages = (head.values or {}).get("messages") or []
-            cut = None
-            for i, m in enumerate(messages):
-                if isinstance(m, HumanMessage):
-                    cut = i
-            if cut is None:
-                continue
-            removals = [
-                RemoveMessage(id=m.id) for m in messages[cut:] if getattr(m, "id", None)
-            ]
-            if removals:
-                agent.update_state(
-                    thread_config(thread_id),
-                    {"messages": removals},
-                    as_node="model",
-                )
+    clamped = n > len(human_idxs)
+    n = max(1, min(n, len(human_idxs)))
+    cut = human_idxs[-n]
+    removals = [RemoveMessage(id=m.id) for m in messages[cut:] if getattr(m, "id", None)]
+    if removals:
+        agent.update_state(
+            thread_config(thread_id),
+            {"messages": removals},
+            as_node="model",
+        )
     suffix = "（已超出，撤回至空白）" if clamped else ""
     return f"已撤回 {n} 条消息（仅消息层；文件未动；HITL 悬挂已作废）{suffix}"
 

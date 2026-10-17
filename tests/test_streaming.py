@@ -128,7 +128,7 @@ def test_run_agent_turn_replay_uses_checkpoint_config():
     payload, version, config = agent.calls[0]
     assert payload is None
     assert version == "v3"
-    assert config["configurable"] == {"thread_id": "t", "checkpoint_id": "cid-0000000-aaaa"}
+    assert config["configurable"] == {"thread_id": "t", "checkpoint_ns": "", "checkpoint_id": "cid-0000000-aaaa"}
 
 
 def test_run_agent_turn_replay_emits_saved_turn_without_stream():
