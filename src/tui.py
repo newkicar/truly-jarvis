@@ -9,7 +9,7 @@ from time import monotonic
 from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Footer, Header, Input, Label, OptionList, RichLog, Static
 from textual.widgets.option_list import Option
@@ -168,7 +168,7 @@ class PermissionModal(ModalScreen):
     #perm_box {
         width: 80%;
         height: auto;
-        max-height: 70%;
+        max-height: 60%;
         border: thick $primary;
         background: $panel;
         padding: 1 2;
@@ -181,9 +181,8 @@ class PermissionModal(ModalScreen):
         color: $text-muted;
     }
     #perm_preview {
-        height: 1fr;
-        min-height: 2;
-        max-height: 12;
+        height: auto;
+        max-height: 14;
         overflow-y: auto;
         border: round $surface;
         background: $surface;
@@ -192,6 +191,8 @@ class PermissionModal(ModalScreen):
     }
     #perm_buttons {
         height: auto;
+        width: 80%;
+        margin-top: 1;
         align-horizontal: center;
     }
     """
@@ -204,7 +205,7 @@ class PermissionModal(ModalScreen):
         self.path_label = "Command:" if inv.name == "execute" else "Path:"
 
     def compose(self) -> ComposeResult:
-        with Static(id="perm_box"):
+        with VerticalScroll(id="perm_box"):
             yield Label(f"Tool: {self.inv.name}", id="perm_tool")
             yield Label(f"{self.path_label} {self.inv.path}", id="perm_path")
             preview = permission_preview(
@@ -213,11 +214,11 @@ class PermissionModal(ModalScreen):
                 workspace_root=self.workspace_root,
             )
             yield Static(preview, id="perm_preview")
-            with Horizontal(id="perm_buttons"):
-                yield Button("放行", id="btn_approve", variant="success")
-                yield Button("永久放行", id="btn_always", variant="primary")
-                yield Button("拒绝", id="btn_reject", variant="error")
-                yield Button("编辑参数", id="btn_edit", variant="default")
+        with Horizontal(id="perm_buttons"):
+            yield Button("放行", id="btn_approve", variant="success")
+            yield Button("永久放行", id="btn_always", variant="primary")
+            yield Button("拒绝", id="btn_reject", variant="error")
+            yield Button("编辑参数", id="btn_edit", variant="default")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn_approve":
@@ -274,7 +275,7 @@ class PrefixModal(ModalScreen):
     #prefix_box {
         width: 80%;
         height: auto;
-        max-height: 70%;
+        max-height: 60%;
         border: thick $primary;
         background: $panel;
         padding: 1 2;
@@ -293,6 +294,8 @@ class PrefixModal(ModalScreen):
     }
     #prefix_buttons {
         height: auto;
+        width: 80%;
+        margin-top: 1;
         align-horizontal: center;
     }
     """
@@ -302,13 +305,13 @@ class PrefixModal(ModalScreen):
         self.default_prefix = default_prefix or "*"
 
     def compose(self) -> ComposeResult:
-        with Static(id="prefix_box"):
+        with VerticalScroll(id="prefix_box"):
             yield Label("永久放行（按命令前缀）", id="prefix_title")
             yield Label(f'将写回 jarvis.json: "{self.default_prefix} *": allow', id="prefix_hint")
             yield Input(self.default_prefix, id="prefix_input")
-            with Horizontal(id="prefix_buttons"):
-                yield Button("确认", id="btn_prefix_ok", variant="primary")
-                yield Button("取消", id="btn_prefix_cancel", variant="default")
+        with Horizontal(id="prefix_buttons"):
+            yield Button("确认", id="btn_prefix_ok", variant="primary")
+            yield Button("取消", id="btn_prefix_cancel", variant="default")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn_prefix_cancel":
@@ -343,7 +346,7 @@ class EditParamsModal(ModalScreen):
     #edit_box {
         width: 80%;
         height: auto;
-        max-height: 70%;
+        max-height: 60%;
         border: thick $primary;
         background: $panel;
         padding: 1 2;
@@ -352,18 +355,15 @@ class EditParamsModal(ModalScreen):
         color: $accent;
         text-style: bold;
     }
-    #edit_params {
-        height: auto;
-        max-height: 1fr;
-        overflow-y: auto;
-    }
-    #edit_params > .param_input {
+    #edit_box > .param_input {
         width: 100%;
         height: 2;
         margin: 0 0 1 0;
     }
     #edit_buttons {
         height: auto;
+        width: 80%;
+        margin-top: 1;
         align-horizontal: center;
     }
     """
@@ -373,14 +373,13 @@ class EditParamsModal(ModalScreen):
         self.args = dict(args or {})
 
     def compose(self) -> ComposeResult:
-        with Static(id="edit_box"):
+        with VerticalScroll(id="edit_box"):
             yield Label("编辑参数（留空使用原值）", id="edit_title")
-            with Vertical(id="edit_params"):
-                for k, v in self.args.items():
-                    yield Input(str(v), placeholder=k, id=f"param_{k}", classes="param_input")
-            with Horizontal(id="edit_buttons"):
-                yield Button("确认", id="btn_ok", variant="primary")
-                yield Button("取消", id="btn_cancel", variant="default")
+            for k, v in self.args.items():
+                yield Input(str(v), placeholder=k, id=f"param_{k}", classes="param_input")
+        with Horizontal(id="edit_buttons"):
+            yield Button("确认", id="btn_ok", variant="primary")
+            yield Button("取消", id="btn_cancel", variant="default")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn_cancel":

@@ -166,3 +166,55 @@ async def test_permission_modal_s_opens_prefix_modal_for_execute() -> None:
         host.exit()
         await pilot.pause()
         await cm.__aexit__(None, None, None)
+
+def _buttons_within(host, ids: tuple[str, ...], screen_h: int) -> None:
+    """断言按钮 region 完整落在 screen_h 行屏内。
+
+    不能用 ``btn.visible``——Textual 的 visible 只查 style.visible 标志，
+    不查 region 是否越出屏幕（短屏下被裁的按钮 visible 仍为 True）。
+    """
+    for bid in ids:
+        btn = host.screen.query_one(f"#{bid}", Button)
+        r = btn.region
+        assert r.y >= 0 and r.y + r.height <= screen_h, f"{bid} region={r} 超出 {screen_h} 行屏"
+
+
+def _long_exec_inv() -> ToolInvocation:
+    """31 行 execute 命令：审批窗口内容远超 12 行短屏。"""
+    cmd = "\n".join(f"echo line-{i:02d}" for i in range(31))
+    return ToolInvocation(name="execute", path=cmd, args={"command": cmd})
+
+
+@pytest.mark.asyncio
+async def test_permission_modal_short_screen_12_buttons_on_screen() -> None:
+    """12 行屏 + 31 行命令：四按钮必须完整可见（按钮行固定位置，不随内容下移出屏）。"""
+
+    async def check(host, pilot) -> None:
+        _buttons_within(host, ("btn_approve", "btn_always", "btn_reject", "btn_edit"), 12)
+
+    await _mount_and_check(PermissionModal(_long_exec_inv()), check, size=(80, 12))
+
+
+@pytest.mark.asyncio
+async def test_permission_modal_preview_scrollable_on_short_screen() -> None:
+    """内容容器可滚动：#perm_box 是 VerticalScroll；长 preview 自身 max_scroll_y > 0。"""
+    from textual.containers import VerticalScroll
+
+    async def check(host, pilot) -> None:
+        box = host.screen.query_one("#perm_box")
+        assert isinstance(box, VerticalScroll), "#perm_box 应为 VerticalScroll（内容超出时可滚动）"
+        preview = host.screen.query_one("#perm_preview")
+        assert preview.max_scroll_y > 0, "长内容下 preview 应可内部滚动（max_scroll_y>0）"
+
+    await _mount_and_check(PermissionModal(_long_exec_inv()), check, size=(80, 12))
+
+
+@pytest.mark.asyncio
+async def test_edit_params_modal_short_screen_12_buttons_on_screen() -> None:
+    """12 行屏 + 12 参数：确认/取消按钮必须完整可见。"""
+    args = {f"k{i:02d}": f"v{i}" for i in range(12)}
+
+    async def check(host, pilot) -> None:
+        _buttons_within(host, ("btn_ok", "btn_cancel"), 12)
+
+    await _mount_and_check(EditParamsModal(args), check, size=(80, 12))
