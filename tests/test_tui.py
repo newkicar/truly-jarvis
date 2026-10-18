@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+import types
 
 from contextlib import contextmanager
 
@@ -215,6 +216,62 @@ async def test_escape_cancels_streaming():
         log = pilot.app.query_one(CopyableRichLog)
         joined = "".join(l.text for l in log.lines)
         assert "已取消" in joined
+
+
+@pytest.mark.asyncio
+async def test_escape_cancel_banner_replaces_spinner():
+    """tui-ux7 #01: Esc 取消后 spinner 立即变「已取消」banner（无「思考中」）；drain 收尾结束自动清空。"""
+
+    class SlowAgent(FakeAgent):
+        def stream_events(self, *args, **kwargs):
+            class S(_FakeStream):
+                interrupted = False
+                interrupts = None
+                output = None
+
+                def __init__(self):
+                    self._items = [
+                        ("messages", _FakeMsg("正在思考")),
+                        ("messages", _FakeMsg("…")),
+                    ]
+
+                def interleave(self, *kinds):
+                    for item in self._items:
+                        time.sleep(0.2)
+                        yield item
+
+            return S()
+
+    app = JarvisApp(None, SlowAgent(reply=""), {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "慢请求")
+        await pilot.pause()
+        await asyncio.sleep(0.1)
+        app.action_cancel()
+        await pilot.pause()
+        spinner = pilot.app.query_one("#status_spinner", Static)
+        banner_text = str(spinner.render())
+        assert "思考中" not in banner_text
+        assert "已取消" in banner_text
+        await asyncio.sleep(0.6)
+        await pilot.pause()
+        spinner = pilot.app.query_one("#status_spinner", Static)
+        assert not str(spinner.render())
+        log = pilot.app.query_one(CopyableRichLog)
+        joined = "".join(l.text for l in log.lines)
+        assert joined.count("已取消") == 1
+
+
+@pytest.mark.asyncio
+async def test_cancel_banner_noop_when_spinner_style_none():
+    """tui-ux7 #01 附属: spinner_style="none" 时 banner 同步 no-op（不崩）。"""
+    cfg = types.SimpleNamespace(tui={"animations": True, "spinner_style": "none"})
+    app = JarvisApp(cfg, FakeAgent(), {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        app._show_cancel_banner()
+        spinner = pilot.app.query_one("#status_spinner", Static)
+        assert not str(spinner.render())
+        assert "-active" not in spinner.classes
 
 
 @pytest.mark.asyncio

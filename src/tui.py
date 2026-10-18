@@ -12,6 +12,7 @@ from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Footer, Header, Input, Label, OptionList, RichLog, Static
+from textual.css.query import NoMatches
 from textual.widgets.option_list import Option
 from textual.worker import Worker
 
@@ -868,6 +869,8 @@ class JarvisApp(App):
         self._esc_primed_at = 0.0  # 空闲双 Esc 撤回窗口计时（monotonic；工单 07）
         self._continuation: list[str] = []  # #04 tui-ux6: 已确认续行（Shift+Enter 多行输入）
         self._cmd_newline_hinted = False  # 「/ 命令不支持换行」通知只提示一次
+        self._turn_gate_threads: set[str] = set()  # tui-ux7 #02: 回合门（执行/收尾中的 thread 集合）
+        self._queued_messages: list[tuple[str, str]] = []  # tui-ux7 #02: FIFO 排队（(thread_id, raw text)
         self.title = "JARVIS"
         self._restore_theme()
         self._update_sub_title()
@@ -1002,11 +1005,17 @@ class JarvisApp(App):
             self.query_one("#messages", CopyableRichLog).clear_user_selection()
         except Exception:
             pass
-        stream = self.query_one("#ai_stream", Static)
+        try:
+            stream = self.query_one("#ai_stream", Static)
+        except NoMatches:
+            return  # tui-ux7: app 收尾/拆屏后节点已移除（worker 排空期 call_from_thread 兜底）
         stream.add_class("-active")
 
     def _hide_ai_stream(self) -> None:
-        stream = self.query_one("#ai_stream", Static)
+        try:
+            stream = self.query_one("#ai_stream", Static)
+        except NoMatches:
+            return  # tui-ux7: app 收尾/拆屏后节点已移除（worker 排空期 call_from_thread 兜底）
         stream.remove_class("-active")
         stream.update("")
 
@@ -1045,12 +1054,48 @@ class JarvisApp(App):
         if self._spinner_timer is not None:
             self._spinner_timer.stop()
             self._spinner_timer = None
-        spinner = self.query_one("#status_spinner", Static)
+        try:
+            spinner = self.query_one("#status_spinner", Static)
+        except NoMatches:
+            return  # tui-ux7: app 收尾/拆屏后节点已移除（worker 排空期 call_from_thread 兜底）
         spinner.remove_class("-active")
         spinner.update("")
 
+    def _show_cancel_banner(self) -> None:
+        """tui-ux7 #01: Esc 取消 → spinner 立即固定为「已取消」banner（收尾结束由 presenter finally 的 _hide_spinner 自动清空）。"""
+        if self._spinner_config()[1] == "none":
+            return
+        if self._spinner_timer is not None:
+            self._spinner_timer.stop()
+            self._spinner_timer = None
+        spinner = self.query_one("#status_spinner", Static)
+        spinner.add_class("-active")
+        spinner.update("[dim]已取消，正在收尾（当前步骤结束后停止）[/dim]")
+
+    def _release_turn_gate(self, tid: str) -> None:
+        """tui-ux7 #02: 释放 tid 的回合门并重投排队队首（UI 线程；由 worker 终结经 call_from_thread 回调）。
+
+        会话已切走（tid != 当前）→ 旧会话排队消息作废 + 提示；否则弹出 tid 队首重入
+        _handle_user_message（重入时门已空 → 获取门并启动下一轮，FIFO 保守）。
+        """
+        self._turn_gate_threads.discard(tid)
+        if tid != self.thread_id:
+            stale = [item for item in self._queued_messages if item[0] == tid]
+            if stale:
+                self._queued_messages = [item for item in self._queued_messages if item[0] != tid]
+                self.notify(f"会话 {tid} 有 {len(stale)} 条排队消息因会话切换未发送", timeout=3)
+            return
+        idx = next((i for i, (t, _x) in enumerate(self._queued_messages) if t == tid), None)
+        if idx is None:
+            return
+        _t, raw = self._queued_messages.pop(idx)
+        self._handle_user_message(raw)
+
     def _update_ai_stream(self, text: str) -> None:
-        stream = self.query_one("#ai_stream", Static)
+        try:
+            stream = self.query_one("#ai_stream", Static)
+        except NoMatches:
+            return  # tui-ux7: app 收尾/拆屏后节点已移除（worker 排空期 call_from_thread 兜底）
         stream.update(ai_stream_renderable(text))
 
     def _finalize_ai_stream(self, log: RichLog, text: str, mode: str | None = None) -> None:
@@ -1071,7 +1116,10 @@ class JarvisApp(App):
             return []
 
     def _refresh_todos_panel(self, todos: list[dict] | None = None) -> None:
-        panel = self.query_one("#todo_panel", Static)
+        try:
+            panel = self.query_one("#todo_panel", Static)
+        except NoMatches:
+            return  # tui-ux7: app 收尾/拆屏后节点已移除（worker 排空期 call_from_thread 兜底）
         markup = format_todos_panel(todos if todos is not None else self._fetch_agent_todos())
         if markup:
             panel.add_class("-active")
@@ -1111,12 +1159,25 @@ class JarvisApp(App):
         text = raw.strip()
         if not text:
             return
+        vpmapping = commands.virtual_path_mappings(self.config)
+        # tui-ux7 #02: 回合串行化门——收尾期新消息排队而非并发启动（不清输入、不写日志，不重复）。
+        # 入门类型 = 普通消息（含虚拟路径引用）+ /replay + /use + /undo；
+        # 读类 slash（/exit、/help、/copy、其他命令）不入门。
+        is_slash_cmd = text.startswith("/") and not commands.is_virtual_path_reference(text, vpmapping)
+        turn_message = (not is_slash_cmd) or text.split()[0] in ("/replay", "/undo", "/use")
+        if turn_message and self.thread_id in self._turn_gate_threads:
+            queued_here = sum(1 for t, _x in self._queued_messages if t == self.thread_id)
+            self._queued_messages.append((self.thread_id, text))
+            self.notify(
+                f"上一轮取消收尾中，已排队 {queued_here + 1} 条，收尾结束后自动发送",
+                timeout=2,
+            )
+            return
         input_widget = self.query_one("#input", Input)
         input_widget.value = ""
         log = self.query_one("#messages", RichLog)
         log.write(user_message_markup(text))
         # #04: 消息含虚拟前缀（/workspace/ 等）时追加 dim 锚点行，指出真实目录。
-        vpmapping = commands.virtual_path_mappings(self.config)
         for line in commands.path_anchor_lines(text, vpmapping):
             log.write(line)
         if text == "/exit":
@@ -1142,6 +1203,7 @@ class JarvisApp(App):
                     return
                 log.write(system_message_markup(f"正在重跑 checkpoint {parts[1]}…"))
                 self._show_spinner()
+                self._turn_gate_threads.add(self.thread_id)
                 self._worker = self.run_worker(
                     partial(self._stream_agent, checkpoint_id=full_id), thread=True
                 )
@@ -1152,6 +1214,7 @@ class JarvisApp(App):
                     return
                 log.write(system_message_markup("正在撤回 1 条消息…"))
                 self._show_spinner()
+                self._turn_gate_threads.add(self.thread_id)
                 self._worker = self.run_worker(
                     partial(self._undo_worker, 1), thread=True
                 )
@@ -1164,6 +1227,7 @@ class JarvisApp(App):
                     return
                 log.write(f"使用 skill「{parts[1]}」…")
                 self._show_spinner()
+                self._turn_gate_threads.add(self.thread_id)
                 self._worker = self.run_worker(
                     partial(self._stream_agent, user_input=msg), thread=True
                 )
@@ -1184,6 +1248,7 @@ class JarvisApp(App):
                 image_fallback = image_fallback_text(text, self._image_attachments)
             self._clear_image_attachments()
         self._show_spinner()
+        self._turn_gate_threads.add(self.thread_id)
         self._worker = self.run_worker(
             partial(
                 self._stream_agent,
@@ -1218,6 +1283,7 @@ class JarvisApp(App):
         except Exception as exc:  # noqa: BLE001
             result = f"撤回失败: {exc}"
         self.call_from_thread(self._apply_undo_result, result, restored)
+        self.call_from_thread(self._release_turn_gate, self.thread_id)
 
     def _apply_undo_result(self, result: str, restored: str = "") -> None:
         """撤回后重建对话区 transcript + 写结果横幅（工单 07）；成功时把被撤回的用户消息回填输入框。"""
@@ -1238,12 +1304,17 @@ class JarvisApp(App):
 
     def _trigger_implicit_undo(self) -> None:
         """双 Esc 隐式撤回：作废本线程悬挂 HITL，然后撤回 1 条（与 /undo 1 同 worker 路径）。"""
+        # tui-ux7 #02: 收尾中撤回被拒绝（不排队——撤销操作不能隔回重放）
+        if self.thread_id in self._turn_gate_threads:
+            self.notify("上一轮取消收尾中，请等待收尾结束后再撤回", timeout=2)
+            return
         self._mark_hitl_resolved(self.thread_id, set(self._pending_hitl_keys))
         self._pending_hitl_keys.clear()
         self._bump_hitl_generation()
         log = self.query_one("#messages", RichLog)
         log.write(system_message_markup("正在撤回 1 条消息…"))
         self._show_spinner()
+        self._turn_gate_threads.add(self.thread_id)
         self._worker = self.run_worker(partial(self._undo_worker, 1), thread=True)
 
     def _cancel_stream_worker(self) -> None:
@@ -1649,6 +1720,7 @@ class JarvisApp(App):
             self._hide_ai_stream()
             self._bump_hitl_generation()
             log.write("[i][dim]（已取消）[/dim][/i]")
+            self._show_cancel_banner()
             worker.cancel()
             return
         # 空闲：双 Esc（ESC_UNDO_WINDOW 内）撤回上一轮；单 Esc 不退出应用。

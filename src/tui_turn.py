@@ -169,6 +169,9 @@ class TurnPresenter:
 
     def run(self) -> None:
         """在流式 worker 线程内驱动本轮（含异常兜底与收尾）。"""
+        # tui-ux7 #02: 门键 = 本轮 thread_id（run 入口捕获）；收尾中用户切换会话时，
+        # 释放仍落在旧 thread 上（_release_turn_gate 内部按 thread 判断）。
+        turn_thread_id = self.app.thread_id
         self.worker = get_current_worker()
         ok = False
         try:
@@ -211,4 +214,7 @@ class TurnPresenter:
             elif ok:
                 self.write_line(f"[dim]▌ {model} ({elapsed:.1f}s)[/dim]")
             self.app.call_from_thread(self.app._refresh_todos_panel)
+            # tui-ux7 #02: finally 恒执行 → 异常路径也释放本 thread 的回合门；
+            # 若收尾期已排队，_release_turn_gate 经 UI 线程重投队首（FIFO）。
+            self.app.call_from_thread(self.app._release_turn_gate, turn_thread_id)
             self.write_line("")
