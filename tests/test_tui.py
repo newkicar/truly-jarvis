@@ -8,7 +8,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from textual.widgets import Input, Static
+from textual.widgets import Button, Input, Static
 
 from src.tui import EditParamsModal, JarvisApp, PathCompletionOverlay, PermissionModal, SessionSidebar
 from src.tui_log import CopyableRichLog
@@ -978,3 +978,65 @@ async def test_empty_backspace_pops_last_continuation():
         await pilot.pause()
         assert inp.value == "第二行"
         assert app._continuation == ["第一行"]
+
+
+# ---------------------------------------------------------------------------
+# tui-ux8 #01：审批弹窗「放行」按钮默认焦点（diagnosing-bugs 红灯反馈环）
+# ---------------------------------------------------------------------------
+
+
+def _open_permission_modal(pilot):
+    """发一条触发 HITL 审批的消息，等 PermissionModal 弹出。"""
+    intr = _FakeInterrupt("execute", {"command": "whoami"})
+    return intr
+
+
+@pytest.mark.asyncio
+async def test_permission_modal_default_focus_approve_button():
+    """tui-ux8 #01 红灯测试：审批 Modal 打开后「放行」按钮必须默认聚焦。
+
+    修复前：ModalScreen 默认焦点落在 DOM 顺序首个可聚焦部件 #perm_box
+    （VerticalScroll.can_focus=True），Enter 打不开审批——用户须先 Tab/点选。
+    """
+    intr = _FakeInterrupt("execute", {"command": "whoami"})
+    app = JarvisApp(
+        None,
+        FakeAgent(reply="approved-echo", interrupted=True, interrupts=[intr]),
+        {"default": "ask", "tools": {}},
+    )
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "跑命令")
+        await pilot.pause()
+        await asyncio.sleep(0.2)
+        await pilot.pause()
+        assert isinstance(app.screen, PermissionModal)
+        # Textual 8.2.8：App 级 query_one 只搜默认屏，modal 内部件须从 screen 查
+        approve = app.screen.query_one("#btn_approve", Button)
+        assert pilot.app.focused is approve, (
+            f"focused={pilot.app.focused!r} (screen={type(app.screen).__name__})"
+        )
+
+
+@pytest.mark.asyncio
+async def test_permission_modal_enter_approves_directly():
+    """tui-ux8 #01 红灯测试：「放行」默认聚焦时，单次 Enter 直接完成审批（用户原话症状）。"""
+    intr = _FakeInterrupt("execute", {"command": "whoami"})
+    app = JarvisApp(
+        None,
+        FakeAgent(reply="approved-echo", interrupted=True, interrupts=[intr]),
+        {"default": "ask", "tools": {}},
+    )
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "跑命令")
+        await pilot.pause()
+        await asyncio.sleep(0.2)
+        await pilot.pause()
+        assert isinstance(app.screen, PermissionModal)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert not isinstance(app.screen, PermissionModal), "Enter 未生效：Modal 仍打开"
+        await asyncio.sleep(0.2)
+        await pilot.pause()
+        log = pilot.app.query_one(CopyableRichLog)
+        joined = "".join(l.text for l in log.lines)
+        assert "approved-echo" in joined, "审批后本轮未继续（decisions 未送达）"

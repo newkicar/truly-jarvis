@@ -6,6 +6,7 @@ from functools import partial
 from pathlib import Path
 from rich.markup import escape
 from time import monotonic
+from typing import ClassVar
 from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -175,6 +176,9 @@ class PermissionModal(ModalScreen):
     dismiss 结果: dict{"decision": "approve"|"reject"|"always_approve"|"edit",
     "message": str?, "edited": {name, args}?}；"cancel" 表示放弃本轮。
     """
+    # tui-ux8：默认焦点落在「放行」（Screen.AUTO_FOCUS 覆盖 App 的 "*"，
+    # 否则 Modal 激活时焦点落 DOM 首个可聚焦部件 #perm_box，Enter 无绑定）
+    AUTO_FOCUS: ClassVar[str] = "#btn_approve"
 
     BINDINGS = [
         Binding("a", "choose('approve')", "放行", show=False),
