@@ -30,9 +30,18 @@ def fuzzy_filter_skills(catalog: list[SkillMeta], query: str, limit: int = 20) -
 - 无匹配 = 空列表；`limit` 参数生效。
 
 **Type:** feature
-**Status:** ready-for-agent
+**Status:** done (2026-10-19, commit 06d565d)
 **Blocked by:** 无（skill 目录发现 #09 已落地，纯增量函数，可立即开始）
 
 ## 验收
-- [ ] 钉子用例全绿（bkmtg / bookmtg / 大小写 / 四档排序 / 块数+长度打平 / 空 query=前 20 / 无匹配=空 / limit）
-- [ ] `tests/test_skill_discovery.py` 既有用例无回归；全量 pytest 无新增失败
+- [x] 钉子用例全绿（bkmtg / bookmtg / 大小写 / 四档排序 / 块数+长度打平 / 空 query=前 20 / 无匹配=空 / limit）
+- [x] `tests/test_skill_discovery.py` 既有用例无回归；全量 pytest 无新增失败
+
+## Comments
+
+实施记录（实现提交 06d565d）：
+- `src/skill_discovery.py` 新增纯函数 `fuzzy_filter_skills`：纯 stdlib、仅匹配 name、大小写不敏感；四档 精确 > 前缀 > 子串 > 子序列（子序列贪心左到右、可跳过 `-`/任意字母，`bkmtg` → `book-meeting-room`）；子序列档内命中块少者优先、再短名优先；空 query = 名称序前 20、无匹配 = []、一律截断 limit（默认 20）；`discover_skill_catalog` / `SkillMeta` / 发现规则零改动。
+- `tests/test_skill_discovery.py` +8 条测试（fixture 直接构造 SkillMeta，无文件系统、不用 `tmp_path`）：bkmtg / bookmtg / 大小写 / 四档排序 / 块数+长度打平 / 空 query=前 20 / 无匹配=空 / limit 全绿。
+
+验收勾选（记录于本 docs 提交（commit 2），实现于 commit 06d565d）：
+- 批次 `python -m pytest -q --ignore=tests/test_rag.py --ignore=scratch`：406 passed；2 failed（drain flaky 已知 + HILT tempfile WinError 5 环境因素，单独跑亦 fail）+ 173 errors 均为基 temp WinError 5 中毒；无本改动引入的新失败。
