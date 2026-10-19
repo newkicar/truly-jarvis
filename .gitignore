@@ -36,3 +36,9 @@ schedules/*.json
 !schedules/*.example.json
 .mypy_cache
 .mypy_cache
+
+# .env 备份（真实密钥，永不跟踪）
+.env*
+
+# skill 文件用户自行安装，不入仓库共享
+skills/
