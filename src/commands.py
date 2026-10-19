@@ -1075,7 +1075,7 @@ def skills_report(config) -> str:
         tag = " [manual]" if skill.manual_only else ""
         desc = skill.description[:60] + ("…" if len(skill.description) > 60 else "")
         lines.append(f"  - {skill.name}{tag}: {desc or '(无 description)'}")
-    lines.append("[manual] = 模型不会自动调用；用 /use <skill> [说明] 手动触发")
+    lines.append("[manual] = 模型不会自动调用；用 /use <skill> [说明] 手动触发；/use 也可指定任意 skill")
     return "\n".join(lines)
 
 

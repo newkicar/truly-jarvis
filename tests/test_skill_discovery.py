@@ -3,8 +3,10 @@ from pathlib import Path
 
 from src.config import Config
 from src.skill_discovery import (
+    SkillMeta,
     build_skill_use_message,
     discover_skill_catalog,
+    fuzzy_filter_skills,
     manual_only_skill_names,
     summarize_skill_catalog,
 )
@@ -112,3 +114,67 @@ def test_build_skill_use_message_case_insensitive_and_missing(tmp_path, monkeypa
     cfg = _cfg(tmp_path)
     assert build_skill_use_message(cfg, "MANUAL-SKILL") is not None
     assert build_skill_use_message(cfg, "no-such-skill") is None
+
+
+def _skill(name: str, desc: str = "", manual: bool = False) -> SkillMeta:
+    """tui-ux9 fixture: 直构 SkillMeta，无文件系统依赖。"""
+    return SkillMeta(
+        name=name,
+        description=desc,
+        virtual_path="/skills/x/SKILL.md",
+        layer="project",
+        manual_only=manual,
+    )
+
+
+def test_fuzzy_bkmtg_hits_book_meeting_room():
+    catalog = [_skill("alpha"), _skill("book-meeting-room"), _skill("zeta")]
+    assert [s.name for s in fuzzy_filter_skills(catalog, "bkmtg")] == [
+        "book-meeting-room",
+    ]
+
+
+def test_fuzzy_bookmtg_prefers_shorter_name():
+    catalog = [_skill("book-meeting-room"), _skill("book-meeting")]
+    assert [s.name for s in fuzzy_filter_skills(catalog, "bookmtg")] == [
+        "book-meeting", "book-meeting-room",
+    ]
+
+
+def test_fuzzy_case_insensitive():
+    catalog = [_skill("Book-Meeting")]
+    assert [s.name for s in fuzzy_filter_skills(catalog, "BOOKMTG")] == [
+        "Book-Meeting",
+    ]
+
+
+def test_fuzzy_four_tiers_ordered():
+    catalog = [_skill("m-a-l-p-h-a"), _skill("my-alpha"), _skill("alphabet"), _skill("alpha")]
+    assert [s.name for s in fuzzy_filter_skills(catalog, "alpha")] == [
+        "alpha", "alphabet", "my-alpha", "m-a-l-p-h-a",
+    ]
+
+
+def test_fuzzy_subsequence_blocks_then_length():
+    catalog = [_skill("axbxc"), _skill("axbc"), _skill("axxb"), _skill("axb")]
+    assert [s.name for s in fuzzy_filter_skills(catalog, "abc")] == ["axbc", "axbxc"]
+    assert [s.name for s in fuzzy_filter_skills(catalog, "ab")] == [
+        "axb", "axbc", "axxb", "axbxc",
+    ]
+
+
+def test_fuzzy_empty_query_first_20_by_name():
+    catalog = [_skill(f"s{i:02d}") for i in range(25)]
+    assert [s.name for s in fuzzy_filter_skills(catalog, "")] == [
+        f"s{i:02d}" for i in range(20)
+    ]
+
+
+def test_fuzzy_no_match_empty():
+    catalog = [_skill("alpha"), _skill("beta")]
+    assert fuzzy_filter_skills(catalog, "zz") == []
+
+
+def test_fuzzy_limit_applied():
+    catalog = [_skill(f"s{i:02d}") for i in range(25)]
+    assert len(fuzzy_filter_skills(catalog, "", limit=5)) == 5

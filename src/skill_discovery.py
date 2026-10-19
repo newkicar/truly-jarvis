@@ -78,6 +78,55 @@ def discover_skill_catalog(config: Config) -> list[SkillMeta]:
     return sorted(by_name.values(), key=lambda s: s.name)
 
 
+def _subsequence_runs(name: str, query: str) -> int | None:
+    """tui-ux9: name/query 须已 casefold；贪心左到右子序列命中块数；非子序列返回 None。
+
+    块 = 连续命中游程；首命中开第 1 块，idx != prev+1 时开新块。
+    """
+    runs = 0
+    prev = -2
+    pos = 0
+    for ch in query:
+        idx = name.find(ch, pos)
+        if idx < 0:
+            return None
+        if idx != prev + 1:
+            runs += 1
+        prev = idx
+        pos = idx + 1
+    return runs
+
+
+def fuzzy_filter_skills(catalog: list[SkillMeta], query: str, limit: int = 20) -> list[SkillMeta]:
+    """tui-ux9: skill 名模糊过滤（/use 补全唯一数据缝），纯函数、纯 stdlib。
+
+    四档匹配（高档先、不跨档混排）：① 精确 ② 前缀 ③ 子串 ④ 子序列
+    （贪心左到右，'-' 与任意字符可跳过）；子序列档内命中块更少（更连续）者先，
+    再按名称短者先。空 query → catalog（名称序）前 `limit` 条；无匹配 → []；
+    结果一律截断 `limit`。不改 discover_skill_catalog / SkillMeta。
+    """
+    q = query.casefold()
+    if not q:
+        return list(catalog[:limit])
+    scored: list[tuple[int, int, int, SkillMeta]] = []
+    for skill in catalog:
+        n = skill.name.casefold()
+        if n == q:
+            tier, blocks = 0, 0
+        elif n.startswith(q):
+            tier, blocks = 1, 0
+        elif q in n:
+            tier, blocks = 2, 0
+        else:
+            runs = _subsequence_runs(n, q)
+            if runs is None:
+                continue
+            tier, blocks = 3, runs
+        scored.append((tier, blocks, len(skill.name), skill))
+    scored.sort(key=lambda t: (t[0], t[1], t[2], t[3].name))
+    return [entry[3] for entry in scored[:limit]]
+
+
 def summarize_skill_catalog(skills: list[SkillMeta]) -> str:
     if not skills:
         return "skills: 0（未发现 SKILL.md；deepagents 需在 skills/*/SKILL.md 写 frontmatter）"

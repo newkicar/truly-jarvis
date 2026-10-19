@@ -28,7 +28,7 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("/snapshots", "/snapshots", "列出 git 文件快照"),
     SlashCommand("/rollback", "/rollback <id>", "回退项目文件并还原 Inbox"),
     SlashCommand("/reload-schedules", "/reload-schedules", "热重载定时任务配置"),
-    SlashCommand("/use", "/use <skill> [说明]", "手动调用 manual-only skill"),
+    SlashCommand("/use", "/use <skill> [说明]", "手动注入指定 skill（名称模糊补全）"),
 )
 
 

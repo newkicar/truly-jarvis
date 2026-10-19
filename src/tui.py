@@ -25,6 +25,7 @@ from src.clipboard_image import (
     try_copy_clipboard_image,
 )
 from src.tui_punct import PUNCT_ITEMS, ime_hint_line, is_conhost_like
+from src.skill_discovery import discover_skill_catalog
 from src.tui_completion import OverlayState, apply_suggestion, resolve_overlay_state
 from src.tui_log import CopyableRichLog
 from src import tui_format
@@ -1450,6 +1451,15 @@ class JarvisApp(App):
     def _path_completion_overlay(self) -> PathCompletionOverlay:
         return self.query_one("#path_completion", PathCompletionOverlay)
 
+    def _skills_catalog(self):
+        """tui-ux9: /use skill 补全候选——逐键重扫、不缓存（新增 skill 下次按键即现）；config 缺失/异常 → None（功能关闭、不崩）。"""
+        if not self.config:
+            return None
+        try:
+            return discover_skill_catalog(self.config)
+        except Exception:
+            return None
+
     def _refresh_suggestions(self) -> None:
         inp = self.query_one("#input", Input)
         overlay = self._path_completion_overlay()
@@ -1461,6 +1471,7 @@ class JarvisApp(App):
             memories_root=self._memories_root(),
             path_mapping=commands.virtual_path_mappings(self.config),
             at_reference_style=self._at_reference_style(),
+            skills=self._skills_catalog(),
         )
         self._overlay_state = state
         if not state.active:

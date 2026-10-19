@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 from src.path_completion import PathSuggestion, at_query, collect_completion_paths
+from src.skill_discovery import SkillMeta, fuzzy_filter_skills
 from src.slash_completion import SlashCommand, filter_commands, slash_query
 
 
@@ -18,7 +19,7 @@ class SuggestionItem:
 
 @dataclass(frozen=True)
 class OverlayState:
-    kind: Literal["path", "slash", "none"]
+    kind: Literal["path", "slash", "skill", "none"]
     at_index: int
     items: tuple[SuggestionItem, ...]
 
@@ -67,6 +68,30 @@ def _style_item(
         return SuggestionItem(insert=s.path, label=s.path, hint=hint)
     return SuggestionItem(insert=s.path, label=s.path, hint=s.hint)
 
+def use_query(value: str, cursor: int | None = None) -> tuple[int, str] | None:
+    """tui-ux9: /use skill 补全触发：截至光标的文本形如 ``/use <q>``（``/use`` 后恰好一个空格、q 内无空格）→ ``(5, q)``；否则 None。
+
+    无尾随空格（``/use`` / ``/uses``）→ slash 补全语义，返回 None；
+    已进入说明段（q 内含第二个空格）→ 返回 None（关闭 overlay）。
+    """
+    pos = len(value) if cursor is None else cursor
+    text = value[:pos]
+    if not text.startswith("/use "):
+        return None
+    query = text[5:]
+    if " " in query:
+        return None
+    return 5, query
+
+
+def _skill_item(skill: SkillMeta) -> SuggestionItem:
+    """tui-ux9: skill 补全行：insert=裸名；label=name+[manual] 标记；hint=description 前 40 字。"""
+    label = skill.name + (" [manual]" if skill.manual_only else "")
+    desc = skill.description
+    hint = desc[:40] + ("…" if len(desc) > 40 else "")
+    return SuggestionItem(insert=skill.name, label=label, hint=hint)
+
+
 def resolve_overlay_state(
     value: str,
     cursor: int,
@@ -76,6 +101,7 @@ def resolve_overlay_state(
     memories_root,
     path_mapping: dict[str, str] | None = None,
     at_reference_style: str = "virtual",
+    skills: list[SkillMeta] | None = None,
 ) -> OverlayState:
     slash = slash_query(value, cursor)
     if slash is not None and (cursor == len(value) or value[:cursor].strip() == value[:cursor]):
@@ -85,6 +111,14 @@ def resolve_overlay_state(
             SuggestionItem(insert=c.usage, label=c.usage, hint=c.summary) for c in commands
         )
         return OverlayState(kind="slash", at_index=0, items=items)
+
+    use = use_query(value, cursor)
+    if use is not None:
+        use_index, query = use
+        if skills is None:
+            return OverlayState(kind="none", at_index=0, items=())
+        items = tuple(_skill_item(s) for s in fuzzy_filter_skills(skills, query))
+        return OverlayState(kind="skill", at_index=use_index, items=items)
 
     at_ctx = at_query(value, cursor)
     if at_ctx is not None:
