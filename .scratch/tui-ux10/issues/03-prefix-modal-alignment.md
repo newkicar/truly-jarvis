@@ -12,12 +12,13 @@
   （既有 `test_permission_modal_s_opens_prefix_modal_for_execute` L142 流程上加断言或新增）。
 
 **Type:** bug
-**Status:** needs-triage
+**Status:** done (2026-10-21, commit 69fb66c)
 **Blocked by:** 无（与 01/02 平行，CSS 三容器 can-focus 在 02 已做，本票只做 PrefixModal 自身）
 
 ## 验收
-- [ ] s 打开 PrefixModal 即聚焦 #prefix_input 绿
-- [ ] select_on_focus=False / can-focus:no 落位
-- [ ] 全量无新增失败
+- [x] s 打开 PrefixModal 即聚焦 #prefix_input 绿
+- [x] select_on_focus=False / can-focus:no 落位
+- [x] 全量无新增失败
 
 ## Comments
+改动清单/结果：PrefixModal 类体 AUTO_FOCUS: ClassVar[str] = "#prefix_input"（打开即聚焦，免 Tab/点击）；#prefix_input 构造传 select_on_focus=False（消灰选：Input 默认 True 点击即全文选中+首键整值替换）；#prefix_box 不可聚焦已由工单 02 的构造参数覆盖（CSS can-focus: no 为非法写法，不适用）。test_tui_modals.py +2 断言（焦点落 #prefix_input / select_on_focus is False）；两 TUI 文件 64 全绿。

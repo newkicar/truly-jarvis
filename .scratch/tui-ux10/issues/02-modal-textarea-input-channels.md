@@ -28,13 +28,14 @@
     点击聚焦不产生选区——用户症状「点就变灰」的结构性回归锚点）。
 
 **Type:** feature
-**Status:** needs-triage
+**Status:** done (2026-10-21, commit f31a0d5)
 **Blocked by:** 工单 01（ModalTextArea 类与 `#param_{idx}` 结构）
 
 ## 验收
-- [ ] ctrl+shift+enter 插入 \n 绿
-- [ ] OS 剪贴板多行粘贴绿（monkeypatch read_os_clipboard）
-- [ ] 聚焦无选区断言绿（selection.is_empty）
-- [ ] 锚点回归 + 全量无新增失败
+- [x] ctrl+shift+enter 插入 \n 绿
+- [x] OS 剪贴板多行粘贴绿（monkeypatch read_os_clipboard）
+- [x] 聚焦无选区断言绿（selection.is_empty）
+- [x] 锚点回归 + 全量无新增失败
 
 ## Comments
+改动清单/结果：ModalTextArea.action_paste 覆盖（worker read_os_clipboard 读 OS 剪贴板，空则回落 app.clipboard；_replace_via_keyboard + move_cursor 尊重选区；挂载后无选区=光标处插入）；ctrl+shift+v widget 级 / ctrl+shift+enter 屏级换行退路；三容器 #perm_box/#edit_box/#prefix_box 经 VerticalScroll(can_focus=False) 构造参数不可聚焦。实证修正：Textual 8.2.8 中 can-focus 是伪类选择器，CSS 写 "can-focus: no" 触发解析错误炸掉整个 modal 样式表（本票初版 CSS 回退，改走构造参数，ScrollableContainer L32/108 实证）。新增 4 条测试 + 修 test_edit_params_paste_os_clipboard 语义（空选区=光标处插入，先 select_all 再粘贴=整体替换）。tests/test_tui.py + test_tui_modals.py 64 全绿。

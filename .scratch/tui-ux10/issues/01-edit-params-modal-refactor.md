@@ -32,13 +32,14 @@
     空编辑框确认回落原值（既有 L55-57 断言在新语义下须仍绿）；Enter 插 \n round-trip。
 
 **Type:** feature
-**Status:** needs-triage
+**Status:** done (2026-10-20, commit aee155e)
 **Blocked by:** 无
 
 ## 验收
-- [ ] 既有红灯 `test_edit_params_modal_typing_writes_to_input` 改查 `#param_0` 后绿
-- [ ] 新增断言全绿（Label 展示 / modal_edit_result 纯函数组 / Enter 多行 / 短屏按钮可见）
-- [ ] 锚点回归绿（test_edit_params_modal_typing_writes_to_input + test_permission_modal_enter_approves_directly）
-- [ ] 全量 pytest 无新增失败（对照预存基线）
+- [x] 既有红灯 `test_edit_params_modal_typing_writes_to_input` 改查 `#param_0` 后绿
+- [x] 新增断言全绿（Label 展示 / modal_edit_result 纯函数组 / Enter 多行 / 短屏按钮可见）
+- [x] 锚点回归绿（test_edit_params_modal_typing_writes_to_input + test_permission_modal_enter_approves_directly）
+- [x] 全量 pytest 无新增失败（对照预存基线）
 
 ## Comments
+改动清单/结果：EditParamsModal 每 key 两行（Label 只读展示原值（_param_display 截断 500）+ ModalTextArea 多行编辑框，id 索引化 #param_{idx} + self._key_idx）；modal_edit_result 纯函数（全空白回落原值、非空白不 strip 保多行）；API 实证：8.2.8 theme 仅 5 内置（theme="text" 抛 ThemeDoesNotExist 用默认 css）、Widget 无 call_from_thread、Label 无 plain 用 Static.content；新增测试全绿 + 锚点回归绿。见 commit aee155e。

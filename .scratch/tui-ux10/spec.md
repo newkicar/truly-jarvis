@@ -1,7 +1,7 @@
 # TUI 体验十（tui-ux10）：编辑参数对话框「看得见改 + 多行输入」
 
 **Type:** bugfix + feature（用户报告：审批弹窗「编辑参数」对话框里「像是输入框的东西」无光标、点击不亮、打字/ctrl+v 都不显示，看起来只读；后续批次要求看得见原文 + 可多行修改）
-**Status:** ready-for-agent
+**Status:** done (2026-10-21；实证修正：Textual 8.2.8 can-focus 为伪类非属性，CSS "can-focus: no" 非法，容器不可聚焦走 VerticalScroll(can_focus=False) 构造参数)
 **Blocked by:** 无（EditParamsModal 三期 HITL 已落地；本批是 Modal 内部件重构 + 输入通道）
 
 ## Problem Statement

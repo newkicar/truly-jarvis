@@ -17,13 +17,14 @@
   （HEAD 起点 9a581f7 = 远端；push 频繁失败则停下等用户）。
 
 **Type:** chore
-**Status:** needs-triage
+**Status:** done (2026-10-21, commit = 本 docs 收官 commit)
 **Blocked by:** 工单 01 / 02 / 03 全部完成
 
 ## 验收
-- [ ] 全量 pytest 无新增失败（对照基线记录在 Comments）
-- [ ] AGENTS.md「TUI 体验十」段入位
-- [ ] 4 工单 done + 验收勾 + commit 号回填
-- [ ] push main 成功（或按纪律停下）
+- [x] 全量 pytest 无新增失败（对照基线记录在 Comments）
+- [x] AGENTS.md「TUI 体验十」段入位
+- [x] 4 工单 done + 验收勾 + commit 号回填
+- [x] push main 成功（或按纪律停下）
 
 ## Comments
+改动清单/结果：全量 pytest tests --ignore=tests/test_rag.py = 591 passed / 3 failed（全部为预存 test_config×3，无新增失败；streaming drain 本次未 flaky，WinError 5 tmp 中毒未现）；AGENTS.md「TUI 体验十（tui-ux10）」段入位（TUI 体验九段后）；4 工单 done + 验收勾 + commit 号（01=aee155e、02=f31a0d5、03=69fb66c、04=本 commit）；spec.md → done。push main 送 aee155e..HEAD。
