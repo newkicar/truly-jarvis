@@ -434,7 +434,98 @@ def test_run_agent_turn_drain_stops_after_single_slow_tool():
     th.join(timeout=5)
     wall = time.monotonic() - t0
     assert ok is False
-    # 判别性断言：旧代码会跑满两轮模型调用（慢工具后还有第二次 LLM 调用）；
-    # drain 语义下第二次模型调用不发生。
-    assert len(model_calls) == 1
+    # 判别性断言：旧代码会跑满两轮模型调用（慢工具后还有第二次 LLM 调用    # drain 语义下第二次模型调用不发生。
+    # 判别断言：第二次 LLM 调用绝不发生。tui-ux10 看门狗使 drain 瞬间前移，
+    # 第一次调用也可能未完成即被取消（0 次），故断言 <= 1。
+    assert len(model_calls) <= 1
     assert wall < 3.5, f"drain 未真切断：wall={wall:.2f}s"
+
+def test_drain_watchdog_requests_before_tool_end_item_arrives():
+    """tui-ux10：慢工具运行中取消（无 item 到达窗口），看门狗立即 request_drain——
+    不依赖 tool_end item 到达时机（CI langgraph 1.2.16 事件发射时序回归防御）。"""
+    from unittest import mock
+
+    import langgraph.runtime as _lg_runtime
+    from deepagents import create_deep_agent
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+    from langchain_core.messages import AIMessage
+    from langchain_core.tools import tool
+
+    @tool
+    def slow(name: str) -> str:
+        """Slow tool for drain watchdog e2e."""
+        time.sleep(2.0)
+        return "tool done"
+
+    class TProbe(FakeMessagesListChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+            model_calls.append(1)
+            if len(model_calls) == 1:
+                time.sleep(2.0)  # 模拟 LLM 首响延迟：取消后该窗口内无任何 item 发射
+            return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+    model_calls: list = []
+    model = TProbe(
+        responses=[
+            AIMessage(content="", tool_calls=[{"name": "slow", "args": {"name": "x"}, "id": "c2w"}]),
+            AIMessage(content="finished"),
+        ],
+        messages=[],
+    )
+    agent = create_deep_agent(model=model, tools=[slow], checkpointer=None)
+
+    req = {"calls": 0, "first_at": None}
+    t0 = {"cancel": None}
+
+    class _SpyRunControl:
+        def __init__(self):
+            self._reason = None
+
+        def request_drain(self, reason="user-cancel"):
+            self._reason = reason
+            req["calls"] += 1
+            if req["first_at"] is None:
+                req["first_at"] = time.monotonic()
+
+        @property
+        def drain_requested(self):
+            return self._reason is not None
+
+        @property
+        def drain_reason(self):
+            return self._reason
+
+    flags = {"cancelled": False}
+
+    def cancel_soon():
+        time.sleep(0.3)
+        flags["cancelled"] = True
+        t0["cancel"] = time.monotonic()
+
+    th = threading.Thread(target=cancel_soon)
+    with mock.patch.object(_lg_runtime, "RunControl", return_value=_SpyRunControl()):
+        th.start()
+        ok = streaming.run_agent_turn(
+            agent,
+            "t-watchdog-e2e",
+            "go",
+            handle_interrupts=lambda _: None,
+            callbacks={
+                "on_subagent": lambda *a: None,
+                "on_tool_call": lambda *a: None,
+                "on_message_delta": lambda d: None,
+            },
+            is_cancelled=lambda: flags["cancelled"],
+        )
+        th.join(timeout=5)
+    assert ok is False
+    # 0 = 取消早于首模型调用启动（看门狗抢先 drain），同样合法；
+    # 判别性在于绝不超过 1（无修复时 CI 上会跑满 2 次模型调用）。
+    assert len(model_calls) <= 1
+    assert req["calls"] >= 1
+    # 无看门狗：取消（0.3s）后首次 drain 请求在首个 item 到达时（模型 2s 延迟之后，
+    # 距取消 >1.0s）；有看门狗：取消命中后 ~50ms 内即请求 drain。
+    assert req["first_at"] - t0["cancel"] < 1.0

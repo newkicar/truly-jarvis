@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from collections.abc import Callable
 from typing import Any
@@ -9,6 +10,9 @@ from typing import Any
 from src import commands, resilience
 
 REJECT_MESSAGE = "用户拒绝了该操作，请更换方案或询问用户。不要重试相同调用。"
+
+# tui-ux10: Esc drain 看门狗轮询间隔（秒）——取消后立即请求 drain，不等 item 到达。
+_DRAIN_WATCHDOG_INTERVAL_S = 0.05
 
 StreamCallbacks = dict[str, Callable[..., None]]
 
@@ -425,13 +429,35 @@ def run_agent_turn(
         stream = agent.stream_events(
             stream_input, version="v3", config=config, control=control
         )
-        consumed = consume_stream_events(
-            stream,
-            callbacks,
-            is_cancelled=is_cancelled,
-            on_cancelled=on_cancelled,
-            control=control,
+        # tui-ux10: CI langgraph 1.2.16 事件发射时序回归防御——慢工具运行期间
+        # 无 item 到达，item 边界 drain 请求可能晚于 tick 检查点；看门狗以 50ms
+        # 轮询 is_cancelled，命中即 request_drain（request_drain 线程安全；item
+        # 边界 drain 保留作双保险）。daemon 线程 + finally stop/join，无泄漏。
+        stop = threading.Event()
+
+        def _drain_watchdog() -> None:
+            while not stop.is_set():
+                stop.wait(_DRAIN_WATCHDOG_INTERVAL_S)
+                if not stop.is_set() and is_cancelled():
+                    control.request_drain("user-cancel")
+                    stop.set()
+                    return
+
+        wd = threading.Thread(
+            target=_drain_watchdog, name="jarvis-drain-watchdog", daemon=True
         )
+        wd.start()
+        try:
+            consumed = consume_stream_events(
+                stream,
+                callbacks,
+                is_cancelled=is_cancelled,
+                on_cancelled=on_cancelled,
+                control=control,
+            )
+        finally:
+            stop.set()
+            wd.join(timeout=0.2)
         return consumed, stream
 
     # 重试仅针对全新用户轮次与 checkpoint 重放（resume 语义不可安全重放）。
