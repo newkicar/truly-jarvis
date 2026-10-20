@@ -400,6 +400,12 @@ class EditParamsModal(ModalScreen):
     def __init__(self, args: dict):
         super().__init__()
         self.args = dict(args or {})
+        # tui-ux8 #perm_box 同族病灶：Modal 激活时焦点落 DOM 首个可聚焦部件
+        # （#edit_box VerticalScroll）吞掉字符键 → 显式默认聚焦首个输入框，
+        # 空 args 回落 #btn_ok。
+        self.AUTO_FOCUS = (
+            f"#param_{next(iter(self.args))}" if self.args else "#btn_ok"
+        )
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="edit_box"):

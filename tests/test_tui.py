@@ -1040,3 +1040,39 @@ async def test_permission_modal_enter_approves_directly():
         log = pilot.app.query_one(CopyableRichLog)
         joined = "".join(l.text for l in log.lines)
         assert "approved-echo" in joined, "审批后本轮未继续（decisions 未送达）"
+
+
+# -------------------------------------------------------------------------
+# diagnosing：编辑参数 Modal 无法向输入框写入文字（红灯反馈环）
+# -------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_edit_params_modal_typing_writes_to_input():
+    """用户症状反馈环：审批 Modal 按 e 打开编辑参数 → 打字 → 输入值必须改变。
+
+    修复前焦点落 DOM 首个可聚焦部件（#edit_box VerticalScroll，同 tui-ux8 的
+    #perm_box 病灶），字符键被吞，Input 无字。"""
+    intr = _FakeInterrupt("execute", {"command": "whoami"})
+    app = JarvisApp(
+        None,
+        FakeAgent(reply="approved-echo", interrupted=True, interrupts=[intr]),
+        {"default": "ask", "tools": {}},
+    )
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "跑命令")
+        await pilot.pause()
+        await asyncio.sleep(0.2)
+        await pilot.pause()
+        assert isinstance(app.screen, PermissionModal)
+        await pilot.press("e")  # 编辑参数
+        await pilot.pause()
+        assert isinstance(app.screen, EditParamsModal), f"screen={type(app.screen).__name__}"
+        pbox = app.screen.query_one("#param_command", Input)
+        before = pbox.value
+        await pilot.press("x", "y", "z")
+        await pilot.pause()
+        assert pbox.value != before, (
+            f"打字未写入输入框：value={pbox.value!r} focused={pilot.app.focused!r} " 
+            f"(screen={type(app.screen).__name__})"
+        )
