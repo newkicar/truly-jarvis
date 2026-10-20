@@ -189,6 +189,9 @@ async def test_permission_modal_s_opens_prefix_modal_for_execute() -> None:
         await pilot.press("s")
         await pilot.pause()
         assert isinstance(host.screen, PrefixModal), "execute 应按 s 弹 PrefixModal"
+        inp = host.screen.query_one("#prefix_input", Input)
+        assert pilot.app.focused is inp, f"PrefixModal 打开应聚焦 #prefix_input（got {pilot.app.focused!r}）"
+        assert inp.select_on_focus is False, "前缀框须 select_on_focus=False（消灰选）"
         # 取消（Esc）→ 回到审批 Modal
         await pilot.press("escape")
         await pilot.pause()

@@ -305,6 +305,8 @@ class PrefixModal(ModalScreen):
 
     BINDINGS = [Binding("escape", "cancel", "取消")]
 
+    AUTO_FOCUS: ClassVar[str] = "#prefix_input"
+
     CSS = """
     PrefixModal {
         align: center middle;
@@ -346,7 +348,7 @@ class PrefixModal(ModalScreen):
         with VerticalScroll(id="prefix_box", can_focus=False):
             yield Label("永久放行（按命令前缀）", id="prefix_title")
             yield Label(f'将写回 jarvis.json: "{self.default_prefix} *": allow', id="prefix_hint")
-            yield Input(self.default_prefix, id="prefix_input")
+            yield Input(self.default_prefix, id="prefix_input", select_on_focus=False)
         with Horizontal(id="prefix_buttons"):
             yield Button("确认", id="btn_prefix_ok", variant="primary")
             yield Button("取消", id="btn_prefix_cancel", variant="default")
