@@ -1083,3 +1083,114 @@ async def test_edit_params_modal_typing_writes_to_input():
         await pilot.press("enter")
         await pilot.pause()
         assert "\n" in ta.text, f"Enter 未插换行：{ta.text!r}"
+
+
+# -------------------------------------------------------------------------
+# tui-ux10 工单 02：编辑参数输入通道（多行退路 + OS 剪贴板 + 灰选态消解）
+# -------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_edit_params_ctrl_shift_enter_newline():
+    """ctrl+shift+enter 屏级退路：焦点编辑框插入换行（多行通道②）。"""
+    intr = _FakeInterrupt("execute", {"command": "whoami"})
+    app = JarvisApp(
+        None,
+        FakeAgent(reply="approved-echo", interrupted=True, interrupts=[intr]),
+        {"default": "ask", "tools": {}},
+    )
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "跑命令")
+        await pilot.pause()
+        await asyncio.sleep(0.2)
+        await pilot.pause()
+        assert isinstance(app.screen, PermissionModal)
+        await pilot.press("e")  # 编辑参数
+        await pilot.pause()
+        assert isinstance(app.screen, EditParamsModal)
+        ta = app.screen.query_one("#param_0", ModalTextArea)
+        before = ta.text.count("\n")
+        await pilot.press("ctrl+shift+enter")
+        await pilot.pause()
+        assert ta.text.count("\n") == before + 1, (
+            f"ctrl+shift+enter 未插换行：text={ta.text!r} focused={pilot.app.focused!r}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_edit_params_paste_os_clipboard(monkeypatch):
+    """OS 剪贴板粘贴通道：ctrl+v 把外部复制的多行文本粘贴入编辑框（全选后整体替换；空选区则光标处插入）。"""
+    monkeypatch.setattr("src.tui.read_os_clipboard", lambda: "a\nb")
+    intr = _FakeInterrupt("execute", {"command": "whoami"})
+    app = JarvisApp(
+        None,
+        FakeAgent(reply="approved-echo", interrupted=True, interrupts=[intr]),
+        {"default": "ask", "tools": {}},
+    )
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "跑命令")
+        await pilot.pause()
+        await asyncio.sleep(0.2)
+        await pilot.pause()
+        assert isinstance(app.screen, PermissionModal)
+        await pilot.press("e")  # 编辑参数
+        await pilot.pause()
+        assert isinstance(app.screen, EditParamsModal)
+        ta = app.screen.query_one("#param_0", ModalTextArea)
+        ta.select_all()
+        await pilot.pause()
+        await pilot.press("ctrl+v")
+        for _ in range(10):
+            await pilot.pause()
+        assert ta.text == "a\nb", f"OS 剪贴板未粘贴：text={ta.text!r}"
+
+
+@pytest.mark.asyncio
+async def test_edit_params_focus_no_selection():
+    """灰选态结构消解：聚焦编辑框 = 光标就位、无选区（Input 点击即灰选）。"""
+    intr = _FakeInterrupt("execute", {"command": "whoami"})
+    app = JarvisApp(
+        None,
+        FakeAgent(reply="approved-echo", interrupted=True, interrupts=[intr]),
+        {"default": "ask", "tools": {}},
+    )
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "跑命令")
+        await pilot.pause()
+        await asyncio.sleep(0.2)
+        await pilot.pause()
+        assert isinstance(app.screen, PermissionModal)
+        await pilot.press("e")  # 编辑参数
+        await pilot.pause()
+        assert isinstance(app.screen, EditParamsModal)
+        ta = app.screen.query_one("#param_0", ModalTextArea)
+        ta.focus()
+        await pilot.pause()
+        sel = ta.selection
+        assert sel.start == sel.end, f"聚焦带选区（灰态未消解）：{sel!r}"
+
+@pytest.mark.asyncio
+async def test_edit_params_containers_not_focusable():
+    """tui-ux8 focus-family root cause: the three VerticalScroll containers are
+    built with can_focus=False (the CSS can-focus declaration is a no-op
+    pseudo-class selector in Textual 8.2.8 - 'can-focus: no' is an illegal
+    declaration that breaks the modal stylesheet)."""
+    intr = _FakeInterrupt("execute", {"command": "whoami"})
+    app = JarvisApp(
+        None,
+        FakeAgent(reply="approved-echo", interrupted=True, interrupts=[intr]),
+        {"default": "ask", "tools": {}},
+    )
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "run command")
+        await pilot.pause()
+        await asyncio.sleep(0.2)
+        await pilot.pause()
+        assert isinstance(app.screen, PermissionModal)
+        perm_box = app.screen.query_one("#perm_box")
+        assert perm_box.can_focus is False
+        await pilot.press("e")
+        await pilot.pause()
+        assert isinstance(app.screen, EditParamsModal)
+        edit_box = app.screen.query_one("#edit_box")
+        assert edit_box.can_focus is False

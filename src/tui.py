@@ -236,7 +236,7 @@ class PermissionModal(ModalScreen):
     def compose(self) -> ComposeResult:
         # 崩溃.txt 根因：工具参数/diff 是不可信文本，Label/Static 默认 markup=True
         # 会把含 [ ' = 的命令/ diff 当 Rich markup 解析（MarkupError / 静默截断）。
-        with VerticalScroll(id="perm_box"):
+        with VerticalScroll(id="perm_box", can_focus=False):
             yield Label(f"Tool: {self.inv.name}", id="perm_tool", markup=False)
             yield Label(f"{self.path_label} {self.inv.path}", id="perm_path", markup=False)
             preview = permission_preview(
@@ -343,7 +343,7 @@ class PrefixModal(ModalScreen):
         self.default_prefix = default_prefix or "*"
 
     def compose(self) -> ComposeResult:
-        with VerticalScroll(id="prefix_box"):
+        with VerticalScroll(id="prefix_box", can_focus=False):
             yield Label("永久放行（按命令前缀）", id="prefix_title")
             yield Label(f'将写回 jarvis.json: "{self.default_prefix} *": allow', id="prefix_hint")
             yield Input(self.default_prefix, id="prefix_input")
@@ -390,8 +390,37 @@ class ModalTextArea(TextArea):
     替换（用户「点就变灰、打字不显示」症状的统一根因）；TextArea 无
     select_on_focus——点击聚焦 = 光标就位、无选区（F7 显式全选）；
     原生 Enter 插 \n（多行通道）。theme 参数省略（8.2.8 仅 5 个内置
-    主题，"text" 会抛 ThemeDoesNotExist）。OS 剪贴板粘贴通道工单 02 加。
+    主题，"text" 会抛 ThemeDoesNotExist）。
+
+    tui-ux10 工单 02：OS 剪贴板粘贴通道——Textual 原生 action_paste 只读
+    app.clipboard（app 内复制内容）；终端协议下外部复制的文本永远粘不进
+    （同 PasteInput 病灶）。覆盖 action_paste：worker 线程先读 OS 剪贴板
+    （3s 超时不冻 UI），空则回落 app.clipboard；写回走与原生粘贴同路
+    _replace_via_keyboard + move_cursor（尊重选区、读只读态自守）。
     """
+
+    BINDINGS = [
+        # 终端 ctrl+shift+v 透传退路（同 PasteInput）；与原生 ctrl+v 合流
+        Binding("ctrl+shift+v", "paste", "粘贴", show=False),
+    ]
+
+    def action_paste(self) -> None:
+        self.run_worker(self._paste_from_os, thread=True, exclusive=True)
+
+    def _paste_from_os(self) -> None:
+        text = read_os_clipboard()
+        if not text:
+            # OS 剪贴板无文本 → 回落 app 剪贴板（app 内复制的内容）
+            text = self.app.clipboard or ""
+        if text:
+            self.app.call_from_thread(self._apply_paste, text)
+
+    def _apply_paste(self, text: str) -> None:
+        if not text or not self.is_mounted:
+            return
+        result = self._replace_via_keyboard(text, *self.selection)
+        if result:
+            self.move_cursor(result.end_location)
 
 
 class EditParamsModal(ModalScreen):
@@ -405,7 +434,12 @@ class EditParamsModal(ModalScreen):
     id 即坏选择器）。
     """
 
-    BINDINGS = [Binding("escape", "cancel", "取消")]
+    BINDINGS = [
+        Binding("escape", "cancel", "取消"),
+        # ctrl+shift+enter 屏级退路（工单 02）：焦点编辑框插换行（原生
+        # enter 为主通道，ConPTY shift 透传不保证）
+        Binding("ctrl+shift+enter", "newline", "换行(退路)", show=False),
+    ]
 
     CSS = """
     EditParamsModal {
@@ -453,7 +487,7 @@ class EditParamsModal(ModalScreen):
         self.AUTO_FOCUS = "#param_0" if self.args else "#btn_ok"
 
     def compose(self) -> ComposeResult:
-        with VerticalScroll(id="edit_box"):
+        with VerticalScroll(id="edit_box", can_focus=False):
             if self.tool_name:
                 yield Label(f"编辑参数 · {self.tool_name}", id="edit_title", markup=False)
             else:
@@ -485,6 +519,16 @@ class EditParamsModal(ModalScreen):
 
     def action_cancel(self) -> None:
         self.dismiss(None)
+
+
+    def action_newline(self) -> None:
+        """ctrl+shift+enter 屏级退路（工单 02）：焦点编辑框插入 \n。
+
+        TextArea 原生 enter 是多行主通道；ConPTY shift 修饰键透传不保证
+        （同 PasteInput 的 ctrl+j 退路键理由）。"""
+        focused = self.app.focused
+        if isinstance(focused, ModalTextArea):
+            focused.insert("\n")
 
 
 class CopyPickerModal(ModalScreen):
