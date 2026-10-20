@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from rich.markdown import Markdown
+from rich.markup import escape
 
 from src.commands import ToolInvocation
 
@@ -118,11 +119,13 @@ def format_tool_call(
     """格式化工具调用行 + 可选结果预览（Rich markup 字符串）。"""
     prefix = "  " * indent
     tag = "✗" if error else "✓"
-    header = f"{prefix}[dim]{tag} {name}({args[:80]})[/dim]"
+    # 参数/输出是用户不可信文本：先 escape，避免 [ ' = 序列被 Rich markup
+    # 解析（崩溃.txt：Label/Static/RichLog 把 pandas 式命令渲染炸掉）。
+    header = f"{prefix}[dim]{tag} {escape(name)}({escape(args[:80])})[/dim]"
     if not output:
         return header
     preview = truncate_lines(str(output).replace("\r\n", "\n"))
-    indented = "\n".join(f"{prefix}  {line}" for line in preview.splitlines())
+    indented = "\n".join(f"{prefix}  {escape(line)}" for line in preview.splitlines())
     return f"{header}\n{indented}"
 
 

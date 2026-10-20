@@ -218,3 +218,25 @@ async def test_edit_params_modal_short_screen_12_buttons_on_screen() -> None:
         _buttons_within(host, ("btn_ok", "btn_cancel"), 12)
 
     await _mount_and_check(EditParamsModal(args), check, size=(80, 12))
+
+
+
+UNSAFE_CMD = "python -c \"" + "cells=[" + "str(c) + '=' + str(ws.max_column)" + " for c in ws.columns]\""
+
+
+@pytest.mark.asyncio
+async def test_permission_modal_markup_safe_with_unsafe_args() -> None:
+    """崩溃红灯（崩溃.txt）：execute 命令文本含 [ ' = 字符时，PermissionModal 的
+    Label/Static 把工具参数当 Rich markup 解析 → MarkupError 崩掉 TUI 布局。
+    修复后：参数/diff 按纯文本渲染，modal 正常出且原文保留。"""
+
+    inv = _inv("execute", UNSAFE_CMD, {"command": UNSAFE_CMD})
+
+    async def check(host, pilot) -> None:
+        # Textual 8.2.8：Label 无 .renderable；render() 返回已 markup 处理的 Content
+        lbl = host.screen.query_one("#perm_path")
+        assert "max_column" in str(lbl.render()).strip(), (
+            f"label 丢失原文: {lbl.render()!r}"
+        )
+
+    await _mount_and_check(PermissionModal(inv), check)

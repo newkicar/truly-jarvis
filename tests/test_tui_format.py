@@ -128,3 +128,18 @@ def test_permission_preview_reads_existing_file_as_diff(tmp_path):
     assert "---" in text
     assert "existing" in text
     assert "updated" in text
+
+
+def test_format_tool_call_markup_safe_with_unsafe_args():
+    """工具行经 log.write → Rich markup 渲染：args/output 含 [ ' = 字符（pandas 式命令）
+    直接嵌进 [dim]...[/dim] markup 串 → MarkupError 崩流式渲染。
+    修复：动态片段 escape()，既有 [dim] 意图保留，渲染后原文不丢。"""
+    from rich.console import Console
+
+    unsafe = "cells=[" + "str(c) + '=' + str(ws.max_column)" + " for c in ws.columns]"
+    args = "{'command': " + repr(unsafe) + "}"
+    out = format_tool_call("execute", args, output="ok " + unsafe, indent=1)
+    console = Console(record=True, width=200)
+    console.print(out)  # 修复前：MarkupError
+    plain = console.export_text()
+    assert unsafe in plain, f"渲染后丢失原文: {plain!r}"

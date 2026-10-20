@@ -21,13 +21,13 @@ PROMPT = "JARVIS> "
 
 
 def _cli_tool_line(name, args, err, output, depth=0):
+    from rich.text import Text
     from src.tui_format import format_tool_call
 
     line = format_tool_call(name, args, error=err, output=output, indent=depth)
-    # Rich markup → plain for CLI
-    import re
-
-    print(re.sub(r"\[/??[^\]]*\]", "", line.replace("[dim]", "").replace("[/dim]", "")))
+    # Rich markup → plain for CLI（format_tool_call 已 escape 动态片段，
+    # Text.from_markup 解析剩余 [dim] 意图后取纯文本，对转义序列免疫）
+    print(Text.from_markup(line).plain)
 
 
 def _run_session(agent, thread_id: str, sched=None, permission_state: dict | None = None, config=None):

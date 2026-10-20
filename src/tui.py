@@ -234,15 +234,17 @@ class PermissionModal(ModalScreen):
         self.path_label = "Command:" if inv.name == "execute" else "Path:"
 
     def compose(self) -> ComposeResult:
+        # 崩溃.txt 根因：工具参数/diff 是不可信文本，Label/Static 默认 markup=True
+        # 会把含 [ ' = 的命令/ diff 当 Rich markup 解析（MarkupError / 静默截断）。
         with VerticalScroll(id="perm_box"):
-            yield Label(f"Tool: {self.inv.name}", id="perm_tool")
-            yield Label(f"{self.path_label} {self.inv.path}", id="perm_path")
+            yield Label(f"Tool: {self.inv.name}", id="perm_tool", markup=False)
+            yield Label(f"{self.path_label} {self.inv.path}", id="perm_path", markup=False)
             preview = permission_preview(
                 self.inv,
                 vault_path=self.vault_path,
                 workspace_root=self.workspace_root,
             )
-            yield Static(preview, id="perm_preview")
+            yield Static(preview, id="perm_preview", markup=False)
         with Horizontal(id="perm_buttons"):
             yield Button("放行", id="btn_approve", variant="success")
             yield Button("永久放行", id="btn_always", variant="primary")
