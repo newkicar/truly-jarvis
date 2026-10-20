@@ -12,7 +12,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Footer, Header, Input, Label, OptionList, RichLog, Static
+from textual.widgets import Button, Footer, Header, Input, Label, OptionList, RichLog, Static, TextArea
 from textual.css.query import NoMatches
 from textual.widgets.option_list import Option
 from textual.worker import Worker
@@ -266,7 +266,14 @@ class PermissionModal(ModalScreen):
             if result is not None:
                 self.dismiss({"decision": "edit", "edited": result})
 
-        self.app.push_screen(EditParamsModal(self.inv.args), got_edited)
+        self.app.push_screen(
+            EditParamsModal(
+                self.inv.args,
+                tool_name=self.inv.name,
+                path=self.inv.path,
+            ),
+            got_edited,
+        )
 
     def action_choose(self, decision: str) -> None:
         self.dismiss({"decision": decision})
@@ -356,15 +363,46 @@ class PrefixModal(ModalScreen):
 
 
 def modal_edit_result(args: dict, values: dict) -> dict:
-    """纯函数：把编辑框当前值折成「确认」结果（留空回落原值）。"""
-    return {k: (str(values.get(k, "")).strip() or args[k]) for k in args}
+    """纯函数：把编辑框当前值折成「确认」结果。
+
+    tui-ux10：全空白（含多行空白）→ 回落原值；非空白 → 原样使用
+    （不 strip，保留多行尾换行）。旧「.strip() or 原值」是其子集。
+    """
+    out: dict = {}
+    for k in args:
+        text = str(values.get(k, ""))
+        out[k] = text if text.strip() else args[k]
+    return out
+
+
+def _param_display(v, limit: int = 500) -> str:
+    """参数原文的只读展示：超长截断 + 尾注（「看得见改」的展示行）。"""
+    s = str(v)
+    if len(s) > limit:
+        return s[:limit] + f"…（截断，共 {len(s)} 字符）"
+    return s
+
+
+class ModalTextArea(TextArea):
+    """模态内多行参数编辑框（tui-ux10）：结构消解 Input 的灰选态。
+
+    Input select_on_focus=True 默认聚焦即全文选中（灰选区）+ 首键整值
+    替换（用户「点就变灰、打字不显示」症状的统一根因）；TextArea 无
+    select_on_focus——点击聚焦 = 光标就位、无选区（F7 显式全选）；
+    原生 Enter 插 \n（多行通道）。theme 参数省略（8.2.8 仅 5 个内置
+    主题，"text" 会抛 ThemeDoesNotExist）。OS 剪贴板粘贴通道工单 02 加。
+    """
 
 
 class EditParamsModal(ModalScreen):
-    """编辑工具参数（从权限审批进入），逐 key Input，留空用原值。
+    """编辑工具参数（从权限审批进入）：逐 key 两行——原文只读展示（Label）+
+    多行编辑框（ModalTextArea）；空白留空回落原值。
 
-    布局遵循 Modal 规约（工单 01）：内容容器 80%/max 70% + 滚动区
-    overflow-y:auto + 按钮行固定模态底部（modal_screen 尾部 → 永远可见）。
+    布局遵循 Modal 规约（工单 01）：内容容器 80%/max 60% + 按钮行固定模态
+    底部（modal_screen 尾部 → 永远可见）。tui-ux10：灰选态结构消解
+    （TextArea 无 select_on_focus，点击聚焦 = 光标就位）；多行值可编辑
+    （原生 Enter 插 \n）；id 索引化 `#param_{idx}`（key 含 `.`/`-` 做 CSS
+    id 即坏选择器）。
     """
 
     BINDINGS = [Binding("escape", "cancel", "取消")]
@@ -386,9 +424,14 @@ class EditParamsModal(ModalScreen):
         color: $accent;
         text-style: bold;
     }
-    #edit_box > .param_input {
-        width: 100%;
-        height: 2;
+    #edit_path {
+        color: $text-muted;
+    }
+    #edit_box > .param_show {
+        margin: 1 0 0 0;
+    }
+    #edit_box > .param_edit {
+        height: 5;
         margin: 0 0 1 0;
     }
     #edit_buttons {
@@ -399,21 +442,33 @@ class EditParamsModal(ModalScreen):
     }
     """
 
-    def __init__(self, args: dict):
+    def __init__(self, args: dict, *, tool_name: str | None = None, path: str | None = None):
         super().__init__()
         self.args = dict(args or {})
-        # tui-ux8 #perm_box 同族病灶：Modal 激活时焦点落 DOM 首个可聚焦部件
-        # （#edit_box VerticalScroll）吞掉字符键 → 显式默认聚焦首个输入框，
-        # 空 args 回落 #btn_ok。
-        self.AUTO_FOCUS = (
-            f"#param_{next(iter(self.args))}" if self.args else "#btn_ok"
-        )
+        self.tool_name = tool_name
+        self.path = path
+        # 索引化 id：key 不做 CSS id（key 可能含 `.`/`-` 等坏选择器字符）
+        self._key_idx = {k: i for i, k in enumerate(self.args)}
+        # tui-ux8 同族病灶：显式默认聚焦首个编辑框；空 args 回落 #btn_ok。
+        self.AUTO_FOCUS = "#param_0" if self.args else "#btn_ok"
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="edit_box"):
-            yield Label("编辑参数（留空使用原值）", id="edit_title")
+            if self.tool_name:
+                yield Label(f"编辑参数 · {self.tool_name}", id="edit_title", markup=False)
+            else:
+                yield Label("编辑参数（留空使用原值）", id="edit_title")
+            if self.path:
+                yield Label(f"目标: {self.path}", id="edit_path", markup=False)
             for k, v in self.args.items():
-                yield Input(str(v), placeholder=k, id=f"param_{k}", classes="param_input")
+                # 看得见改：Label 行展示原文（超长截断 + 尾注）
+                yield Label(f"{k} = {_param_display(v)}", classes="param_show", markup=False)
+                yield ModalTextArea(
+                    str(v),
+                    placeholder=k,
+                    id=f"param_{self._key_idx[k]}",
+                    classes="param_edit",
+                )
         with Horizontal(id="edit_buttons"):
             yield Button("确认", id="btn_ok", variant="primary")
             yield Button("取消", id="btn_cancel", variant="default")
@@ -422,7 +477,10 @@ class EditParamsModal(ModalScreen):
         if event.button.id == "btn_cancel":
             self.dismiss(None)
             return
-        values = {k: self.query_one(f"#param_{k}", Input).value for k in self.args}
+        values = {
+            k: self.query_one(f"#param_{self._key_idx[k]}", ModalTextArea).text
+            for k in self.args
+        }
         self.dismiss(modal_edit_result(self.args, values))
 
     def action_cancel(self) -> None:

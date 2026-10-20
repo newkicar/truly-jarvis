@@ -9,12 +9,13 @@
 import pytest
 
 from textual.app import App, ComposeResult
-from textual.widgets import Button, Input, OptionList, Static
+from textual.widgets import Button, Input, Label, OptionList, Static
 
 from src.commands import ToolInvocation
 from src.tui import (
     CopyPickerModal,
     EditParamsModal,
+    ModalTextArea,
     PermissionModal,
     PunctPanelModal,
     PrefixModal,
@@ -55,6 +56,26 @@ def _start(size=(80, 24)):
 def test_modal_edit_result_pure() -> None:
     assert modal_edit_result({"a": 1, "b": "x"}, {"a": "  ", "b": "y"}) == {"a": 1, "b": "y"}
     assert modal_edit_result({}, {}) == {}
+
+
+def test_modal_edit_result_multiline_preserved() -> None:
+    """tui-ux10：多行值原样保留（尾换行不 strip）。"""
+    assert modal_edit_result({"command": "old"}, {"command": "ls\npwd\n"}) == {"command": "ls\npwd\n"}
+
+
+def test_modal_edit_result_all_whitespace_falls_back() -> None:
+    """全空白（含多行空白）→ 回落原值。"""
+    assert modal_edit_result({"command": "git log"}, {"command": "  \n "}) == {"command": "git log"}
+
+
+def test_modal_edit_result_missing_key_falls_back() -> None:
+    """values 缺 key → 回落原值。"""
+    assert modal_edit_result({"command": "git log"}, {}) == {"command": "git log"}
+
+
+def test_modal_edit_result_short_value_untouched() -> None:
+    """非空白值：原样使用（不做 strip）。"""
+    assert modal_edit_result({"command": "git status"}, {"command": "npm ci"}) == {"command": "npm ci"}
 
 
 @pytest.mark.asyncio
@@ -108,6 +129,24 @@ async def test_edit_params_modal_many_keys_buttons_visible() -> None:
             assert btn.visible, f"{bid} 在多参数时不可见（24 行短屏）"
 
     await _mount_and_check(EditParamsModal(args), check)
+
+
+@pytest.mark.asyncio
+async def test_edit_params_modal_showline_and_prefill() -> None:
+    """tui-ux10：每参数 = 原文只读展示行（Label）+ 多行编辑框（ModalTextArea 预填原值）；
+    标题带工具名，path 行展示目标。"""
+
+    async def check(host, pilot) -> None:
+        ta = host.screen.query_one("#param_0", ModalTextArea)
+        assert ta.text == "whoami", f"未预填原值：{ta.text!r}"
+        show = host.screen.query_one(".param_show", Label)
+        assert "command = whoami" in show.content, f"展示行缺原文：{show.content!r}"
+        assert host.screen.query_one("#edit_title", Label).content == "编辑参数 · execute"
+        assert host.screen.query_one("#edit_path", Label).content == "目标: git log"
+
+    await _mount_and_check(
+        EditParamsModal({"command": "whoami"}, tool_name="execute", path="git log"), check
+    )
 
 
 @pytest.mark.asyncio

@@ -8,9 +8,9 @@ from contextlib import contextmanager
 
 import pytest
 
-from textual.widgets import Button, Input, Static
+from textual.widgets import Button, Input, Label, Static
 
-from src.tui import EditParamsModal, JarvisApp, PathCompletionOverlay, PermissionModal, SessionSidebar
+from src.tui import EditParamsModal, JarvisApp, ModalTextArea, PathCompletionOverlay, PermissionModal, SessionSidebar
 from src.tui_log import CopyableRichLog
 from src import commands
 
@@ -1068,11 +1068,18 @@ async def test_edit_params_modal_typing_writes_to_input():
         await pilot.press("e")  # 编辑参数
         await pilot.pause()
         assert isinstance(app.screen, EditParamsModal), f"screen={type(app.screen).__name__}"
-        pbox = app.screen.query_one("#param_command", Input)
-        before = pbox.value
+        ta = app.screen.query_one("#param_0", ModalTextArea)
+        assert ta.text == "whoami", f"编辑框未预填原值：{ta.text!r}"
         await pilot.press("x", "y", "z")
         await pilot.pause()
-        assert pbox.value != before, (
-            f"打字未写入输入框：value={pbox.value!r} focused={pilot.app.focused!r} " 
+        assert ta.text != "whoami", (
+            f"打字未写入编辑框：text={ta.text!r} focused={pilot.app.focused!r} "
             f"(screen={type(app.screen).__name__})"
         )
+        # 看得见改：原文只读展示行（Label.content = 构造时传入的 str）
+        show = app.screen.query_one(".param_show", Label)
+        assert "whoami" in show.content, f"展示行缺原文：{show.content!r}"
+        # 多行通道：TextArea 原生 enter 插 \n（_text_area.py insert_values）
+        await pilot.press("enter")
+        await pilot.pause()
+        assert "\n" in ta.text, f"Enter 未插换行：{ta.text!r}"
