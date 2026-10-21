@@ -41,6 +41,7 @@ _HELP_COMMANDS = """\
   /undo       撤回最近 1 条用户消息（仅消息层；文件不动；多轮请反复调用）
   /skills       列出可用 skills（manual 需 /use 手动触发）
   /use <skill> [说明]  手动调用 manual-only skill（注入完整指令）
+  /yolo on | off  YOLO 模式开关：本会话所有动作免审批（仅当前会话、重启即关）
   /snapshot       记录当前文件状态到当前 checkpoint（git 快照）
   /snapshots      列出文件快照（git）
   /rollback <id>  按 checkpoint 回退项目文件到对应 git 提交（序号 / 短 id）
@@ -1079,7 +1080,47 @@ def skills_report(config) -> str:
     return "\n".join(lines)
 
 
-def dispatch_command(agent, thread_id: str, command: str, sched=None, vault_path: Path | None = None):
+
+
+def yolo_command_text(permission_state: dict | None, thread_id: str, raw_command: str) -> str:
+    """tui-ux12: /yolo on | off | 裸查询——线程级 YOLO 开关（本会话免审批）。
+
+    YOLO 只短路 permissions 层 _action_for_args 的 ask/deny 判定（hooks 亦 bypass）；
+    vault 写保护、步数预算、doom-loop 熔断不受影响（正交性断言见 test_vault_guard）。
+    幂等：重复 on/off 各回对应短文案；裸 /yolo 只查询不改状态。
+    permission_state 为 None 时报错不崩。
+    """
+    from src.permissions import yolo_active, yolo_off, yolo_on
+
+    if permission_state is None:
+        return "YOLO 开关不可用（权限层未初始化）"
+    parts = raw_command.split()
+    arg = parts[1].lower() if len(parts) > 1 else ""
+    active = yolo_active(permission_state, thread_id)
+    if arg == "on":
+        yolo_on(permission_state, thread_id)
+        if active:
+            return "YOLO 已开启（本会话免审批；vault 写保护、步数预算与熔断仍生效）"
+        return "YOLO 已开启：本会话所有动作免审批（vault 写保护与步数/熔断仍生效，/yolo off 关闭）"
+    if arg == "off":
+        yolo_off(permission_state, thread_id)
+        if active:
+            return "YOLO 已关闭：恢复本会话原 permissions 规则"
+        return "YOLO 已关闭（本会话）"
+    if arg == "":
+        return "YOLO 状态：本会话已开启" if active else "YOLO 状态：本会话已关闭"
+    return "用法: /yolo on | /yolo off"
+
+
+def dispatch_command(
+    agent,
+    thread_id: str,
+    command: str,
+    sched=None,
+    vault_path: Path | None = None,
+    *,
+    permission_state: dict | None = None,
+):
     """处理会话命令，返回 (结果文本, 新 thread_id, replay_checkpoint_id)。
 
     replay_checkpoint_id 非空时 text 为 None，调用方应走 stream_events 重跑。
@@ -1154,4 +1195,6 @@ def dispatch_command(agent, thread_id: str, command: str, sched=None, vault_path
         from src.config import load_config
 
         return scheduler.reload_schedules(sched, agent, load_config()), None, None
+    if cmd == "/yolo":
+        return yolo_command_text(permission_state, thread_id, command), None, None
     return f"未知命令: {cmd}（/help 查看帮助）", None, None

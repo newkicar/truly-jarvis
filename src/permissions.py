@@ -26,6 +26,12 @@ GATED_TOOLS = ("execute", "write_file", "edit_file", "delete")
 
 VALID_ACTIONS = ("allow", "ask", "deny")
 
+# YOLO 模式（tui-ux12）：线程级免审批。
+# state["yolo_threads"] = 当前开启 YOLO 的 thread_id 集合（app 内共享、纯内存、
+# 不落盘，重启即全关）。on/off 只动集合成员，从不修改 state["tools"] 规则，
+# 因此 /yolo off 后原 permissions 规则原样生效（零快照、零 agent 重建）。
+YOLO_THREADS_KEY = "yolo_threads"
+
 
 def _match_pattern(pattern: str, value: str) -> bool:
     """通配匹配：* 任意多字符，? 单字符；用 fnmatch 实现（opencode 同语义）。"""
@@ -108,11 +114,49 @@ def heuristic_safe(cmd: str) -> bool:
     return any(one == item if " " not in item else two == item for item in HEURISTIC_SAFE_COMMANDS)
 
 
+def yolo_on(state: dict, thread_id: str) -> bool:
+    """为指定 thread 开启 YOLO（幂等）。空 id 为 no-op，返回 False。"""
+    tid = str(thread_id or "")
+    if not tid:
+        return False
+    state.setdefault(YOLO_THREADS_KEY, set()).add(tid)
+    return True
+
+
+def yolo_off(state: dict, thread_id: str) -> None:
+    """为指定 thread 关闭 YOLO（幂等，缺失不报错）。空 id 为 no-op。"""
+    tid = str(thread_id or "")
+    if not tid:
+        return
+    threads = state.get(YOLO_THREADS_KEY)
+    if isinstance(threads, set):
+        threads.discard(tid)
+
+
+def yolo_active(state: dict, thread_id: str) -> bool:
+    """指定 thread 是否处于 YOLO 模式。
+
+    空 id → False；state 缺 yolo_threads 键（旧引用防御）→ False。
+    """
+    tid = str(thread_id or "")
+    if not tid:
+        return False
+    threads = state.get(YOLO_THREADS_KEY)
+    return bool(threads is not None and tid in threads)
+
+
 def _action_for_args(state: dict, tool: str, args: dict) -> str:
     """按 state 当前规则 + 一次工具调用的 args 解析动作（allow/ask/deny）。
 
+    YOLO 模式（tui-ux12）：当前 thread 命中 yolo_threads 时一律 "allow"
+    （置于 hooks 解析之前 = 最高权限语义，hook 判定同样 bypass）；
+    ask 中断（when 谓词）与 deny 拦截（PermissionDenyMiddleware.block）
+    双路汇入此函数，一处短路同时消灭「审批弹窗」与「拒绝」。
+
     Hook 优先于 javis.json permissions（Codex: Hooks → rules → User）。
     """
+    if yolo_active(state, str(state.get("thread_id") or "")):
+        return "allow"
     hook_rules = state.get("hooks") or []
     if hook_rules and tool in GATED_TOOLS:
         from src.permission_hooks import resolve_permission_hook
@@ -209,12 +253,14 @@ def build_permission_interrupts(
         "thread_id": "",
         "project_root": project_root,
         "heuristics": bool(permissions.get("heuristics", False)),
+        "yolo_threads": set(),
     }
     return _build_interrupt_on(state), state
 
 
 def build_permission_interrupts_from_state(state: dict) -> dict:
     """从已构造的 state 重建 interrupt_on（供外部复用同一 state 引用时使用）。"""
+    state.setdefault(YOLO_THREADS_KEY, set())
     return _build_interrupt_on(state)
 
 

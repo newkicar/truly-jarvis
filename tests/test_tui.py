@@ -1194,3 +1194,38 @@ async def test_edit_params_containers_not_focusable():
         assert isinstance(app.screen, EditParamsModal)
         edit_box = app.screen.query_one("#edit_box")
         assert edit_box.can_focus is False
+
+
+@pytest.mark.asyncio
+async def test_yolo_command_full_tui_flow():
+    """tui-ux12: /yolo on/off 全 TUI 流——副标题 [YOLO] 联动 + 结果文案 + notify banner。"""
+    app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}}, thread_id="tyolo")
+    async with app.run_test() as pilot:
+        assert "[YOLO]" not in app.sub_title
+        await _type_and_enter(pilot, "/yolo on")
+        await pilot.pause()
+        assert app._worker is not None
+        await asyncio.sleep(0.55)
+        await pilot.pause()
+        log = pilot.app.query_one(CopyableRichLog)
+        joined = "".join(l.text for l in log.lines)
+        assert "YOLO 已开启" in joined
+        assert "[YOLO]" in app.sub_title
+        await _type_and_enter(pilot, "/yolo off")
+        await pilot.pause()
+        await asyncio.sleep(0.55)
+        await pilot.pause()
+        log = pilot.app.query_one(CopyableRichLog)
+        joined = "".join(l.text for l in log.lines)
+        assert "YOLO 已关闭" in joined
+        assert "[YOLO]" not in app.sub_title
+
+
+def test_yolo_notify_text():
+    """tui-ux12: _yolo_notify_text——/yolo on/off 返回短 banner 文案；裸查询/非法参数不弹。"""
+    app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
+    assert app._yolo_notify_text("/yolo on") == "YOLO 已开启：本会话免审批"
+    assert app._yolo_notify_text("/yolo off") == "YOLO 已关闭：恢复原 permissions 规则"
+    assert app._yolo_notify_text("/yolo") is None
+    assert app._yolo_notify_text("/yolo x") is None
+    assert app._yolo_notify_text("/help") is None

@@ -60,7 +60,8 @@ def _run_session(agent, thread_id: str, sched=None, permission_state: dict | Non
 
         if user_input.startswith("/"):
             text, new_thread, replay_cid = commands.dispatch_command(
-                agent, thread_id, user_input, sched
+                agent, thread_id, user_input, sched,
+                permission_state=permission_state,
             )
             if replay_cid:
                 _stream_replay(agent, thread_id, replay_cid, permission_state, config)

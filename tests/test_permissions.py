@@ -8,10 +8,15 @@ import json
 
 from src.permissions import (
     GATED_TOOLS,
+    _action_for_args,
     apply_permission_override,
     build_permission_interrupts,
+    build_permission_interrupts_from_state,
     dump_permissions_json,
     resolve_tool_action,
+    yolo_active,
+    yolo_off,
+    yolo_on,
 )
 
 
@@ -227,11 +232,16 @@ def test_edit_decision_allowed_for_all_gated_tools():
 
 
 def test_langchain_hitl_edit_decision_rewrites_tool_calls(monkeypatch):
-    """行为回归：execute/delete 收到 "edit" 决策后，AIMessage.tool_calls 被改写为编辑后参数。
+    """行为回归：execute/delete 收到 "edit" 决策后，编辑后参数在工具执行层生效。
 
     此前 execute/delete 的 allowed_decisions 缺 "edit"，langchain 的
     _process_decision 抛 ValueError，编辑后的参数到不了工具执行层
     （审批弹窗里改完参数确认后整轮报错、被放弃）。
+
+    存储形式随 langchain 版本变化：1.3.x 在 AIMessage.tool_calls 原地改写；
+    1.4.x 原调用留在消息里，改写存入 "hitl_edited_tool_calls"
+    （tool_call id -> {"name","args"}），由 wrap_tool_call 执行期替换。
+    断言对两种存储形式都接受（版本无关）。
     """
     from types import SimpleNamespace
 
@@ -291,10 +301,17 @@ def test_langchain_hitl_edit_decision_rewrites_tool_calls(monkeypatch):
         },
     )
 
-    mw.after_model(state, runtime)
+    result = mw.after_model(state, runtime)
 
-    assert ai.tool_calls[0]["args"]["command"] == "python -c 'print(new)'"
-    assert ai.tool_calls[1]["args"]["file_path"] == "approval-test2.txt"
+    edited: dict = {}
+    for holder in (state, result if isinstance(result, dict) else {}):
+        holder_edited = holder.get("hitl_edited_tool_calls")
+        if isinstance(holder_edited, dict):
+            edited.update(holder_edited)
+    assert ai.tool_calls[0]["args"]["command"] == "python -c 'print(new)'" or \
+        edited.get("c1", {}).get("args", {}).get("command") == "python -c 'print(new)'"
+    assert ai.tool_calls[1]["args"]["file_path"] == "approval-test2.txt" or \
+        edited.get("c2", {}).get("args", {}).get("file_path") == "approval-test2.txt"
 
 
 def test_hitl_reject_decision_on_delete_still_works(monkeypatch):
@@ -339,3 +356,148 @@ def test_hitl_reject_decision_on_delete_still_works(monkeypatch):
     assert len(tool_msgs) == 1
     assert tool_msgs[0].tool_call_id == "c9"
     assert "拒绝" in tool_msgs[0].content
+
+
+# ---------------------------------------------------------------------------
+# YOLO 模式（tui-ux12）：线程级免审批，_action_for_args 顶部短路
+# ---------------------------------------------------------------------------
+
+def test_yolo_state_initialised_with_yolo_threads():
+    """build_permission_interrupts 返回的 state 含 yolo_threads: set()。"""
+    _io, state = build_permission_interrupts({})
+    assert state["yolo_threads"] == set()
+
+
+def test_build_permission_interrupts_from_state_ensures_yolo_key():
+    """复用路径：缺键时 setdefault 保证 yolo_threads 存在。"""
+    _io, state = build_permission_interrupts({})
+    del state["yolo_threads"]
+    build_permission_interrupts_from_state(state)
+    assert state["yolo_threads"] == set()
+
+
+def test_yolo_active_pure_functions():
+    """yolo_on/off/active 纯函数组：空 id / 缺键 state / 成员 / 非成员。"""
+    state = {"thread_id": "t"}
+    assert yolo_active(state, "") is False  # 空串 id
+    assert yolo_active(state, "t") is False  # state 缺 yolo_threads 键（旧引用防御）
+    state["yolo_threads"] = set()
+    assert yolo_active(state, "t") is False  # 非成员
+    assert yolo_on(state, "t") is True
+    assert yolo_active(state, "t") is True  # 成员
+    assert yolo_on(state, "t") is True  # 幂等 on
+    assert yolo_on(state, "") is False  # 空 id no-op
+    yolo_off(state, "t")
+    assert yolo_active(state, "t") is False
+    yolo_off(state, "t")  # 幂等 off，不报错
+    yolo_off(state, "")
+
+
+def test_yolo_on_allows_all_gated_tools_including_deny():
+    """yolo 下 4 个 gated 工具全 allow（含原本 deny 的 bypass）；when 与 deny 双路绕过。"""
+    from langchain_core.messages import ToolMessage
+
+    from src.permissions import build_permission_deny_middleware
+
+    io, state = build_permission_interrupts(
+        {"execute": "ask", "write_file": "deny", "edit_file": "ask", "delete": "ask"}
+    )
+    state["thread_id"] = "t-yolo"
+    yolo_on(state, "t-yolo")
+
+    args = {
+        "execute": {"command": "rm -rf /"},
+        "write_file": {"file_path": "x.md", "content": "x"},
+        "edit_file": {"file_path": "x.md", "old_string": "a", "new_string": "b"},
+        "delete": {"file_path": "x.md"},
+    }
+    for tool, a in args.items():
+        assert _action_for_args(state, tool, a) == "allow", tool
+
+    # ask 路：dict 形态的 when 谓词不再中断
+    for tool in GATED_TOOLS:
+        entry = io[tool]
+        if isinstance(entry, dict):
+            assert entry["when"](_fake_req(tool, args[tool])) is False, tool
+
+    # deny 路：原本 deny 的 write_file 拦截 middleware 不再 block
+    mw = build_permission_deny_middleware(state)
+    req = _fake_req("write_file", args["write_file"])
+    called = []
+
+    def handler(_req):
+        called.append(True)
+        return ToolMessage(content="ok", name="write_file", tool_call_id="w1")
+
+    out = mw.wrap_tool_call(req, handler)
+    assert called == [True]
+    assert isinstance(out, ToolMessage) and out.content == "ok"
+
+
+def test_yolo_off_restores_original_rules():
+    """off 后 deny 回 deny、ask 回 ask；state["tools"]/default 前后零 diff。"""
+    io, state = build_permission_interrupts(
+        {"execute": "ask", "write_file": "deny", "edit_file": "ask", "delete": "ask"}
+    )
+    state["thread_id"] = "t1"
+    tools_snapshot = {
+        k: (dict(v) if isinstance(v, dict) else v) for k, v in state["tools"].items()
+    }
+    default_snapshot = state["default"]
+
+    yolo_on(state, "t1")
+    assert _action_for_args(state, "execute", {"command": "x"}) == "allow"
+    assert _action_for_args(state, "write_file", {"file_path": "x"}) == "allow"
+
+    yolo_off(state, "t1")
+    assert _action_for_args(state, "execute", {"command": "x"}) == "ask"
+    assert _action_for_args(state, "write_file", {"file_path": "x"}) == "deny"
+    assert _action_for_args(state, "edit_file", {"file_path": "x"}) == "ask"
+    assert _action_for_args(state, "delete", {"file_path": "x"}) == "ask"
+
+    # 规则原样（jarvis.json / state["tools"] 零 diff）
+    assert state["tools"] == tools_snapshot
+    assert state["default"] == default_snapshot
+    assert state["yolo_threads"] == set()
+
+
+def test_yolo_thread_isolation():
+    """线程 A yolo、线程 B 仍按原规则（线程级隔离）。"""
+    io, state = build_permission_interrupts({"execute": "ask"})
+    yolo_on(state, "a")
+    state["thread_id"] = "b"
+    assert yolo_active(state, "a") and not yolo_active(state, "b")
+    assert _action_for_args(state, "execute", {"command": "x"}) == "ask"
+    assert io["execute"]["when"](_fake_req("execute", {"command": "x"}, "b")) is True
+    state["thread_id"] = "a"
+    assert _action_for_args(state, "execute", {"command": "x"}) == "allow"
+
+
+def test_yolo_bypasses_hook_decisions(monkeypatch):
+    """yolo 短路置于 hooks 之前：hook deny 被 bypass；off 后 hook 恢复生效。"""
+    from src import permission_hooks
+
+    io, state = build_permission_interrupts(
+        {"execute": "allow"},
+        hooks={"permission": [{"match": "execute", "command": ["echo", "x"]}]},
+    )
+    state["thread_id"] = "ta"
+    assert state["hooks"], "hook 规则应已解析入 state"
+
+    calls = []
+
+    def fake_resolve(rules, tool, args, *, thread_id="", project_root=None):
+        calls.append(tool)
+        return "deny", "hook says deny"
+
+    monkeypatch.setattr(permission_hooks, "resolve_permission_hook", fake_resolve)
+
+    # 无 yolo → hook deny 生效（execute 的 allow 被 hook 覆盖）
+    assert _action_for_args(state, "execute", {"command": "any"}) == "deny"
+
+    yolo_on(state, "ta")
+    assert _action_for_args(state, "execute", {"command": "any"}) == "allow"
+    assert len(calls) == 1, "yolo 短路不应再进入 hook 判定"
+
+    yolo_off(state, "ta")
+    assert _action_for_args(state, "execute", {"command": "any"}) == "deny"

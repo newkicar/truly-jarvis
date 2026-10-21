@@ -145,3 +145,24 @@ def test_non_vault_real_path_unaffected(tmp_path):
     })
     mw.wrap_tool_call(req, lambda r: marker.append(1))
     assert marker, "vault 之外的普通路径不受此守卫管辖"
+
+
+def test_vault_floor_holds_under_yolo():
+    """tui-ux12 正交：当前 thread YOLO 开启（审批层全放行）时 vault 写保护不受影响。
+
+    YOLO 只短路 permissions 层的 _action_for_args（ask 弹窗 + deny 拦截），
+    VaultWriteGuardMiddleware 是独立守卫，必须继续 block。
+    """
+    from src.permissions import build_permission_interrupts, yolo_on
+
+    _io, state = build_permission_interrupts({})
+    state["thread_id"] = "t-yolo"
+    assert yolo_on(state, "t-yolo") is True
+
+    mw = VaultWriteGuardMiddleware()
+    req = _FakeRequest(
+        {"name": "write_file", "args": {"file_path": "/vault/Notes/secret.md"}, "id": "9"}
+    )
+    result = mw.wrap_tool_call(req, lambda r: "ran")
+    assert getattr(result, "status", "") == "error"
+    assert "Inbox" in str(result.content)

@@ -29,6 +29,7 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("/rollback", "/rollback <id>", "回退项目文件并还原 Inbox"),
     SlashCommand("/reload-schedules", "/reload-schedules", "热重载定时任务配置"),
     SlashCommand("/use", "/use <skill> [说明]", "手动注入指定 skill（名称模糊补全）"),
+    SlashCommand("/yolo", "/yolo on | off", "YOLO 模式开关（仅当前会话）"),
 )
 
 

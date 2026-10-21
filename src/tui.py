@@ -1031,6 +1031,7 @@ class JarvisApp(App):
 
     def _update_sub_title(self) -> None:
         from src.plan_mode import current_mode
+        from src.permissions import yolo_active
 
         parts = [self.thread_id]
         if self._mcp_tool_count:
@@ -1044,6 +1045,8 @@ class JarvisApp(App):
                 parts.append(f"sched:{n}")
             except Exception:
                 pass
+        if yolo_active(self.permission_state, self.thread_id):
+            parts.append("[YOLO]")
         self.sub_title = "  ".join(parts)
 
     def _vault_path(self) -> Path | None:
@@ -1380,11 +1383,26 @@ class JarvisApp(App):
         """后台线程执行可能阻塞的命令（/history、/fork 等）。"""
         try:
             result, new_thread, _replay_cid = commands.dispatch_command(
-                self.agent, self.thread_id, text, self.sched
+                self.agent, self.thread_id, text, self.sched,
+                permission_state=self.permission_state,
             )
         except Exception as exc:
             result, new_thread = f"命令失败: {exc}", None
-        self.call_from_thread(self._apply_command_result, result, new_thread)
+        self.call_from_thread(
+            self._apply_command_result, result, new_thread, self._yolo_notify_text(text)
+        )
+
+    def _yolo_notify_text(self, text: str) -> str | None:
+        """tui-ux12: /yolo on/off 执行后短 banner（幂等同文案）；裸查询/非法参数不弹。"""
+        parts = text.split()
+        if len(parts) < 2 or parts[0] != "/yolo":
+            return None
+        arg = parts[1].lower()
+        if arg == "on":
+            return "YOLO 已开启：本会话免审批"
+        if arg == "off":
+            return "YOLO 已关闭：恢复原 permissions 规则"
+        return None
 
     def _undo_worker(self, n: int) -> None:
         """后台线程跑 commands.undo（checkpoint 读写可能阻塞；工单 07）。
@@ -1449,7 +1467,12 @@ class JarvisApp(App):
         if keys:
             self._resolved_hitl[thread_id].update(keys)
 
-    def _apply_command_result(self, result: str, new_thread: str | None) -> None:
+    def _apply_command_result(
+        self,
+        result: str,
+        new_thread: str | None,
+        yolo_notify_text: str | None = None,
+    ) -> None:
         log = self.query_one("#messages", RichLog)
         log.write(result)
         if new_thread:
@@ -1459,6 +1482,10 @@ class JarvisApp(App):
         else:
             self._refresh_session_sidebar()
         self.query_one("#input", Input).focus()
+        if yolo_notify_text:
+            # tui-ux12: /yolo 状态变更后短 banner + 副标题 [YOLO] 标记联动
+            self.notify(yolo_notify_text, timeout=3)
+            self._update_sub_title()
 
     def _session_sidebar(self) -> SessionSidebar:
         return self.query_one("#session_sidebar", SessionSidebar)

@@ -1151,3 +1151,57 @@ def test_expand_use_command_missing_skill_and_usage(tmp_path, monkeypatch):
     assert msg.startswith("[skill:manual-skill]")
     assert "步骤一：做点事" in msg
     assert "任务：请执行" in msg
+
+
+# ---------------------------------------------------------------------------
+# YOLO 模式（tui-ux12）：/yolo on | off 开关（线程级、仅本会话、幂等文案）
+# ---------------------------------------------------------------------------
+
+def test_dispatch_yolo_query_on_off_full_cycle():
+    from src.permissions import build_permission_interrupts, yolo_active
+
+    _io, state = build_permission_interrupts({})
+    agent = FakeDispatchAgent()
+
+    text, nt, rc = commands.dispatch_command(agent, "ty", "/yolo", permission_state=state)
+    assert text == "YOLO 状态：本会话已关闭"
+    assert nt is None and rc is None
+    assert not yolo_active(state, "ty")  # 裸查询不改状态
+
+    text, _, _ = commands.dispatch_command(agent, "ty", "/yolo on", permission_state=state)
+    assert text == "YOLO 已开启：本会话所有动作免审批（vault 写保护与步数/熔断仍生效，/yolo off 关闭）"
+    assert yolo_active(state, "ty")
+
+    # 幂等：重复 on 回「已开启」短文案
+    text, _, _ = commands.dispatch_command(agent, "ty", "/yolo on", permission_state=state)
+    assert text == "YOLO 已开启（本会话免审批；vault 写保护、步数预算与熔断仍生效）"
+    assert yolo_active(state, "ty")
+
+    text, _, _ = commands.dispatch_command(agent, "ty", "/yolo off", permission_state=state)
+    assert text == "YOLO 已关闭：恢复本会话原 permissions 规则"
+    assert not yolo_active(state, "ty")
+
+    # 幂等：重复 off 回「已关闭」短文案
+    text, _, _ = commands.dispatch_command(agent, "ty", "/yolo off", permission_state=state)
+    assert text == "YOLO 已关闭（本会话）"
+
+
+def test_dispatch_yolo_bad_arg():
+    from src.permissions import build_permission_interrupts
+
+    _io, state = build_permission_interrupts({})
+    text, nt, rc = commands.dispatch_command(FakeDispatchAgent(), "ty", "/yolo x", permission_state=state)
+    assert text == "用法: /yolo on | /yolo off"
+    assert nt is None and rc is None
+
+
+def test_dispatch_yolo_without_permission_state_does_not_crash():
+    text, nt, rc = commands.dispatch_command(FakeDispatchAgent(), "ty", "/yolo on")
+    assert "不可用" in text
+    assert nt is None and rc is None
+
+
+def test_help_includes_yolo():
+    assert "/yolo" in commands.CLI_HELP
+    assert "/yolo" in commands.TUI_HELP
+    assert "YOLO" in commands.CLI_HELP
