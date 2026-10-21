@@ -237,7 +237,7 @@ async def test_escape_cancel_banner_replaces_spinner():
 
                 def interleave(self, *kinds):
                     for item in self._items:
-                        time.sleep(0.2)
+                        time.sleep(0.4)
                         yield item
 
             return S()
@@ -248,12 +248,16 @@ async def test_escape_cancel_banner_replaces_spinner():
         await pilot.pause()
         await asyncio.sleep(0.1)
         app.action_cancel()
-        await pilot.pause()
+        # tui-ux7 CI-flake 修复：banner 由 action_cancel 在 UI 线程*同步*写入
+        # （_show_cancel_banner）；worker 的 _hide_spinner 只能经事件循环（call_from_thread）
+        # 执行。故此处*不* yield 事件循环（去掉原 pilot.pause）——同步读 spinner 必为
+        # 「已取消」banner（drain 收尾尚未发生），彻底消除「drain 提前 _hide_spinner 清空」的
+        # CI 时序竞态。
         spinner = pilot.app.query_one("#status_spinner", Static)
         banner_text = str(spinner.render())
         assert "思考中" not in banner_text
         assert "已取消" in banner_text
-        await asyncio.sleep(0.6)
+        await asyncio.sleep(0.9)
         await pilot.pause()
         spinner = pilot.app.query_one("#status_spinner", Static)
         assert not str(spinner.render())
