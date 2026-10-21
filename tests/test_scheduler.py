@@ -148,7 +148,10 @@ def test_reload_schedules_replaces_cron(tmp_path):
     cfg = make_fake_config(tmp_path)
     _write_schedule(cfg.schedules_dir, "a.json", {"id": "a", "task": "t", "cron": "*/1 * * * *"})
     sched = scheduler.make_scheduler(object(), cfg)
-    now = datetime.now(timezone.utc)
+    # 固定基准时间（不用系统时间）：系统时刻落入 07:59:00–08:00:00 窗口时，
+    # */1 的下次触发与每日 08:00 的下次触发重合（均为当日 08:00:00），
+    # 断言 before != after 会随跑测时刻 flaky（CI 2026-10-21 08:00 UTC，run 39565743926 即此红）。
+    now = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
     before = sched.get_job("javis-a").trigger.get_next_fire_time(None, now)
 
     _write_schedule(cfg.schedules_dir, "a.json", {"id": "a", "task": "t", "cron": "0 8 * * *"})
