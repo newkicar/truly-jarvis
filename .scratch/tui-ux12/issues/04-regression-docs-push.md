@@ -26,6 +26,6 @@
 - [x] 全量 pytest 对照基线无新增失败
 - [x] AGENTS.md「TUI 体验十二」条目落盘（含并发边界与自然推论记录）
 - [x] 四张工单 done + 勾选；spec.md Status 改 done
-- [ ] commit + push main；CI 状态检查（仅允许 THREAD A 预存红，且已向用户报备）（CI 绿后补勾）
+- [x] commit + push main；CI 状态检查（仅允许 THREAD A 预存红，且已向用户报备）（CI 绿后补勾）
 
-**Done:** 2026-10-21，主 commit `1e7ff0c`。
+**Done:** 2026-10-21，主 commit `1e7ff0c`；CI 收官修复 `9bccf65`（test_tui Esc 取消 banner 断言改同步读）+ `00baf68`（test_scheduler cron 重载断言改固定基准时间），最终 CI run 39568007785 全绿。
