@@ -23,7 +23,7 @@ def test_default_all_ask():
     assert "edit_file" in interrupt_on
     assert "delete" in interrupt_on
     assert state["default"] == "ask"
-    assert interrupt_on["execute"]["allowed_decisions"] == ["approve", "reject"]
+    assert interrupt_on["execute"]["allowed_decisions"] == ["approve", "reject", "edit"]
     assert interrupt_on["edit_file"]["allowed_decisions"] == ["approve", "reject", "edit"]
 
 
@@ -217,3 +217,125 @@ def test_deny_middleware_async_blocks(monkeypatch):
     assert isinstance(out, ToolMessage)
     assert out.status == "error"
     assert "deny" in out.content
+
+
+def test_edit_decision_allowed_for_all_gated_tools():
+    """所有 gated 工具开放 "edit" 决策（UI/CLI 对所有工具提供编辑参数入口）。"""
+    interrupt_on, _ = build_permission_interrupts({})
+    for tool in GATED_TOOLS:
+        assert "edit" in interrupt_on[tool]["allowed_decisions"], tool
+
+
+def test_langchain_hitl_edit_decision_rewrites_tool_calls(monkeypatch):
+    """行为回归：execute/delete 收到 "edit" 决策后，AIMessage.tool_calls 被改写为编辑后参数。
+
+    此前 execute/delete 的 allowed_decisions 缺 "edit"，langchain 的
+    _process_decision 抛 ValueError，编辑后的参数到不了工具执行层
+    （审批弹窗里改完参数确认后整轮报错、被放弃）。
+    """
+    from types import SimpleNamespace
+
+    import langchain.agents.middleware.human_in_the_loop as hitl_mod
+    from langchain.agents.middleware.human_in_the_loop import HumanInTheLoopMiddleware
+    from langchain_core.messages import AIMessage
+
+    interrupt_on, _state = build_permission_interrupts({})
+    mw = HumanInTheLoopMiddleware(interrupt_on=interrupt_on)
+
+    ai = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "execute",
+                "args": {"command": "python -c 'print(old)'"},
+                "id": "c1",
+                "type": "tool_call",
+            },
+            {
+                "name": "delete",
+                "args": {"file_path": "approval-test.txt"},
+                "id": "c2",
+                "type": "tool_call",
+            },
+        ],
+    )
+    state = {"messages": [ai]}
+    runtime = SimpleNamespace(
+        context=None,
+        stream_writer=None,
+        store=None,
+        execution_info=None,
+        server_info=None,
+    )
+
+    monkeypatch.setattr(
+        hitl_mod,
+        "interrupt",
+        lambda req: {
+            "decisions": [
+                {
+                    "type": "edit",
+                    "edited_action": {
+                        "name": "execute",
+                        "args": {"command": "python -c 'print(new)'"},
+                    },
+                },
+                {
+                    "type": "edit",
+                    "edited_action": {
+                        "name": "delete",
+                        "args": {"file_path": "approval-test2.txt"},
+                    },
+                },
+            ]
+        },
+    )
+
+    mw.after_model(state, runtime)
+
+    assert ai.tool_calls[0]["args"]["command"] == "python -c 'print(new)'"
+    assert ai.tool_calls[1]["args"]["file_path"] == "approval-test2.txt"
+
+
+def test_hitl_reject_decision_on_delete_still_works(monkeypatch):
+    """delete 的 "reject" 决策仍返回拒绝 ToolMessage（开放 edit 不影响 reject）。"""
+    from types import SimpleNamespace
+
+    import langchain.agents.middleware.human_in_the_loop as hitl_mod
+    from langchain.agents.middleware.human_in_the_loop import HumanInTheLoopMiddleware
+    from langchain_core.messages import AIMessage, ToolMessage
+
+    interrupt_on, _state = build_permission_interrupts({})
+    mw = HumanInTheLoopMiddleware(interrupt_on=interrupt_on)
+
+    ai = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "delete",
+                "args": {"file_path": "x.txt"},
+                "id": "c9",
+                "type": "tool_call",
+            },
+        ],
+    )
+    state = {"messages": [ai]}
+    runtime = SimpleNamespace(
+        context=None,
+        stream_writer=None,
+        store=None,
+        execution_info=None,
+        server_info=None,
+    )
+    monkeypatch.setattr(
+        hitl_mod,
+        "interrupt",
+        lambda req: {"decisions": [{"type": "reject", "message": "用户拒绝"}]},
+    )
+
+    out = mw.after_model(state, runtime)
+    assert out is not None
+    tool_msgs = [m for m in out["messages"] if isinstance(m, ToolMessage)]
+    assert len(tool_msgs) == 1
+    assert tool_msgs[0].tool_call_id == "c9"
+    assert "拒绝" in tool_msgs[0].content

@@ -227,11 +227,10 @@ def _build_interrupt_on(state: dict) -> dict:
         elif isinstance(rule, str) and rule == "deny":
             interrupt_on[tool] = False  # deny 由工具层拦截；这里不中断
         else:
-            decisions = (
-                ["approve", "reject", "edit"]
-                if tool in ("write_file", "edit_file")
-                else ["approve", "reject"]
-            )
+            # 全部 gated 工具开放 "edit" 决策：UI/CLI 已对所有工具提供「编辑参数」入口
+            # （execute 改命令、delete 改目标路径等）；不对称配置会让 langchain 抛
+            # "Decision type ... is not allowed for tool ..." ValueError，整轮被弃。
+            decisions = ["approve", "reject", "edit"]
             interrupt_on[tool] = {
                 "allowed_decisions": decisions,
                 "description": f"审批：{tool} 工具调用",

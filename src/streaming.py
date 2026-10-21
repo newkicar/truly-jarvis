@@ -30,6 +30,11 @@ def format_agent_error(exc: BaseException) -> str:
             "② 当前会话 checkpoint 已损坏（执行 /delete-session 或 python -m src.main -n --cli 开新会话）；"
             "③ .env 的 MODEL_ID 与套餐不一致。"
         )
+    if "Unexpected human decision" in msg or "is not allowed for tool" in msg:
+        return (
+            "审批决策与工具配置不匹配（该决策类型未被当前工具允许，本轮已中止）。\n"
+            "请重新执行审批；若反复出现，请检查 jarvis.json 的 permissions 配置。"
+        )
     if "Authentication" in name or "401" in msg or "403" in msg:
         return f"鉴权失败：{msg}\n请检查 .env 的 API_KEY / BASE_URL。"
     return f"{name}: {msg}"
