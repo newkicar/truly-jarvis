@@ -1222,6 +1222,10 @@ async def test_yolo_command_full_tui_flow():
         joined = "".join(l.text for l in log.lines)
         assert "YOLO 已开启" in joined
         assert "[YOLO]" in app.sub_title
+        badge = pilot.app.query_one("#yolo_badge", Static)
+        assert badge.has_class("-active")
+        assert "YOLO Mode" in badge.content
+        assert badge.size.height >= 1  # tui-ux14: 内容区高度塌 0 回归（空红框 bug）
         await _type_and_enter(pilot, "/yolo off")
         await pilot.pause()
         await asyncio.sleep(0.55)
@@ -1230,6 +1234,8 @@ async def test_yolo_command_full_tui_flow():
         joined = "".join(l.text for l in log.lines)
         assert "YOLO 已关闭" in joined
         assert "[YOLO]" not in app.sub_title
+        assert badge.content == ""
+        assert not badge.has_class("-active")
 
 
 def test_yolo_notify_text():
@@ -1245,7 +1251,7 @@ def test_yolo_notify_text():
 
 @pytest.mark.asyncio
 async def test_yolo_badge_reflects_state():
-    """tui-ux14: YOLO 徽章——yolo_on 时显示 [b]⚠ YOLO[/b]；yolo_off 后隐藏。"""
+    """tui-ux14: YOLO 徽章——yolo_on 时显示红字 YOLO Mode（内容区不塌 0）；yolo_off 后隐藏。"""
     from src.permissions import yolo_on, yolo_off
 
     app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
@@ -1257,7 +1263,8 @@ async def test_yolo_badge_reflects_state():
         app._update_sub_title()
         await pilot.pause()
         assert badge.has_class("-active")
-        assert "YOLO" in badge.content
+        assert "YOLO Mode" in badge.content
+        assert badge.size.height >= 1  # tui-ux14: height:auto 前内容区塌 0（空红框 bug 回归）
         yolo_off(app.permission_state, app.thread_id)
         app._update_sub_title()
         await pilot.pause()

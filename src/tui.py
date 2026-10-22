@@ -907,7 +907,7 @@ class JarvisApp(App):
     #yolo_badge {
         display: none;
         width: auto;
-        height: 1;
+        height: auto;
         border: round 20% $error 80%;
         padding: 0 1;
     }
@@ -1024,7 +1024,7 @@ class JarvisApp(App):
 
         if yolo_active(self.permission_state, self.thread_id):
             badge.add_class("-active")
-            badge.update("[b]⚠ YOLO[/b]")
+            badge.update("[b #ff5555]YOLO Mode[/]")
         else:
             badge.remove_class("-active")
             badge.update("")
