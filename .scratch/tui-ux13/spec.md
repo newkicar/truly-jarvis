@@ -77,7 +77,7 @@
    在 01/02 已就位），产出 = 走查记录 + 回传清单 + 工单验收。
 4. **04 回归 + 文档 + 收官**：全量 pytest 对照基线（609 passed + 预存 3× test_config）→
    AGENTS.md「TUI 体验十三」条目 → 四张工单 done + 勾选 → docs commit → push main →
-   CI 轮询绿 → 中文汇报（含 Bug1 换行语义变化 + Bug2 三层闭环说明 + 需用户/同事实测
+   CI 轮询绿（2026-10-22 新 head `209f5e8` ✅ run 39703698698 success）→ 中文汇报（含 Bug1 换行语义变化 + Bug2 三层闭环说明 + 需用户/同事实测
    回传项单列不阻塞）。
 
 ## User Stories
@@ -209,7 +209,7 @@
 - 5 行上限值（决策 6）可在实现时探针微调（4/5/6），以「短屏（24 行终端）+
   modal 按钮行可见性」回归不炸为准（tui-ux10 布局规约同源）。
 - 收官（2026-10-22）：
-  - 工单 01/02/03 全 done + 验收全勾；工单 04 验收项 1–3 勾选，CI 项待绿后补勾。
+  - 工单 01/02/03 全 done + 验收全勾；工单 04 验收项 1–3 勾选；CI 项 2026-10-22 绿后补勾完毕（新 head `209f5e8`，run 39703698698 success）。
   - 全量回归：本地 634 passed + 仅预存 3× test_config 失败（0 新增）；CI 基线 593 passed / 4 skipped。
   - 探针：`scratch/probe_shift_enter.py` 4/4 PASS（Textual 层）；真实终端 3 项（a) 三端点中文走查 2 汉字 + 1 全角标点；b) 同事两步自诊断回传；c) ConPTY shift+enter 透传 + ctrl+j 退路实测）留用户/同事实测，不阻塞。
   - AGENTS.md「TUI 体验十三」条目落盘（密文风格对齐 tui-ux10/tui-ux12）。
