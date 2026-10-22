@@ -8,9 +8,17 @@ from contextlib import contextmanager
 
 import pytest
 
-from textual.widgets import Button, Input, Label, Static
+from textual.widgets import Button, Label, Static
 
-from src.tui import EditParamsModal, JarvisApp, ModalTextArea, PathCompletionOverlay, PermissionModal, SessionSidebar
+from src.tui import (
+    EditParamsModal,
+    JarvisApp,
+    JarvisTextArea,
+    ModalTextArea,
+    PathCompletionOverlay,
+    PermissionModal,
+    SessionSidebar,
+)
 from src.tui_log import CopyableRichLog
 from src import commands
 
@@ -71,9 +79,9 @@ class FakeAgent:
 
 
 async def _type_and_enter(pilot, text):
-    input_widget = pilot.app.query_one(Input)
+    input_widget = pilot.app.query_one("#input", JarvisTextArea)
     input_widget.focus()
-    input_widget.value = text
+    input_widget.text = text
     await pilot.pause()
     await pilot.press("enter")
 
@@ -83,7 +91,7 @@ async def test_app_starts_and_quits():
     app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
     async with app.run_test() as pilot:
         assert isinstance(pilot.app.query_one("#messages"), CopyableRichLog)
-        assert isinstance(pilot.app.query_one(Input), Input)
+        assert isinstance(pilot.app.query_one("#input", JarvisTextArea), JarvisTextArea)
         await pilot.pause()
 
 
@@ -445,10 +453,10 @@ async def test_at_completion_shows_candidates_and_inserts_path(tmp_path):
     app._workspace_root = lambda: ws
 
     async with app.run_test() as pilot:
-        inp = pilot.app.query_one(Input)
+        inp = pilot.app.query_one("#input", JarvisTextArea)
         inp.focus()
-        inp.value = "@"
-        inp.cursor_position = 1
+        inp.text = "@"
+        inp.cursor_location = (0, 1)
         pilot.app._refresh_suggestions()
         await pilot.pause()
 
@@ -460,7 +468,7 @@ async def test_at_completion_shows_candidates_and_inserts_path(tmp_path):
 
         await pilot.press("tab")
         await pilot.pause()
-        assert any(p in inp.value for p in prompts)
+        assert any(p in inp.text for p in prompts)
 
 
 @pytest.mark.asyncio
@@ -471,9 +479,9 @@ async def test_at_completion_escape_closes_overlay(tmp_path):
 
     app = JarvisApp(_FakeConfig(vault), FakeAgent(), {"default": "ask", "tools": {}})
     async with app.run_test() as pilot:
-        inp = pilot.app.query_one(Input)
-        inp.value = "@In"
-        inp.cursor_position = 3
+        inp = pilot.app.query_one("#input", JarvisTextArea)
+        inp.text = "@In"
+        inp.cursor_location = (0, 3)
         pilot.app._refresh_suggestions()
         await pilot.pause()
         overlay = pilot.app.query_one("#path_completion", PathCompletionOverlay)
@@ -482,7 +490,7 @@ async def test_at_completion_escape_closes_overlay(tmp_path):
         await pilot.press("escape")
         await pilot.pause()
         assert not overlay.visible_suggestions
-        assert inp.value == "@In"
+        assert inp.text == "@In"
 
 
 @pytest.mark.asyncio
@@ -783,9 +791,9 @@ async def test_slash_undo_restores_user_message_to_input():
     async with app.run_test() as pilot:
         await _type_and_enter(pilot, "/undo")
         await _wait_for_text(pilot, "已撤回")
-        inp = pilot.app.query_one("#input", Input)
-        assert inp.value == "问题 2"  # 被撤回的用户消息回填输入框
-        assert inp.cursor_position == len("问题 2")
+        inp = pilot.app.query_one("#input", JarvisTextArea)
+        assert inp.text == "问题 2"  # 被撤回的用户消息回填输入框（tui-ux13：光标 = (末行, 列)）
+        assert inp.cursor_location == (0, len("问题 2"))
 
 
 @pytest.mark.asyncio
@@ -797,8 +805,8 @@ async def test_double_esc_restores_user_message_to_input():
         await pilot.pause()
         app.action_cancel()  # 双 Esc：隐式撤回上一轮
         await _wait_for_text(pilot, "已撤回")
-        inp = pilot.app.query_one("#input", Input)
-        assert inp.value == "问题 2"
+        inp = pilot.app.query_one("#input", JarvisTextArea)
+        assert inp.text == "问题 2"
 
 
 @pytest.mark.asyncio
@@ -809,7 +817,7 @@ async def test_undo_failure_does_not_restore_input():
         await _type_and_enter(pilot, "/undo")
         joined = await _wait_for_text(pilot, "撤回失败")
         assert "撤回失败" in joined
-        assert pilot.app.query_one("#input", Input).value == ""
+        assert pilot.app.query_one("#input", JarvisTextArea).text == ""
 
 
 class _UseTuiConfig:
@@ -879,11 +887,11 @@ async def test_slash_use_manual_skill_streams_expanded_message(tmp_path, monkeyp
         assert "任务：请执行" in msg
 
 
-# ---- tui-ux6 #04：Shift+Enter 多行输入（continuation buffer）----
+# ---- tui-ux13：输入框多行内换行（shift+enter/ctrl+j 插 \n；/ 命令多行门禁）----
 
 
 class _MultiLineAgent(FakeAgent):
-    """tui-ux6 #04: 记录 stream_events 收到的 user_input（验证多行拼接投递）。"""
+    """tui-ux13: 记录 stream_events 收到的 user_input（验证框内多行投递）。"""
 
     def __init__(self):
         super().__init__(reply="AI 收到")
@@ -907,82 +915,81 @@ def _last_stream_text(agent: _MultiLineAgent) -> str:
 
 
 @pytest.mark.asyncio
-async def test_shift_enter_continuation_joins_lines_on_submit():
+async def test_shift_enter_newline_in_box():
+    """tui-ux13：shift+enter 在框内插 \n（旧行保留、可续编），裸 Enter 提交全量。"""
     agent = _MultiLineAgent()
     app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
     async with app.run_test() as pilot:
-        inp = pilot.app.query_one("#input", Input)
+        inp = pilot.app.query_one("#input", JarvisTextArea)
         inp.focus()
-        inp.value = "第一行"
+        inp.text = "第一行"
+        inp.cursor_location = (0, len("第一行"))  # TextArea.text setter resets cursor to (0,0); move it to end of line
         await pilot.press("shift+enter")
         await pilot.pause()
-        assert inp.value == ""
-        assert app._continuation == ["第一行"]
-        panel = pilot.app.query_one("#continuation")
-        assert panel.has_class("-active")
-        inp.value = "第二行"
+        assert inp.text == "第一行\n"
+        # 旧行保留且可续编（光标在第 2 行）
+        await pilot.press("a")
+        await pilot.pause()
+        assert inp.text == "第一行\na"
+        inp.text = "第一行\n第二行"
         await pilot.press("enter")
         await _wait_for_text(pilot, "AI 收到")
         assert _last_stream_text(agent) == "第一行\n第二行"
-        assert app._continuation == []
-        assert not panel.has_class("-active")
+        assert inp.text == ""  # 提交后清框
 
 
 @pytest.mark.asyncio
-async def test_ctrl_j_continuation_synonym():
+async def test_ctrl_j_newline_synonym():
     agent = _MultiLineAgent()
     app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
     async with app.run_test() as pilot:
-        inp = pilot.app.query_one("#input", Input)
+        inp = pilot.app.query_one("#input", JarvisTextArea)
         inp.focus()
-        inp.value = "行 A"
+        inp.text = "行 A"
+        inp.cursor_location = (0, len("行 A"))  # TextArea.text setter resets cursor to (0,0); move it to end of line
         await pilot.press("ctrl+j")
         await pilot.pause()
-        assert app._continuation == ["行 A"]
-        assert inp.value == ""
-        inp.value = "行 B"
+        assert inp.text == "行 A\n"
+        inp.text = "行 A\n行 B"
         await pilot.press("enter")
         await _wait_for_text(pilot, "AI 收到")
         assert _last_stream_text(agent) == "行 A\n行 B"
 
 
 @pytest.mark.asyncio
-async def test_slash_command_shift_enter_no_newline():
+async def test_slash_command_multiline_rejected():
+    """/ 命令多行 → build_submission 门禁拒收：框不清空、不投递、不执行。"""
     agent = _MultiLineAgent()
     app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
     async with app.run_test() as pilot:
-        inp = pilot.app.query_one("#input", Input)
+        inp = pilot.app.query_one("#input", JarvisTextArea)
         inp.focus()
-        inp.value = "/history"
+        inp.text = "/history"
+        inp.cursor_location = (0, len("/history"))  # TextArea.text setter resets cursor to (0,0); move it to end of line
         await pilot.press("shift+enter")
         await pilot.pause()
-        assert app._continuation == []  # / 命令不支持换行
-        assert inp.value == "/history"  # 保留原值，等 Enter 直接提交
+        assert inp.text == "/history\n"  # 换行照常插入（门禁在提交时）
+        inp.text = "/history\nx"
         await pilot.press("enter")
-        joined = await _wait_for_text(pilot, "正在执行 /history")
-        assert "正在执行 /history" in joined
-        assert agent.inputs == []  # / 命令走 dispatch，不投递流式
+        await pilot.pause()
+        assert inp.text == "/history\nx"  # 拒收不清框
+        assert agent.inputs == []  # / 命令未被分发
+        log = pilot.app.query_one("#messages", CopyableRichLog)
+        joined = "".join(line.text for line in log.lines)
+        assert "正在执行 /history" not in joined
 
 
 @pytest.mark.asyncio
-async def test_empty_backspace_pops_last_continuation():
+async def test_multiline_submission_strips_trailing_newlines():
     agent = _MultiLineAgent()
     app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
     async with app.run_test() as pilot:
-        inp = pilot.app.query_one("#input", Input)
+        inp = pilot.app.query_one("#input", JarvisTextArea)
         inp.focus()
-        inp.value = "第一行"
-        await pilot.press("shift+enter")
-        inp.value = "第二行"
-        await pilot.press("shift+enter")
-        await pilot.pause()
-        assert app._continuation == ["第一行", "第二行"]
-        assert inp.value == ""
-        await pilot.press("backspace")  # 空框 Backspace → 弹回末条续行
-        await pilot.pause()
-        assert inp.value == "第二行"
-        assert app._continuation == ["第一行"]
-
+        inp.text = "第一行\na\n\n"
+        await pilot.press("enter")
+        await _wait_for_text(pilot, "AI 收到")
+        assert _last_stream_text(agent) == "第一行\na"
 
 # ---------------------------------------------------------------------------
 # tui-ux8 #01：审批弹窗「放行」按钮默认焦点（diagnosing-bugs 红灯反馈环）

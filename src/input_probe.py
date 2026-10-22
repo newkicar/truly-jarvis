@@ -8,7 +8,7 @@
 
 只读无副作用：仅 PeekConsoleInputW（不可用时回落 ReadConsoleInputW）；
 绝不 SetConsoleCP（ConPTY 下 65000→65001 切换会破坏 IME），CP 异常仅告警。
-/doctor 的「输入通道」诊断行复用 doctor_input_channel_line（只读）。
+/doctor 的「输入通道」诊断两行复用 doctor_input_channel_lines（只读）；探测会话总结段 summarize_session。
 """
 
 from __future__ import annotations
@@ -21,11 +21,13 @@ from typing import Optional
 
 __all__ = [
     "channel_line",
-    "doctor_input_channel_line",
+    "doctor_input_channel_lines",
     "format_key_event",
     "format_record",
     "main",
     "run",
+    "summarize_session",
+    "terminal_type_line",
 ]
 
 # Windows 控制台输入记录类型（EVENT_TYPE，msdn INPUT_RECORD）
@@ -60,22 +62,70 @@ def channel_line(cp: int, file_type: int) -> str:
     return line
 
 
-def doctor_input_channel_line() -> str:
-    """/doctor 一行：只读探测输入通道；非 Windows/无控制台句柄 → n/a。
+def terminal_type_line(file_type: int) -> str:
+    """终端类型行（纯函数，可单测）：Windows Terminal（WT_SESSION env）/ conhost（CHAR）/ pipe·ConPTY（PIPE）。"""
+    if os.environ.get("WT_SESSION"):
+        return "终端=Windows Terminal"
+    if file_type == 0x1:
+        return "终端=conhost"
+    if file_type == 0x2:
+        return "终端=pipe/ConPTY"
+    return f"终端=未知(0x{file_type:X})"
+
+
+def doctor_input_channel_lines() -> list[str]:
+    """/doctor 输入通道 2 行（tui-ux13）：① CP + stdin 句柄类型 + IME shim 状态；② 终端类型 + 快插/探测入口。
 
     绝不自动 SetConsoleCP：ConPTY 下 65000→65001 切换会破坏 IME，CP 异常仅告警。
+    非 Windows / 无控制台句柄 → 单行 n/a。
     """
     if sys.platform != "win32":
-        return "输入通道: n/a（非 Windows）"
+        return ["输入通道: n/a（非 Windows）"]
     try:
         from ctypes import windll
+        from src import ime_shim
 
         kernel32 = windll.kernel32
         cp = int(kernel32.GetConsoleCP())
         ft = int(kernel32.GetFileType(os.gethandle(0)))
-        return f"{channel_line(cp, ft)} | 标点快插：TUI 内 Ctrl+. 开面板"
+        shim = ime_shim.shim_status()
+        line1 = f"{channel_line(cp, ft)} | IME shim={shim}"
+        line2 = f"{terminal_type_line(ft)} | 全角标点快插：TUI 内 Ctrl+. 开面板 | 探测 python -m src.input_probe"
+        if shim != "installed":
+            line2 += f"（shim 状态 {shim}，中文输入可能受影响）"
+        return [line1, line2]
     except Exception:
-        return "输入通道: n/a（无控制台句柄）"
+        return ["输入通道: n/a（无控制台句柄）"]
+
+
+def summarize_session(
+    counts: dict,
+    nul_u_char_count: int,
+    cp: int,
+    ended_by: str,
+) -> list[str]:
+    """探测会话总结段（纯函数，可单测，tui-ux13 L2）：直方图 + 三态判定 + 下一步指引。
+
+    三态：① UNICODE 或 IME 记录存在 → 中文确认通道可达；
+    ② 仅 KEY 且 NUL-uChar>0 → 中文依赖 NUL-uChar 重建（ime_shim），核对 shim 状态；
+    ③ 均未观察到 → 未观察到中文 IME 记录，检查输入法与终端。
+    """
+    key = int(counts.get(KEY_EVENT, 0) or 0)
+    unic = int(counts.get(UNICODE_EVENT, 0) or 0)
+    ime = int(counts.get(IME_EVENT, 0) or 0)
+    lines = [f"直方图: KEY={key} UNICODE={unic} IME={ime} NUL-uChar={nul_u_char_count} | 结束方式={ended_by}"]
+    cp_warn = "" if cp in _SAFE_CPS else " ⚠ CP 异常，CJK IME 可能受损（勿自动修复）"
+    if unic or ime:
+        lines.append(f"判定: 中文确认通道可达（观察到 UNICODE={unic} / IME={ime} 确认记录）{cp_warn}")
+    elif key and nul_u_char_count > 0:
+        lines.append(
+            f"判定: 中文依赖 NUL-uChar 重建（ime_shim），请核对 shim 状态（/doctor 输入通道两行或 ime_shim.shim_status()）{cp_warn}"
+        )
+    else:
+        lines.append(
+            f"判定: 未观察到中文 IME 记录（UNICODE/IME=0 且无 NUL-uChar）——请确认输入法已开启并在 conhost/Windows Terminal 下重跑；全角标点可用 Ctrl+. 快插面板兜底{cp_warn}"
+        )
+    return lines
 
 
 def _union_offset(rec) -> int:
@@ -214,6 +264,7 @@ def run(out_path: Optional[str] = None, timeout: int = 30) -> int:
     read = kernel32.ReadConsoleInputW
 
     counts = {}
+    nul_u_char_count = 0
     deadline = time.monotonic() + timeout
     esc_hit = False
     total = 0
@@ -231,6 +282,10 @@ def run(out_path: Optional[str] = None, timeout: int = 30) -> int:
             et = int(rec.EventType)
             counts[et] = counts.get(et, 0) + 1
             total += 1
+            if et == KEY_EVENT:
+                _uc = rec.Event.KeyEvent.uChar.UnicodeChar
+                if not _uc or _uc == "\x00":
+                    nul_u_char_count += 1
             line = format_record(rec)
             lines.append(line)
             print(line, flush=True)
@@ -246,6 +301,7 @@ def run(out_path: Optional[str] = None, timeout: int = 30) -> int:
         f"汇总: {summary or '无记录'} | outCP={cp_out} | 结束方式={'Esc' if esc_hit else '超时'}",
         channel_line(cp, ft),
     ]
+    tail.extend(summarize_session(counts, nul_u_char_count, cp, "Esc" if esc_hit else "超时"))
     for ln in tail:
         print(ln, flush=True)
     if out_path:

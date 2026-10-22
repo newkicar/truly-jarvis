@@ -33,7 +33,13 @@ from typing import TYPE_CHECKING, List, Optional, Sequence
 if TYPE_CHECKING:  # pragma: no cover - 仅类型检查
     from textual.drivers.win32 import INPUT_RECORD
 
-__all__ = ["fold_input_records", "install", "union_offset"]
+__all__ = [
+    "fold_input_records",
+    "install",
+    "shim_status",
+    "ensure",
+    "union_offset",
+]
 
 # Windows 控制台输入记录类型（EVENT_TYPE，msdn INPUT_RECORD）
 KEY_EVENT = 0x0001
@@ -206,3 +212,38 @@ def install() -> bool:
     mod.EventMonitor.run = _patched_run  # type: ignore[attr-defined]
     mod.EventMonitor._jarvis_ime_shim = True  # type: ignore[attr-defined]
     return True
+
+
+def shim_status() -> str:
+    """tui-ux13: 纯函数读 EventMonitor 属性 → "installed" / "drifted" / "absent"。
+
+    非 win32 或 textual.win32 模块缺失/导入失败 → "absent"。可 fake 模块属性单测。
+    """
+    if sys.platform != "win32":
+        return "absent"
+    try:
+        import textual.drivers.win32 as mod
+    except Exception:  # noqa: BLE001
+        return "absent"
+    if not getattr(mod.EventMonitor, "_jarvis_ime_shim", False):
+        return "absent"
+    if getattr(mod.EventMonitor, "_jarvis_ime_drift", False):
+        return "drifted"
+    return "installed"
+
+
+def ensure() -> str:
+    """tui-ux13: 低频复检入口（幂等）。
+
+    absent → install；drifted → 清 _jarvis_ime_drift 后重装；installed → no-op。
+    返回装配后的新状态（shim_status()），替代 main.py 一次性 install。
+    """
+    status = shim_status()
+    if status == "drifted":
+        try:
+            import textual.drivers.win32 as mod
+            mod.EventMonitor._jarvis_ime_drift = False  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001
+            pass
+    install()
+    return shim_status()

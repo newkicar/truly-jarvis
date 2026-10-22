@@ -56,11 +56,11 @@ async def test_app_stream_agent_delegates_to_presenter(monkeypatch):
 
         with patch.object(TurnPresenter, "__init__", spy_init), \
              patch.object(TurnPresenter, "run", lambda self: setattr(self, "ran", True)):
-            from textual.widgets import Input
+            from src.tui import JarvisTextArea
 
-            inp = app.query_one(Input)
+            inp = app.query_one(JarvisTextArea)
             inp.focus()
-            inp.value = "你好"
+            inp.text = "你好"
             await pilot.pause()
             await pilot.press("enter")
             for _ in range(30):

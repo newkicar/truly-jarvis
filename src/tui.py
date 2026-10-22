@@ -11,13 +11,14 @@ from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import Button, Footer, Header, Input, Label, OptionList, RichLog, Static, TextArea
 from textual.css.query import NoMatches
 from textual.widgets.option_list import Option
 from textual.worker import Worker
 
-from src import commands
+from src import commands, ime_shim
 from src.clipboard_image import (
     build_multimodal_content,
     image_fallback_text,
@@ -26,7 +27,7 @@ from src.clipboard_image import (
 )
 from src.tui_punct import PUNCT_ITEMS, ime_hint_line, is_conhost_like
 from src.skill_discovery import discover_skill_catalog
-from src.tui_completion import OverlayState, apply_suggestion, resolve_overlay_state
+from src.tui_completion import OverlayState, apply_suggestion_on_line, line_projection, resolve_overlay_state
 from src.tui_log import CopyableRichLog
 from src import tui_format
 from src.tui_turn import TurnPresenter
@@ -85,27 +86,37 @@ def read_os_clipboard() -> str:
     return ""
 
 
-class PasteInput(Input):
-    """支持系统剪贴板粘贴的输入框。
+class JarvisSubmitted(Message):
+    """tui-ux13：主输入框提交消息（裸 Enter，多行）。text = 框内全文。"""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        super().__init__()
+
+
+class JarvisTextChanged(Message):
+    """tui-ux13：主输入框内容变化（补全面板刷新）；widget = 触发变化的 TextArea。"""
+
+    def __init__(self, widget) -> None:
+        self.widget = widget
+        super().__init__()
+
+
+class PasteTextArea(TextArea):
+    """支持系统剪贴板粘贴的 TextArea（tui-ux13：旧粘贴链路整体上提为基类）。
 
     三个粘贴入口各自的病因与对策：
-    - ctrl+v：Textual 默认 action_paste 读 app.clipboard（只含 app 内复制的内容），
-      对外部复制的文本永远粘贴空 → 覆盖为读 OS 剪贴板；
+    - ctrl+v：Textual 原生 action_paste 只读 app.clipboard（仅 app 内复制内容），
+      外部复制永远粘不进 → worker 读 OS 剪贴板，空则回落 app.clipboard；
     - ctrl+shift+v：终端若把它当普通按键透传，Textual 无此绑定 → 显式补绑定；
     - 右键/中键：Textual 鼠标捕获使终端级右键粘贴失效 → 绑定鼠标键触发粘贴
-      （button 2/3 覆盖 win32 驱动的右/中键，不碰左键选区）。
+      （button 2/3，不碰左键选区）。
+    写回走 _replace_via_keyboard + move_cursor（尊重选区；全量多行粘贴，
+    旧首行裁剪语义废弃——tui-ux13 语义变化点 ①）。
     """
 
     BINDINGS = [
         Binding("ctrl+shift+v", "paste", "粘贴", show=False),
-        # #08 Plan/Act：输入框聚焦时 Tab 切换模式（widget 级绑定先于 Screen 的
-        # focus_next；补全活跃时由 app.on_key 先行拦截，仍为接受建议）。
-        Binding("tab", "app.toggle_mode", "Plan/Act", show=False),
-        Binding("shift+tab", "app.toggle_mode_reverse", "Plan/Act 反向", show=False),
-        # #04 tui-ux6：Shift+Enter 换行（续行缓冲）；Ctrl+J 为常绑退路
-        #（ConPTY 对 shift 修饰键透传不保证，需用户实测回传）。
-        Binding("shift+enter", "app.continuation_newline", "换行", show=False),
-        Binding("ctrl+j", "app.continuation_newline", "换行(退路)", show=False),
     ]
 
     def action_paste(self) -> None:
@@ -113,8 +124,10 @@ class PasteInput(Input):
 
     def _read_clipboard_worker(self) -> None:
         text = read_os_clipboard()
+        if not text:
+            # OS 剪贴板无文本 → 回落 app 剪贴板（app 内复制的内容）
+            text = self.app.clipboard or ""
         if text:
-            # #03: 粘贴文本若是已存在的图片文件路径 → 登记附件并插 [Image #N] 占位符。
             image_path = looks_like_image_path(text)
             if image_path:
                 idx = self.app.call_from_thread(self.app._register_image_attachment, image_path)
@@ -124,7 +137,6 @@ class PasteInput(Input):
                 return
             self.app.call_from_thread(self._apply_paste, text)
             return
-        # #03: 剪贴板无文本 → 读剪贴板图片（codex 同款：落盘临时 PNG + 原子占位符）。
         image = try_copy_clipboard_image()
         if image:
             idx = self.app.call_from_thread(self.app._register_image_attachment, image)
@@ -133,14 +145,12 @@ class PasteInput(Input):
                 self.app.call_from_thread(self.app.notify, f"已插入 [Image #{idx}]")
 
     def _apply_paste(self, text: str) -> None:
-        line = text.splitlines()[0] if text else ""
-        if not line:
+        if not text or not self.is_mounted:
             return
-        selection = self.selection
-        if selection.is_empty:
-            self.insert_text_at_cursor(line)
-        else:
-            self.replace(line, *selection)
+        result = self._replace_via_keyboard(text, *self.selection)
+        if result:
+            self.move_cursor(result.end_location)
+            self.post_message(JarvisTextChanged(self))
 
     async def _on_mouse_down(self, event: events.MouseDown) -> None:
         if event.button in (2, 3):
@@ -151,21 +161,56 @@ class PasteInput(Input):
         await super()._on_mouse_down(event)
 
     async def on_event(self, event: events.Event) -> None:
-        """tui-ux6 #04：空输入框 Backspace → 弹回末条续行（与换行动作同款逻辑）。
+        """Key 事件走 on_event → 绑定链 → 私有 _on_key（Textual 8.x 实证）。
 
-        Textual 8.x 无 Widget.on_key 钩子（Key 事件走 on_event → 绑定链 →
-        私有 _on_key），故在 on_event 层拦截：stop + prevent_default 后手动
-        触发换行动作（弹栈路径），不再交给 Input 默认 backspace。
+        在 on_event 层对「产生文本变化的键」补 post JarvisTextChanged：仅
+        「可见字符」（ord>=32 且非 127）与 backspace/delete 视为文本变化。
+        注意：escape（\x1b）等控制键 character 非空但不改文本，若 post 会重触发
+        _refresh_suggestions、把用户刚用 escape 关闭的补全面板重新弹出（tui-ux13 回归）。
+        绑定链消费的键（shift+enter/ctrl+j 换行）由 action_newline 自行 post，不重复。
         """
-        if (
-            isinstance(event, events.Key)
-            and event.key == "backspace"
-            and not self.value
-            and getattr(self.app, "_continuation", None)
-        ):
+        if isinstance(event, events.Key):
+            await super().on_event(event)
+            char = event.character
+            if (
+                (char and ord(char) >= 32 and ord(char) != 127)
+                or event.key in ("backspace", "delete")
+            ):
+                self.post_message(JarvisTextChanged(self))
+            return
+        await super().on_event(event)
+
+
+class JarvisTextArea(PasteTextArea):
+    """tui-ux13 主输入框：框内多行（shift+enter/ctrl+j 插 \\n）、裸 Enter 提交、
+    Tab（补全不活跃时）切换 Plan/Act。模态内子类（ModalTextArea）不继承提交拦截。"""
+
+    BINDINGS = [
+        *PasteTextArea.BINDINGS,
+        # #08 Plan/Act：输入框聚焦时 Tab 切换模式（widget 级绑定先于 Screen 的
+        # focus_next；补全活跃时由 app.on_key 先行拦截，仍为接受建议）。
+        Binding("tab", "app.toggle_mode", "Plan/Act", show=False),
+        Binding("shift+tab", "app.toggle_mode_reverse", "Plan/Act 反向", show=False),
+        # tui-ux13：Shift+Enter 框内换行；Ctrl+J 为常绑退路
+        #（ConPTY 对 shift 修饰键透传不保证，ctrl+j 退路在案）。
+        Binding("shift+enter", "newline", "换行", show=False),
+        Binding("ctrl+j", "newline", "换行(退路)", show=False),
+    ]
+
+    def action_newline(self) -> None:
+        result = self._replace_via_keyboard("\n", *self.selection)
+        if result:
+            self.move_cursor(result.end_location)
+            self.post_message(JarvisTextChanged(self))
+
+    async def on_event(self, event: events.Event) -> None:
+        # Textual 8.x：Key.key 为合成串（"enter" / "shift+enter" / "ctrl+j"），
+        # 8.2.8 无 Key.modifiers 属性——裸 Enter 即 key == "enter"（shift 版 key 名不同）。
+        if isinstance(event, events.Key) and event.key == "enter":
+            # 裸 Enter 提交（shift+enter 的 key 名为 "shift+enter"，不在此拦截，放行给绑定链）
             event.stop()
             event.prevent_default()
-            self.app.action_continuation_newline()
+            self.post_message(JarvisSubmitted(self.text))
             return
         await super().on_event(event)
 
@@ -385,7 +430,7 @@ def _param_display(v, limit: int = 500) -> str:
     return s
 
 
-class ModalTextArea(TextArea):
+class ModalTextArea(PasteTextArea):
     """模态内多行参数编辑框（tui-ux10）：结构消解 Input 的灰选态。
 
     Input select_on_focus=True 默认聚焦即全文选中（灰选区）+ 首键整值
@@ -396,15 +441,10 @@ class ModalTextArea(TextArea):
 
     tui-ux10 工单 02：OS 剪贴板粘贴通道——Textual 原生 action_paste 只读
     app.clipboard（app 内复制内容）；终端协议下外部复制的文本永远粘不进
-    （同 PasteInput 病灶）。覆盖 action_paste：worker 线程先读 OS 剪贴板
+    （同主输入框病灶）。覆盖 action_paste：worker 线程先读 OS 剪贴板
     （3s 超时不冻 UI），空则回落 app.clipboard；写回走与原生粘贴同路
     _replace_via_keyboard + move_cursor（尊重选区、读只读态自守）。
     """
-
-    BINDINGS = [
-        # 终端 ctrl+shift+v 透传退路（同 PasteInput）；与原生 ctrl+v 合流
-        Binding("ctrl+shift+v", "paste", "粘贴", show=False),
-    ]
 
     def action_paste(self) -> None:
         self.run_worker(self._paste_from_os, thread=True, exclusive=True)
@@ -416,14 +456,6 @@ class ModalTextArea(TextArea):
             text = self.app.clipboard or ""
         if text:
             self.app.call_from_thread(self._apply_paste, text)
-
-    def _apply_paste(self, text: str) -> None:
-        if not text or not self.is_mounted:
-            return
-        result = self._replace_via_keyboard(text, *self.selection)
-        if result:
-            self.move_cursor(result.end_location)
-
 
 class EditParamsModal(ModalScreen):
     """编辑工具参数（从权限审批进入）：逐 key 两行——原文只读展示（Label）+
@@ -527,7 +559,7 @@ class EditParamsModal(ModalScreen):
         """ctrl+shift+enter 屏级退路（工单 02）：焦点编辑框插入 \n。
 
         TextArea 原生 enter 是多行主通道；ConPTY shift 修饰键透传不保证
-        （同 PasteInput 的 ctrl+j 退路键理由）。"""
+        （与主输入框 Ctrl+J 退路键同款理由）。"""
         focused = self.app.focused
         if isinstance(focused, ModalTextArea):
             focused.insert("\n")
@@ -890,19 +922,6 @@ class JarvisApp(App):
         display: block;
     }
 
-    #continuation {
-        height: auto;
-        display: none;
-        margin: 0 1 0 0;
-        padding: 0 1;
-        background: $panel 40%;
-        color: $text 40%;
-    }
-
-    #continuation.-active {
-        display: block;
-    }
-
     #status_spinner {
         height: 1;
         display: none;
@@ -940,7 +959,7 @@ class JarvisApp(App):
 
     #input {
         width: 1fr;
-        height: 1;
+        height: auto; min-height: 1; max-height: 5; overflow-y: auto;
         border: none;
         background: transparent;
         color: $text;
@@ -984,8 +1003,7 @@ class JarvisApp(App):
         self._image_seq = 0  # #03: 剪贴板图片附件序号（[Image #N]）
         self._image_attachments: dict[int, str] = {}  # #03: 占位符号 → 临时图片文件
         self._esc_primed_at = 0.0  # 空闲双 Esc 撤回窗口计时（monotonic；工单 07）
-        self._continuation: list[str] = []  # #04 tui-ux6: 已确认续行（Shift+Enter 多行输入）
-        self._cmd_newline_hinted = False  # 「/ 命令不支持换行」通知只提示一次
+        self._ime_drift_notified = False  # tui-ux13 L1: IME 漂移一次性 notify 标记
         self._turn_gate_threads: set[str] = set()  # tui-ux7 #02: 回合门（执行/收尾中的 thread 集合）
         self._queued_messages: list[tuple[str, str]] = []  # tui-ux7 #02: FIFO 排队（(thread_id, raw text)
         self.title = "JARVIS"
@@ -1104,10 +1122,13 @@ class JarvisApp(App):
                         )
                         yield Static("", id="ai_stream")
                 yield Static("", id="todo_panel")
-                yield Static("", id="continuation")
                 with Horizontal(id="editor_frame"):
                     yield Static("›", id="prompt")
-                    yield PasteInput(placeholder="输入消息，/ 开头为命令，@ 引用路径", id="input")
+                    yield JarvisTextArea(
+                        placeholder="输入消息，/ 开头为命令，@ 引用路径",
+                        id="input",
+                        show_line_numbers=False,
+                    )
                 yield Static("", id="status_spinner")
         yield PathCompletionOverlay(id="path_completion")
         yield Footer()
@@ -1265,7 +1286,8 @@ class JarvisApp(App):
         for line in self._startup_lines:
             self._write_system(log, line)
         self._refresh_session_sidebar()
-        self.query_one("#input", Input).focus()
+        self._maybe_warn_ime_drift()
+        self.query_one("#input", JarvisTextArea).focus()
         if self._startup_prompt:
             self.call_after_refresh(self._submit_startup_prompt)
 
@@ -1293,8 +1315,8 @@ class JarvisApp(App):
                 timeout=2,
             )
             return
-        input_widget = self.query_one("#input", Input)
-        input_widget.value = ""
+        input_widget = self.query_one("#input", JarvisTextArea)
+        input_widget.clear()
         log = self.query_one("#messages", RichLog)
         log.write(user_message_markup(text))
         # #04: 消息含虚拟前缀（/workspace/ 等）时追加 dim 锚点行，指出真实目录。
@@ -1431,11 +1453,11 @@ class JarvisApp(App):
             log.write("[dim]（会话已清空）[/dim]")
         log.write(system_message_markup(result))
         self._refresh_session_sidebar()
-        input_box = self.query_one("#input", Input)
+        input_box = self.query_one("#input", JarvisTextArea)
         input_box.focus()
         if restored and result.startswith("已撤回"):
-            input_box.value = restored
-            input_box.cursor_position = len(restored)
+            input_box.text = restored
+            input_box.cursor_location = (restored.count("\n"), len(restored.rsplit("\n", 1)[-1]))
 
     def _trigger_implicit_undo(self) -> None:
         """双 Esc 隐式撤回：作废本线程悬挂 HITL，然后撤回 1 条（与 /undo 1 同 worker 路径）。"""
@@ -1481,7 +1503,7 @@ class JarvisApp(App):
             self._adopt_thread(new_thread, f"[b]已切换到会话 {new_thread}[/b]")
         else:
             self._refresh_session_sidebar()
-        self.query_one("#input", Input).focus()
+        self.query_one("#input", JarvisTextArea).focus()
         if yolo_notify_text:
             # tui-ux12: /yolo 状态变更后短 banner + 副标题 [YOLO] 标记联动
             self.notify(yolo_notify_text, timeout=3)
@@ -1539,7 +1561,7 @@ class JarvisApp(App):
         thread_id = event.option.id
         if thread_id is not None:
             self._switch_session(str(thread_id))
-        self.query_one("#input", Input).focus()
+        self.query_one("#input", JarvisTextArea).focus()
 
     def action_toggle_mode(self) -> None:
         self._switch_mode(1)
@@ -1600,11 +1622,12 @@ class JarvisApp(App):
             return None
 
     def _refresh_suggestions(self) -> None:
-        inp = self.query_one("#input", Input)
+        inp = self.query_one("#input", JarvisTextArea)
         overlay = self._path_completion_overlay()
+        line, col = line_projection(inp.text, inp.cursor_location)
         state = resolve_overlay_state(
-            inp.value,
-            inp.cursor_position,
+            line,
+            col,
             vault_path=self._vault_path(),
             workspace_root=self._workspace_root(),
             memories_root=self._memories_root(),
@@ -1624,24 +1647,24 @@ class JarvisApp(App):
     def action_accept_suggestion(self) -> None:
         if not self._completion_active:
             return
-        inp = self.query_one("#input", Input)
+        inp = self.query_one("#input", JarvisTextArea)
         overlay = self._path_completion_overlay()
         selected = overlay.selected_insert()
         if not selected or not self._overlay_state.active:
             return
-        new_value, new_cursor = apply_suggestion(
-            inp.value,
+        new_text, new_cursor = apply_suggestion_on_line(
+            inp.text,
+            inp.cursor_location,
             self._overlay_state.at_index,
-            inp.cursor_position,
             selected,
         )
-        inp.value = new_value
-        inp.cursor_position = new_cursor
+        inp.text = new_text
+        inp.cursor_location = new_cursor
         inp.focus()
         self._refresh_suggestions()
 
-    def on_input_changed(self, event: Input.Changed) -> None:
-        if event.input.id == "input":
+    def on_jarvis_text_changed(self, event: JarvisTextChanged) -> None:
+        if event.widget.id == "input":
             self._refresh_suggestions()
 
     def on_key(self, event: events.Key) -> None:
@@ -1667,53 +1690,33 @@ class JarvisApp(App):
             event.prevent_default()
             event.stop()
 
-    # --- tui-ux6 #04：Shift+Enter 多行输入（continuation buffer） ----------------
-
-    def action_continuation_newline(self) -> None:
-        """Shift+Enter / Ctrl+J：压续行入栈；空框时弹末条回框；/ 命令首行不换行。"""
-        inp = self.query_one("#input", Input)
-        value = inp.value.strip()
-        if not value:
-            # 空框：弹末条续行回框（空 Backspace 同路径）
-            if self._continuation:
-                inp.value = self._continuation.pop()
-                self._refresh_continuation()
-            return
-        if not self._continuation and value.startswith("/"):
-            # / 命令不支持换行：Enter 直接提交，notify 只提示一次
-            if not self._cmd_newline_hinted:
-                self.notify("命令不支持换行，按 Enter 提交", severity="warning")
-                self._cmd_newline_hinted = True
-            return
-        self._continuation.append(value)
-        inp.value = ""
-        inp.focus()
-        self._refresh_continuation()
-
-    def _refresh_continuation(self) -> None:
-        """#continuation dim 面板堆叠显示已确认续行；空则隐藏。"""
-        panel = self.query_one("#continuation", Static)
-        panel.update("\n".join(self._continuation))
-        if self._continuation:
-            panel.add_class("-active")
-        else:
-            panel.remove_class("-active")
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
+    def on_jarvis_submitted(self, event: JarvisSubmitted) -> None:
+        """tui-ux13：主输入框提交（框内多行；尾空白/尾空行由 build_submission 裁掉）。"""
         overlay = self._path_completion_overlay()
         overlay.hide()
         self._completion_active = False
         self._overlay_state = OverlayState(kind="none", at_index=0, items=())
-        # tui-ux6 #04：提交值 = 已确认续行 + 当前行，换行拼接（末行空则只拼续行）
-        value = event.value
-        if self._continuation:
-            value = (
-                "\n".join([*self._continuation, value]) if value else "\n".join(self._continuation)
-            )
-        self._continuation.clear()
-        self._cmd_newline_hinted = False
-        self._refresh_continuation()
-        self._handle_user_message(value)
+        vpm = commands.virtual_path_mappings(self.config)
+        payload, err = commands.build_submission(event.text, tuple(vpm))
+        if err:
+            self.notify(err, severity="warning")
+            return
+        if payload is None:
+            return
+        self.query_one("#input", JarvisTextArea).clear()
+        self._handle_user_message(payload)
+
+    def _maybe_warn_ime_drift(self) -> None:
+        """tui-ux13 L1：低频复检 IME shim 状态；非 installed 且未提示过 → 一次性 notify。"""
+        if self._ime_drift_notified or sys.platform != "win32":
+            return
+        if ime_shim.shim_status() == "installed":
+            return
+        self._ime_drift_notified = True
+        self.notify(
+            "输入通道漂移，中文输入可能受影响；Ctrl+. 标点快插面板仍可用，详见 /doctor",
+            timeout=5,
+        )
 
     def _stream_agent(
         self,
@@ -1742,6 +1745,7 @@ class JarvisApp(App):
             result_holder["value"] = result
             done.set()
 
+        self._maybe_warn_ime_drift()
         self.push_screen(
             PermissionModal(
                 inv,
@@ -1805,8 +1809,9 @@ class JarvisApp(App):
         """打开标点快插面板（#02）；关闭后焦点回输入框。"""
 
         def after_close(_result) -> None:
-            self.query_one("#input", Input).focus()
+            self.query_one("#input", JarvisTextArea).focus()
 
+        self._maybe_warn_ime_drift()
         self.push_screen(PunctPanelModal(self), after_close)
 
     def _ime_hint_mode(self) -> str:
@@ -1819,19 +1824,19 @@ class JarvisApp(App):
 
     def _insert_punctuation(self, char: str) -> None:
         """#02: 标点插入——输入框有选区则替换，否则在光标处插入。"""
-        box = self.query_one("#input", Input)
-        if box.selection:
-            box.replace(char, *box.selection)
-        else:
-            box.insert_text_at_cursor(char)
+        box = self.query_one("#input", JarvisTextArea)
+        result = box._replace_via_keyboard(char, *box.selection)
+        if result:
+            box.move_cursor(result.end_location)
         box.focus()
 
     def action_copy_picker(self) -> None:
         """打开复制内容选择器（#01）；关闭后焦点回输入框。"""
 
         def after_close(_result) -> None:
-            self.query_one("#input", Input).focus()
+            self.query_one("#input", JarvisTextArea).focus()
 
+        self._maybe_warn_ime_drift()
         self.push_screen(CopyPickerModal(self), after_close)
 
     def action_copy_session_or_selection(self) -> None:

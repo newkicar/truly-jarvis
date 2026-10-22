@@ -297,6 +297,18 @@ def is_virtual_path_reference(text: str, mapping: dict[str, str] | None) -> bool
     return any(first.startswith(p) for p in prefixes)
 
 
+def build_submission(raw: str, virtual_prefixes: tuple[str, ...] = ()) -> tuple[str | None, str | None]:
+    """tui-ux13: 多行输入提交载荷（纯函数，可单测）：尾空白裁 + / 命令多行门禁。"""
+    payload = raw.rstrip()
+    if not payload:
+        return None, None
+    if "\n" in payload and payload.lstrip().startswith("/"):
+        first = payload.split()[0]
+        if not any(first.startswith(p) for p in virtual_prefixes):
+            return None, "/ 命令请放一行"
+    return payload, None
+
+
 def path_anchor_lines(text: str, mapping: dict[str, str]) -> list[str]:
     """text 中出现的虚拟路径 → 真实路径的 dim 锚点行（去重，上限 5 条）。
 
@@ -748,9 +760,9 @@ def format_doctor_report(config, agent, thread_id: str, *, mcp_tool_count: int |
     else:
         lines.append("会话状态:   正常")
 
-    from src.input_probe import doctor_input_channel_line
+    from src.input_probe import doctor_input_channel_lines
 
-    lines.append(doctor_input_channel_line())
+    lines.extend(doctor_input_channel_lines())
 
     return "\n".join(lines)
 

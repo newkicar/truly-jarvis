@@ -1,6 +1,6 @@
 """TUI 补全状态机测试。"""
 from src.skill_discovery import SkillMeta, fuzzy_filter_skills
-from src.tui_completion import resolve_overlay_state, use_query
+from src.tui_completion import apply_suggestion, apply_suggestion_on_line, line_projection, resolve_overlay_state, use_query
 
 
 def test_resolve_slash_overlay(tmp_path):
@@ -140,3 +140,37 @@ def test_use_skill_item_label_and_hint():
     assert item.insert == "long-desc"
     assert item.label == "long-desc [manual]"
     assert item.hint == "X" * 40 + "…"
+
+
+# ---------------------------------------------------------------------------
+# tui-ux13: 光标行投影 + 行内建议应用（多行输入框补全）
+# ---------------------------------------------------------------------------
+
+def test_line_projection_clamp_out_of_bounds():
+    text = "l0\nl1"
+    assert line_projection(text, (0, 0)) == ("l0", 0)
+    assert line_projection(text, (5, 9)) == ("l1", 2)
+    assert line_projection(text, (-1, 3)) == ("l0", 2)
+
+
+def test_line_projection_mid_line():
+    text = "first\nsecond\nthird"
+    assert line_projection(text, (1, 2)) == ("second", 2)
+
+
+def test_apply_suggestion_on_line_only_touches_cursor_line():
+    text = "aaa\n@In\nzzz"
+    # @ 触发点 at_index=0，光标在行内 col 3；建议替换 [0,3) 区间，
+    # 不尾随空格的建议自动补尾随空格（apply_suggestion 契约）
+    new_text, new_cursor = apply_suggestion_on_line(text, (1, 3), 0, "/vault/x.md")
+    assert new_text == "aaa\n/vault/x.md \nzzz"
+    assert new_cursor == (1, 12)
+    assert new_text.split("\n")[0] == "aaa" and new_text.split("\n")[2] == "zzz"
+
+
+def test_apply_suggestion_on_line_equivalent_to_single_line():
+    text = "onlyline"
+    a = apply_suggestion_on_line(text, (0, 3), 0, "insert")
+    b = apply_suggestion(text, 0, 3, "insert")
+    assert a[0] == b[0]
+    assert a[1] == (0, b[1])

@@ -246,10 +246,11 @@ def main(argv=None) -> int:
                 from src.tui import JarvisApp
                 from src import ime_shim
 
-                if not ime_shim.install():
+                status = ime_shim.ensure()
+                if sys.platform == "win32" and status != "installed":
                     startup_lines.append(
-                        "警告：IME 输入补全 shim 未安装（Textual 版本改形）；"
-                        "conhost 下部分全角标点可能输入不了，可 Ctrl+. 快插。"
+                        f"警告：IME 输入通道状态 {status}；中文输入可能受影响，"
+                        "全角标点可 Ctrl+. 快插面板，详见 /doctor。"
                     )
                 JarvisApp(
                     config,

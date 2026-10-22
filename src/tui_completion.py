@@ -142,3 +142,44 @@ def apply_suggestion(value: str, at_index: int, cursor: int, insert: str) -> tup
     new_value = value[:at_index] + replacement + value[cursor:]
     new_cursor = at_index + len(replacement)
     return new_value, new_cursor
+
+def line_projection(text: str, cursor: tuple[int, int]) -> tuple[str, int]:
+    """tui-ux13: cursor-line projection.
+
+    text split by \n; cursor=(row, col). Out-of-bounds clamped.
+    Returns (cursor-line text, column within that line).
+    """
+    lines = text.split("\n")
+    row = max(0, min(cursor[0], len(lines) - 1))
+    line = lines[row]
+    col = max(0, min(cursor[1], len(line)))
+    return line, col
+
+
+def apply_suggestion_on_line(
+    text: str,
+    cursor: tuple[int, int],
+    at_index: int,
+    insert: str,
+) -> tuple[str, tuple[int, int]]:
+    """tui-ux13: replace suggestion on the cursor line, rebuild full text.
+
+    Args:
+      text: full multi-line text
+      cursor: (row, col) cursor position
+      at_index: completion trigger offset within the cursor line (from resolve_overlay_state)
+      insert: suggestion text to insert
+
+    Returns:
+      (new_text, new_cursor) where new_cursor = (cursor_row, new_col_in_line)
+    """
+    lines = text.split("\n")
+    row = max(0, min(cursor[0], len(lines) - 1))
+    line = lines[row]
+    line_cursor = max(0, min(cursor[1], len(line)))
+    new_line, new_line_cursor = apply_suggestion(line, at_index, line_cursor, insert)
+    lines[row] = new_line
+    new_text = "\n".join(lines)
+    new_cursor = (row, new_line_cursor)
+    return new_text, new_cursor
+

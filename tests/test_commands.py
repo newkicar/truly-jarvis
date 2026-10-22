@@ -1205,3 +1205,34 @@ def test_help_includes_yolo():
     assert "/yolo" in commands.CLI_HELP
     assert "/yolo" in commands.TUI_HELP
     assert "YOLO" in commands.CLI_HELP
+
+
+# ---------------------------------------------------------------------------
+# tui-ux13: build_submission 多行提交载荷（尾空白裁 + / 命令多行门禁）
+# ---------------------------------------------------------------------------
+
+def test_build_submission_single_line_unchanged():
+    assert commands.build_submission("hello ") == ("hello", None)
+
+
+def test_build_submission_strips_trailing_whitespace_and_newlines():
+    assert commands.build_submission("第一行\na\n\n") == ("第一行\na", None)
+
+
+def test_build_submission_empty_returns_none():
+    assert commands.build_submission("") == (None, None)
+    assert commands.build_submission("   \n  ") == (None, None)
+
+
+def test_build_submission_slash_multiline_rejected():
+    assert commands.build_submission("/history\nx") == (None, "/ 命令请放一行")
+    assert commands.build_submission("  /history\nx") == (None, "/ 命令请放一行")
+
+
+def test_build_submission_slash_single_line_allowed():
+    assert commands.build_submission("/history") == ("/history", None)
+
+
+def test_build_submission_virtual_prefix_multiline_allowed():
+    vpm = ("/workspace/", "/vault/")
+    assert commands.build_submission("/workspace/ls\n--detail", vpm) == ("/workspace/ls\n--detail", None)

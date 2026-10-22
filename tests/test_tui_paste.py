@@ -1,10 +1,10 @@
-"""PasteInput 粘贴链路测试：OS 剪贴板读取 + 键位 + 鼠标触发。"""
+"""PasteTextArea 粘贴链路测试（tui-ux13 起：#input 为 JarvisTextArea，全量多行粘贴）。"""
 import asyncio
 
 import pytest
 
 from src import tui
-from src.tui import PasteInput
+from src.tui import JarvisTextArea
 
 
 class _FakeAgent:
@@ -25,12 +25,12 @@ def _make_host():
     return tui.JarvisApp(None, _FakeAgent(), {"default": "ask", "tools": {}})
 
 
-async def _wait_for_paste(inp: PasteInput, expected: str, tries: int = 40) -> bool:
+async def _wait_for_text(inp: JarvisTextArea, expected: str, tries: int = 80) -> bool:
     for _ in range(tries):
-        if inp.value == expected:
+        if inp.text == expected:
             return True
         await asyncio.sleep(0.05)
-    return inp.value == expected
+    return inp.text == expected
 
 
 @pytest.mark.asyncio
@@ -38,10 +38,10 @@ async def test_ctrl_v_pastes_os_clipboard(monkeypatch):
     monkeypatch.setattr(tui, "read_os_clipboard", lambda: "pasted 文本")
     app = _make_host()
     async with app.run_test() as pilot:
-        inp = app.query_one("#input", PasteInput)
+        inp = app.query_one("#input", JarvisTextArea)
         inp.focus()
         await pilot.press("ctrl+v")
-        assert await _wait_for_paste(inp, "pasted 文本")
+        assert await _wait_for_text(inp, "pasted 文本")
 
 
 @pytest.mark.asyncio
@@ -49,14 +49,14 @@ async def test_ctrl_shift_v_pastes_os_clipboard(monkeypatch):
     monkeypatch.setattr(tui, "read_os_clipboard", lambda: "shift-paste")
     app = _make_host()
     async with app.run_test() as pilot:
-        inp = app.query_one("#input", PasteInput)
+        inp = app.query_one("#input", JarvisTextArea)
         inp.focus()
         await pilot.press("ctrl+shift+v")
-        assert await _wait_for_paste(inp, "shift-paste")
+        assert await _wait_for_text(inp, "shift-paste")
 
 
 @pytest.mark.asyncio
-async def test_mouse_paste_right_and_middle(monkeypatch):
+async def test_mouse_paste_right_and_middle():
     from unittest.mock import patch
 
     from rich.style import Style
@@ -65,7 +65,7 @@ async def test_mouse_paste_right_and_middle(monkeypatch):
 
     app = _make_host()
     async with app.run_test() as pilot:
-        inp = app.query_one("#input", PasteInput)
+        inp = app.query_one("#input", JarvisTextArea)
         for button in (2, 3):
             event = events.MouseDown(
                 widget=inp,
@@ -105,14 +105,15 @@ async def test_mouse_paste_right_and_middle(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_paste_multiline_takes_first_line(monkeypatch):
+async def test_paste_multiline_full_text(monkeypatch):
+    """tui-ux13 语义 ①：全量多行粘贴（旧首行裁剪废弃）。"""
     monkeypatch.setattr(tui, "read_os_clipboard", lambda: "first\nsecond\nthird")
     app = _make_host()
     async with app.run_test() as pilot:
-        inp = app.query_one("#input", PasteInput)
+        inp = app.query_one("#input", JarvisTextArea)
         inp.focus()
         await pilot.press("ctrl+v")
-        assert await _wait_for_paste(inp, "first")
+        assert await _wait_for_text(inp, "first\nsecond\nthird")
 
 
 def test_read_os_clipboard_smoke():

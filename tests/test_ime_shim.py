@@ -216,3 +216,53 @@ def test_normal_u_char_regression_unchanged() -> None:
     _set_key(rec, vk=0xBA, u_char="，")
     keys, _ = ime_shim.fold_input_records([rec])
     assert keys == ["，"]
+
+
+# ---- tui-ux13: shim_status three states + ensure idempotent recheck (L1) ----
+
+
+def _clear_shim_flags() -> None:
+    for attr in ("_jarvis_ime_shim", "_jarvis_ime_drift"):
+        if hasattr(win32.EventMonitor, attr):
+            delattr(win32.EventMonitor, attr)
+
+
+def test_shim_status_absent() -> None:
+    _clear_shim_flags()
+    assert ime_shim.shim_status() == "absent"
+
+
+def test_shim_status_drifted() -> None:
+    _clear_shim_flags()
+    win32.EventMonitor._jarvis_ime_shim = True
+    win32.EventMonitor._jarvis_ime_drift = True
+    assert ime_shim.shim_status() == "drifted"
+
+
+def test_shim_status_installed_after_install() -> None:
+    _clear_shim_flags()
+    assert ime_shim.install() is True
+    assert ime_shim.shim_status() == "installed"
+
+
+def test_ensure_absent_installs() -> None:
+    _clear_shim_flags()
+    assert ime_shim.shim_status() == "absent"
+    assert ime_shim.ensure() == "installed"
+    assert getattr(win32.EventMonitor, "_jarvis_ime_shim", False) is True
+
+
+def test_ensure_drifted_reinstalls() -> None:
+    _clear_shim_flags()
+    win32.EventMonitor._jarvis_ime_shim = True
+    win32.EventMonitor._jarvis_ime_drift = True
+    assert ime_shim.ensure() == "installed"
+    assert getattr(win32.EventMonitor, "_jarvis_ime_drift", False) is False
+
+
+def test_ensure_installed_is_noop() -> None:
+    """installed: ensure() does not replace run (idempotent), status stays installed."""
+    assert ime_shim.install() is True
+    patched = win32.EventMonitor.run
+    assert ime_shim.ensure() == "installed"
+    assert win32.EventMonitor.run is patched
