@@ -1240,3 +1240,47 @@ def test_yolo_notify_text():
     assert app._yolo_notify_text("/yolo") is None
     assert app._yolo_notify_text("/yolo x") is None
     assert app._yolo_notify_text("/help") is None
+
+
+
+@pytest.mark.asyncio
+async def test_yolo_badge_reflects_state():
+    """tui-ux14: YOLO 徽章——yolo_on 时显示 [b]⚠ YOLO[/b]；yolo_off 后隐藏。"""
+    from src.permissions import yolo_on, yolo_off
+
+    app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        badge = pilot.app.query_one("#yolo_badge", Static)
+        assert not badge.has_class("-active")
+        assert badge.content == ""
+        yolo_on(app.permission_state, app.thread_id)
+        app._update_sub_title()
+        await pilot.pause()
+        assert badge.has_class("-active")
+        assert "YOLO" in badge.content
+        yolo_off(app.permission_state, app.thread_id)
+        app._update_sub_title()
+        await pilot.pause()
+        assert not badge.has_class("-active")
+        assert badge.content == ""
+
+
+@pytest.mark.asyncio
+async def test_yolo_badge_session_switch_linkage(monkeypatch):
+    """tui-ux14: 切会话联动——切到非 YOLO 会话徽章隐藏；切回 YOLO 会话重新显示。"""
+    from src.permissions import yolo_on
+
+    app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        monkeypatch.setattr(commands, "finalize_turn", lambda agent, tid: None)
+        yolo_on(app.permission_state, "default")
+        app._update_sub_title()
+        await pilot.pause()
+        badge = pilot.app.query_one("#yolo_badge", Static)
+        assert badge.has_class("-active")
+        app._switch_session("plain-thread")
+        await pilot.pause()
+        assert not badge.has_class("-active")
+        app._switch_session("default")
+        await pilot.pause()
+        assert badge.has_class("-active")

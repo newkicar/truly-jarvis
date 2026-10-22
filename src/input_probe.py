@@ -74,7 +74,7 @@ def terminal_type_line(file_type: int) -> str:
 
 
 def doctor_input_channel_lines() -> list[str]:
-    """/doctor 输入通道 2 行（tui-ux13）：① CP + stdin 句柄类型 + IME shim 状态；② 终端类型 + 快插/探测入口。
+    """/doctor 输入通道 2 行（tui-ux13）：① CP + stdin 句柄类型 + IME shim 状态；② 终端类型 + 探测入口。
 
     绝不自动 SetConsoleCP：ConPTY 下 65000→65001 切换会破坏 IME，CP 异常仅告警。
     非 Windows / 无控制台句柄 → 单行 n/a。
@@ -90,7 +90,7 @@ def doctor_input_channel_lines() -> list[str]:
         ft = int(kernel32.GetFileType(os.gethandle(0)))
         shim = ime_shim.shim_status()
         line1 = f"{channel_line(cp, ft)} | IME shim={shim}"
-        line2 = f"{terminal_type_line(ft)} | 全角标点快插：TUI 内 Ctrl+. 开面板 | 探测 python -m src.input_probe"
+        line2 = f"{terminal_type_line(ft)} | 探测 python -m src.input_probe"
         if shim != "installed":
             line2 += f"（shim 状态 {shim}，中文输入可能受影响）"
         return [line1, line2]
@@ -123,7 +123,7 @@ def summarize_session(
         )
     else:
         lines.append(
-            f"判定: 未观察到中文 IME 记录（UNICODE/IME=0 且无 NUL-uChar）——请确认输入法已开启并在 conhost/Windows Terminal 下重跑；全角标点可用 Ctrl+. 快插面板兜底{cp_warn}"
+            f"判定: 未观察到中文 IME 记录（UNICODE/IME=0 且无 NUL-uChar）——请确认输入法已开启并在 conhost/Windows Terminal 下重跑{cp_warn}"
         )
     return lines
 

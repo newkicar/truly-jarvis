@@ -144,7 +144,7 @@ def test_summarize_session_nul_rebuild_state() -> None:
 
 def test_summarize_session_not_observed_state() -> None:
     lines = input_probe.summarize_session({input_probe.KEY_EVENT: 9}, 0, 65001, "Timeout")
-    assert "未观察到中文 IME 记录" in lines[1] and "Ctrl+." in lines[1]
+    assert "未观察到中文 IME 记录" in lines[1]
 
 
 def test_summarize_session_cp_warn_all_states() -> None:

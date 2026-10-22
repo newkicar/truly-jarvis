@@ -17,24 +17,19 @@ from src.tui import (
     EditParamsModal,
     ModalTextArea,
     PermissionModal,
-    PunctPanelModal,
     PrefixModal,
     modal_edit_result,
 )
 
 
 class _HostApp:
-    """最小 host：CopyPickerModal 需要 _copy_to_clipboard；PunctPanel 需要 _insert_punctuation。"""
+    """最小 host：CopyPickerModal 需要 _copy_to_clipboard。"""
 
     def __init__(self) -> None:
         self.copied: list[str] = []
-        self.inserted: list[str] = []
 
     def _copy_to_clipboard(self, text: str, note: str = "") -> None:
         self.copied.append(text)
-
-    def _insert_punctuation(self, ch: str) -> None:
-        self.inserted.append(ch)
 
 
 class _ModalHost(App):
@@ -155,14 +150,6 @@ async def test_copy_picker_visible_at_24_rows() -> None:
         assert host.screen.query_one("#copy_list", OptionList).visible
 
     await _mount_and_check(CopyPickerModal(_HostApp()), check)
-
-
-@pytest.mark.asyncio
-async def test_punct_panel_visible_at_24_rows() -> None:
-    async def check(host, pilot) -> None:
-        assert host.screen.query_one("#punct_list", OptionList).visible
-
-    await _mount_and_check(PunctPanelModal(_HostApp()), check)
 
 
 @pytest.mark.asyncio

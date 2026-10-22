@@ -8,7 +8,7 @@ from rich.markup import escape
 from time import monotonic
 from typing import ClassVar
 from textual import events
-from textual.app import App, ComposeResult
+from textual.app import App, ComposeResult, ScreenStackError
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.message import Message
@@ -25,7 +25,7 @@ from src.clipboard_image import (
     looks_like_image_path,
     try_copy_clipboard_image,
 )
-from src.tui_punct import PUNCT_ITEMS, ime_hint_line, is_conhost_like
+from src.tui_punct import ime_hint_line, is_conhost_like
 from src.skill_discovery import discover_skill_catalog
 from src.tui_completion import OverlayState, apply_suggestion_on_line, line_projection, resolve_overlay_state
 from src.tui_log import CopyableRichLog
@@ -743,70 +743,6 @@ class SessionSidebar(OptionList):
                 self.highlighted = 0
 
 
-class PunctPanelModal(ModalScreen):
-    """标点快插面板（#02）：高频中英文标点列表，Enter 插入输入框，Esc 关闭。
-
-    针对 legacy conhost 终端中文标点 IME 候选窗不可用的问题；
-    Windows Terminal / ConEmu 下也可用作快捷输入。
-    """
-
-    BINDINGS = [
-        Binding("escape", "cancel", "关闭"),
-    ]
-
-    DEFAULT_CSS = """
-    PunctPanelModal {
-        align: center middle;
-        background: $surface;
-    }
-
-    #punct_panel {
-        width: 60;
-        height: auto;
-        border: thick $primary;
-        background: $panel;
-        padding: 1 2;
-    }
-
-    #punct_panel_title {
-        color: $accent;
-        text-style: bold;
-    }
-
-    #punct_list {
-        height: 14;
-        border: round $surface;
-        background: $surface;
-    }
-    """
-
-    def __init__(self, app: "JarvisApp") -> None:
-        super().__init__()
-        self._app = app
-
-    def compose(self) -> ComposeResult:
-        with Static(id="punct_panel"):
-            yield Label("标点快插（↑↓ 选择，Enter 插入输入框）", id="punct_panel_title")
-            yield OptionList(id="punct_list")
-
-    def on_mount(self) -> None:
-        listing = self.query_one("#punct_list", OptionList)
-        listing.add_options(
-            [Option(f"{char}\u3000{desc}", id=char) for char, desc in PUNCT_ITEMS]
-        )
-        listing.highlighted = 0
-        listing.focus()
-
-    def action_cancel(self) -> None:
-        """Esc 关闭面板（Textual 8.x 已移除 Screen.cancel 内置动作，需自行定义）。"""
-        self.dismiss()
-
-    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        char = str(event.option.id)
-        self.dismiss()
-        self._app._insert_punctuation(char)
-
-
 class JarvisApp(App):
     """JARVIS TUI。侧边栏 Y/Ctrl+Insert 复制会话 ID；Ctrl+C/Q 退出。"""
 
@@ -821,7 +757,6 @@ class JarvisApp(App):
         Binding("ctrl+insert", "copy_session_or_selection", "复制", priority=True),
         Binding("ctrl+shift+c", "copy_session_or_selection", "复制", priority=True),
         Binding("ctrl+shift+y", "copy_picker", "复制内容", show=False),
-        Binding("ctrl+.", "punct_panel", "标点面板", show=False),
         Binding("tab", "accept_suggestion", "接受建议", show=False),
         Binding("escape", "cancel", "取消", show=False),
         Binding("ctrl+q", "quit", "退出"),
@@ -969,6 +904,16 @@ class JarvisApp(App):
     #input:focus {
         border: none;
     }
+    #yolo_badge {
+        display: none;
+        width: auto;
+        height: 1;
+        border: round 20% $error 80%;
+        padding: 0 1;
+    }
+    #yolo_badge.-active {
+        display: block;
+    }
     """
 
     def __init__(
@@ -1066,6 +1011,23 @@ class JarvisApp(App):
         if yolo_active(self.permission_state, self.thread_id):
             parts.append("[YOLO]")
         self.sub_title = "  ".join(parts)
+        self._refresh_yolo_badge()
+
+    def _refresh_yolo_badge(self) -> None:
+        """tui-ux14: YOLO 徽章（输入框最右），随 _update_sub_title 联动显示。"""
+        try:
+            badge = self.query_one("#yolo_badge", Static)
+        except (NoMatches, ScreenStackError):
+            return  # tui-ux7: app 收尾/拆屏后节点可能已移除；
+            # tui-ux14: __init__ 期（DOM 未挂载）query_one 发 ScreenStackError，同样 no-op
+        from src.permissions import yolo_active
+
+        if yolo_active(self.permission_state, self.thread_id):
+            badge.add_class("-active")
+            badge.update("[b]⚠ YOLO[/b]")
+        else:
+            badge.remove_class("-active")
+            badge.update("")
 
     def _vault_path(self) -> Path | None:
         return getattr(self.config, "vault_path", None) if self.config else None
@@ -1129,6 +1091,7 @@ class JarvisApp(App):
                         id="input",
                         show_line_numbers=False,
                     )
+                    yield Static("", id="yolo_badge")
                 yield Static("", id="status_spinner")
         yield PathCompletionOverlay(id="path_completion")
         yield Footer()
@@ -1714,7 +1677,7 @@ class JarvisApp(App):
             return
         self._ime_drift_notified = True
         self.notify(
-            "输入通道漂移，中文输入可能受影响；Ctrl+. 标点快插面板仍可用，详见 /doctor",
+            "输入通道漂移，中文输入可能受影响，详见 /doctor",
             timeout=5,
         )
 
@@ -1805,15 +1768,6 @@ class JarvisApp(App):
         else:
             self.notify("复制失败（CMD 下请用 Ctrl+Insert）", timeout=3)
 
-    def action_punct_panel(self) -> None:
-        """打开标点快插面板（#02）；关闭后焦点回输入框。"""
-
-        def after_close(_result) -> None:
-            self.query_one("#input", JarvisTextArea).focus()
-
-        self._maybe_warn_ime_drift()
-        self.push_screen(PunctPanelModal(self), after_close)
-
     def _ime_hint_mode(self) -> str:
         """#02: 读 tui.ime_hint（off/on/auto），缺失或非法值回落 auto。"""
         if not self.config:
@@ -1821,14 +1775,6 @@ class JarvisApp(App):
         tui = getattr(self.config, "tui", None) or {}
         mode = str(tui.get("ime_hint", "auto")).strip().lower()
         return mode if mode in ("off", "on", "auto") else "auto"
-
-    def _insert_punctuation(self, char: str) -> None:
-        """#02: 标点插入——输入框有选区则替换，否则在光标处插入。"""
-        box = self.query_one("#input", JarvisTextArea)
-        result = box._replace_via_keyboard(char, *box.selection)
-        if result:
-            box.move_cursor(result.end_location)
-        box.focus()
 
     def action_copy_picker(self) -> None:
         """打开复制内容选择器（#01）；关闭后焦点回输入框。"""

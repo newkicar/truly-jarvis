@@ -249,8 +249,7 @@ def main(argv=None) -> int:
                 status = ime_shim.ensure()
                 if sys.platform == "win32" and status != "installed":
                     startup_lines.append(
-                        f"警告：IME 输入通道状态 {status}；中文输入可能受影响，"
-                        "全角标点可 Ctrl+. 快插面板，详见 /doctor。"
+                        f"警告：IME 输入通道状态 {status}；中文输入可能受影响，详见 /doctor。"
                     )
                 JarvisApp(
                     config,
