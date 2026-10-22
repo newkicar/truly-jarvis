@@ -213,4 +213,4 @@
   - 全量回归：本地 634 passed + 仅预存 3× test_config 失败（0 新增）；CI 基线 593 passed / 4 skipped。
   - 探针：`scratch/probe_shift_enter.py` 4/4 PASS（Textual 层）；真实终端 3 项（a) 三端点中文走查 2 汉字 + 1 全角标点；b) 同事两步自诊断回传；c) ConPTY shift+enter 透传 + ctrl+j 退路实测）留用户/同事实测，不阻塞。
   - AGENTS.md「TUI 体验十三」条目落盘（密文风格对齐 tui-ux10/tui-ux12）。
-  - 实现 commit `{COMMIT}`（docs commit 回填）。
+  - 实现 commit `80315be`（docs commit 回填）。

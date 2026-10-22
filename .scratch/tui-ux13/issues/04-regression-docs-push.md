@@ -17,7 +17,7 @@
 
 ## 验收
 - [x] 全量 pytest 对照基线无新增失败（634 passed + 仅预存 3× test_config；0 新增）
-- [x] AGENTS.md【TUI 体验十三】条目落盘（Bug1 语义变化 + Bug2 三层闭环 + 红线记录；commit 占位 `{COMMIT}` docs commit 回填）
+- [x] AGENTS.md【TUI 体验十三】条目落盘（Bug1 语义变化 + Bug2 三层闭环 + 红线记录；commit 占位 `80315be` docs commit 回填）
 - [x] 四张工单 done + 勾选；spec.md Status done + 收官字段填实
 - [ ] commit + push main；CI 状态检查（绿，或仅预存已知红且已向用户报备）（CI 绿后补勾）
-**Done:** 2026-10-22（全量回归 634 passed + 仅预存 3× test_config；AGENTS.md 条目落盘 + spec 收官填实 + 工单 01–03 勾验完成；主 commit `{COMMIT}`（docs commit 回填）；CI 验收项绿后补勾）
+**Done:** 2026-10-22（全量回归 634 passed + 仅预存 3× test_config；AGENTS.md 条目落盘 + spec 收官填实 + 工单 01–03 勾验完成；主 commit `80315be`（docs commit 回填）；CI 验收项绿后补勾）
