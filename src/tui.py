@@ -909,6 +909,8 @@ class JarvisApp(App):
         width: auto;
         height: auto;
         border: round 20% $error 80%;
+        color: $error;
+        text-style: bold;
         padding: 0 1;
     }
     #yolo_badge.-active {
@@ -1024,7 +1026,7 @@ class JarvisApp(App):
 
         if yolo_active(self.permission_state, self.thread_id):
             badge.add_class("-active")
-            badge.update("[b #ff5555]YOLO Mode[/]")
+            badge.update("YOLO Mode")  # tui-ux14: 纯文本继承 CSS $error/bold（真彩 hex 在终端不渲染）
         else:
             badge.remove_class("-active")
             badge.update("")

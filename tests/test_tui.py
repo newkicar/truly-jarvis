@@ -1273,6 +1273,27 @@ async def test_yolo_badge_reflects_state():
 
 
 @pytest.mark.asyncio
+async def test_yolo_badge_text_color_follows_theme_error():
+    """tui-ux14 回归：YOLO 徽章文字色 = 主题 $error 变量（与边框同源的红），text-style bold；
+    纯文本无真彩 markup（markup 里 #ff5555 真彩 hex 在终端不渲染 → 空红框 bug 根因）。
+    断言走 widget.styles 的 CSS 颜色解析层（compositor render_strips 在 headless 下脱色，不能用于断言）。"""
+    from src.permissions import yolo_on
+
+    app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        badge = pilot.app.query_one("#yolo_badge", Static)
+        yolo_on(app.permission_state, app.thread_id)
+        app._update_sub_title()
+        await pilot.pause()
+        assert badge.content == "YOLO Mode"  # 纯文本，无 markup
+        color = badge.styles.color
+        assert color is not None
+        assert color.r > color.g and color.r > color.b  # 红色系（主题 $error）
+        assert not color.r == color.g == color.b  # 非灰（非默认前景）
+        assert badge.styles.text_style.bold
+
+
+@pytest.mark.asyncio
 async def test_yolo_badge_session_switch_linkage(monkeypatch):
     """tui-ux14: 切会话联动——切到非 YOLO 会话徽章隐藏；切回 YOLO 会话重新显示。"""
     from src.permissions import yolo_on
