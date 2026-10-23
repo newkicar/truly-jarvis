@@ -1294,6 +1294,34 @@ async def test_yolo_badge_text_color_follows_theme_error():
 
 
 @pytest.mark.asyncio
+@pytest.mark.asyncio
+async def test_yolo_badge_compositor_strips():
+    """tui-ux14: YOLO 徽章文字必须到达合成 strips 层（终端输出的最后一道门）。
+    空红框症状 = widget 已更新但合成层无文本；此测试锁死 widget -> compositor 链路：
+    yolo_on 激活时 strip 文本含 'YOLO Mode'，yolo_off 后不含。"""
+    from src.permissions import yolo_on, yolo_off
+
+    app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
+    async with app.run_test(size=(100, 24)) as pilot:
+        badge = app.query_one("#yolo_badge", Static)
+
+        def _strip_texts():
+            strips = app.screen._compositor.render_strips(app.screen.size)
+            return [seg.text for s in strips if s is not None for seg in s._segments if seg.text]
+
+        assert not badge.has_class("-active")
+        assert "YOLO Mode" not in "\n".join(_strip_texts())
+        yolo_on(app.permission_state, app.thread_id)
+        app._update_sub_title()
+        await pilot.pause()
+        texts = _strip_texts()
+        assert "YOLO Mode" in texts  # 合成层文本存在（颜色断言不在此层，headless 脱色）
+        yolo_off(app.permission_state, app.thread_id)
+        app._update_sub_title()
+        await pilot.pause()
+        assert not badge.has_class("-active")
+        assert "YOLO Mode" not in "\n".join(_strip_texts())
+
 async def test_yolo_badge_session_switch_linkage(monkeypatch):
     """tui-ux14: 切会话联动——切到非 YOLO 会话徽章隐藏；切回 YOLO 会话重新显示。"""
     from src.permissions import yolo_on

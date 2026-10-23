@@ -1093,7 +1093,7 @@ class JarvisApp(App):
                         id="input",
                         show_line_numbers=False,
                     )
-                    yield Static("", id="yolo_badge")
+                    yield Static("", id="yolo_badge", markup=False)  # tui-ux14: 内容纯文本，禁 markup 解析（防回归）
                 yield Static("", id="status_spinner")
         yield PathCompletionOverlay(id="path_completion")
         yield Footer()
