@@ -42,6 +42,8 @@ _HELP_COMMANDS = """\
   /skills       列出可用 skills（manual 需 /use 手动触发）
   /use <skill> [说明]  手动调用 manual-only skill（注入完整指令）
   /yolo on | off  YOLO 模式开关：本会话所有动作免审批（仅当前会话、重启即关）
+  /compact [提示]  压缩当前会话历史为一条延续性摘要写回（可选文字提示压缩倾向）
+  /dream   梦境沉淀：回顾近期会话，蒸馏可复用知识到 memory/dream/knowledge.md
   /snapshot       记录当前文件状态到当前 checkpoint（git 快照）
   /snapshots      列出文件快照（git）
   /rollback <id>  按 checkpoint 回退项目文件到对应 git 提交（序号 / 短 id）
@@ -61,7 +63,9 @@ TUI_HELP = (
     + f"复制：对话区鼠标拖选（松开自动复制，{JARVIS_JSON} tui.copy_on_select）；"
     + "/copy 或 Ctrl+Shift+Y 选择复制内容（AI 回复 / 代码块 / 整段会话）；"
     + "Ctrl+Insert / Y（侧边栏会话）；/copy-session 复制 thread_id。\n"
-    + "退出：Ctrl+C 或 Ctrl+Q；集成终端若 Ctrl+C 直接杀进程，请用 /exit。\n"
+    + "退出：Ctrl+Q 立即；Ctrl+C 需 1.5s 内按两次（单次不退出）；"
+     + "集成终端若 Ctrl+C 直接杀进程，请用 /exit。\n"
+    + "Esc 三段（运行中）：Esc#1 提醒取消 → 1.5s 内 Esc#2 取消本轮 → 收尾后 1.5s 内 Esc#3 撤回上一轮。\n"
     + "撤回：/undo 撤回最近 1 条用户消息（多轮请反复调用）；TUI 空闲时双 Esc（1.5s 内）撤回上一轮，单 Esc 不退出。\n"
     + "HITL 审批时: 点击按钮选择（放行/永久放行/拒绝/编辑参数），Esc 放弃。\n"
 )
@@ -939,6 +943,96 @@ def undo(agent, thread_id: str, n: int = 1) -> str:
     return f"已撤回 {n} 条消息（仅消息层；文件未动；HITL 悬挂已作废）{suffix}"
 
 
+def compact(agent, thread_id: str, guide: str | None = None) -> str:
+    """压缩当前会话历史为一条延续性摘要，写回 checkpointer（纯消息层；文件/Inbox 不动）。
+
+    序列化最近 200 条消息为「[用户]/[JARVIS]/[工具:名]」行（单条截 600 字），模型生成
+    ≤800 字中文摘要；成功后以 REMOVE_ALL_MESSAGES + SystemMessage 整表重写（与
+    sanitize_history 同手法，随 checkpoint 持久化）。摘要为空/异常 → 友好报错，历史不动。
+    guide 非空时追加用户倾向提示，压缩优先保留相关细节。
+    """
+    from langchain_core.messages import (
+        AIMessage,
+        BaseMessage,
+        HumanMessage,
+        SystemMessage,
+        ToolMessage,
+    )
+    from langgraph.graph.message import REMOVE_ALL_MESSAGES, RemoveMessage
+
+    model = getattr(agent, "_jarvis_model", None)
+    if model is None:
+        return "无法压缩上下文：模型不可用"
+    head = agent.get_state(thread_config(thread_id))
+    messages = (head.values or {}).get("messages") or []
+    if len(messages) < 4:
+        return f"消息太少（{len(messages)} 条；至少 4 条），无需压缩"
+
+    def content_text(m: BaseMessage) -> str:
+        c = getattr(m, "content", "")
+        if isinstance(c, list):
+            parts = []
+            for b in c:
+                if isinstance(b, str):
+                    parts.append(b)
+                elif isinstance(b, dict) and b.get("type") == "text":
+                    parts.append(str(b.get("text", "")))
+            c = " ".join(p for p in parts if p)
+        return str(c).strip()
+
+    lines: list[str] = []
+    for m in messages[-200:]:
+        if isinstance(m, HumanMessage):
+            txt = content_text(m)
+            lines.append(("[用户] " + txt) if txt else "[用户] （空消息）")
+        elif isinstance(m, AIMessage):
+            txt = content_text(m)
+            extra = ""
+            calls = getattr(m, "tool_calls", None) or []
+            if calls:
+                extra = "（调用工具: " + "、".join(str(c.get("name", "?")) for c in calls) + "）"
+            lines.append(("[JARVIS] " + txt) if txt else "[JARVIS] （工具调用）" + extra)
+        elif isinstance(m, ToolMessage):
+            name = getattr(m, "name", None) or "?"
+            lines.append("[工具:%s] %s" % (name, content_text(m)))
+        elif isinstance(m, SystemMessage):
+            lines.append("[系统] " + content_text(m))
+        else:
+            lines.append("[%s] %s" % (type(m).__name__, content_text(m)))
+
+    for i, ln in enumerate(lines):
+        if len(ln) > 600:
+            lines[i] = ln[:600] + "…（截断，原文 %d 字符）" % len(ln)
+
+    prompt = (
+        "你是 JARVIS 代理的会话压缩器。把下面的对话历史压缩为一段不超过 800 字的中文"
+        "延续性摘要（markdown 列表）。必须保留：目标与约束、已完成事项、当前进度、"
+        "未决问题、可复用的文件路径/命令/参数。摘要之后代理将仅凭这段摘要继续工作。\n"
+    )
+    if guide:
+        prompt += "用户提示（压缩时优先保留与该提示相关的细节）：%s\n" % guide
+    prompt += "对话历史（最近 200 条，单条截断）：\n" + "\n".join(lines)
+
+    try:
+        resp = model.invoke([SystemMessage(prompt)])
+        summary = content_text(resp).strip()
+        if not summary:
+            return "上下文压缩失败：模型未返回摘要，历史未改动"
+    except Exception as exc:
+        return "上下文压缩失败（历史未改动）：%s: %s" % (type(exc).__name__, exc)
+    agent.update_state(
+        thread_config(thread_id),
+        {
+            "messages": [
+                RemoveMessage(id=REMOVE_ALL_MESSAGES),
+                SystemMessage("[上下文压缩]\n" + summary),
+            ]
+        },
+        as_node="model",
+    )
+    return "已压缩上下文：原 %d 条消息 → 摘要 %d 字，旧历史已覆盖（仅消息层）" % (len(messages), len(summary))
+
+
 def snapshot(agent, thread_id: str) -> str:
     state = agent.get_state(thread_config(thread_id))
     cid = state.config.get("configurable", {}).get("checkpoint_id")
@@ -1207,6 +1301,14 @@ def dispatch_command(
         from src.config import load_config
 
         return scheduler.reload_schedules(sched, agent, load_config()), None, None
+    if cmd == "/compact":
+        guide = command[len("/compact"):].strip() or None
+        return compact(agent, thread_id, guide), None, None
+    if cmd == "/dream":
+        from src import dream
+        from src.config import load_config
+
+        return dream.run_dream(agent, load_config()), None, None
     if cmd == "/yolo":
         return yolo_command_text(permission_state, thread_id, command), None, None
     return f"未知命令: {cmd}（/help 查看帮助）", None, None

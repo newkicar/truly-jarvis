@@ -1236,3 +1236,113 @@ def test_build_submission_slash_single_line_allowed():
 def test_build_submission_virtual_prefix_multiline_allowed():
     vpm = ("/workspace/", "/vault/")
     assert commands.build_submission("/workspace/ls\n--detail", vpm) == ("/workspace/ls\n--detail", None)
+
+
+# --- /compact ----------------------------------------------------------------
+
+class FakeCompactModel:
+    def __init__(self, content="这是摘要内容", fail=False):
+        self.content = content
+        self.fail = fail
+        self.prompts = []
+
+    def invoke(self, msgs):
+        self.prompts.append([m.content for m in msgs])
+        if self.fail:
+            raise RuntimeError("boom")
+        from langchain_core.messages import AIMessage
+
+        return AIMessage(content=self.content)
+
+
+class FakeCompactAgent:
+    def __init__(self, messages, model=None):
+        self.messages = messages
+        self.model = model
+        self._jarvis_model = model
+        self.checkpointer = None
+        self.state_updates = []
+
+    def get_state(self, cfg, *a, **k):
+        return type("Head", (), {"values": {"messages": self.messages}})()
+
+    def update_state(self, cfg, values, as_node=None, **k):
+        self.state_updates.append((cfg, values, as_node))
+        return None
+
+
+def _compact_msgs():
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    return [
+        HumanMessage(content="问题一"),
+        AIMessage(content="回答一"),
+        HumanMessage(content="问题二"),
+        AIMessage(content="回答二"),
+    ]
+
+
+def test_compact_no_model():
+    agent = FakeCompactAgent(_compact_msgs(), model=None)
+    assert commands.compact(agent, "t") == "无法压缩上下文：模型不可用"
+    assert agent.state_updates == []
+
+
+def test_compact_too_few_messages():
+    agent = FakeCompactAgent(_compact_msgs()[:3], model=FakeCompactModel())
+    text = commands.compact(agent, "t")
+    assert text.startswith("消息太少（3 条")
+    assert agent.state_updates == []
+
+
+def test_compact_success_rewrites_history():
+    from langchain_core.messages import SystemMessage
+
+    agent = FakeCompactAgent(_compact_msgs(), model=FakeCompactModel())
+    text = commands.compact(agent, "t")
+    assert text.startswith("已压缩上下文：原 4 条消息")
+    assert len(agent.state_updates) == 1
+    cfg, values, as_node = agent.state_updates[0]
+    assert as_node == "model"
+    assert len(values["messages"]) == 2
+    from langgraph.graph.message import REMOVE_ALL_MESSAGES
+
+    assert values["messages"][0].id == REMOVE_ALL_MESSAGES
+    assert isinstance(values["messages"][1], SystemMessage)
+    assert values["messages"][1].content == "[上下文压缩]\n这是摘要内容"
+
+
+def test_compact_guide_appended_to_prompt():
+    agent = FakeCompactAgent(_compact_msgs(), model=FakeCompactModel())
+    commands.compact(agent, "t", guide="保留关键命令")
+    prompt = agent.model.prompts[0][0]
+    assert "用户提示" in prompt
+    assert "保留关键命令" in prompt
+
+
+def test_compact_empty_summary_keeps_history():
+    agent = FakeCompactAgent(_compact_msgs(), model=FakeCompactModel(content=""))
+    assert commands.compact(agent, "t") == "上下文压缩失败：模型未返回摘要，历史未改动"
+    assert agent.state_updates == []
+
+
+def test_compact_exception_keeps_history():
+    agent = FakeCompactAgent(_compact_msgs(), model=FakeCompactModel(fail=True))
+    text = commands.compact(agent, "t")
+    assert "RuntimeError" in text and "boom" in text
+    assert agent.state_updates == []
+
+
+def test_dispatch_compact_no_model():
+    agent = FakeCompactAgent(_compact_msgs(), model=None)
+    out = commands.dispatch_command(agent, "t", "/compact")
+    assert out == ("无法压缩上下文：模型不可用", None, None)
+
+
+def test_dispatch_compact_with_guide():
+    agent = FakeCompactAgent(_compact_msgs(), model=FakeCompactModel())
+    out = commands.dispatch_command(agent, "t", "/compact 保留重要结论")
+    text, new_thread, replay_cid = out
+    assert text.startswith("已压缩")
+    assert new_thread is None and replay_cid is None
+    assert any("保留重要结论" in p[0] for p in agent.model.prompts)

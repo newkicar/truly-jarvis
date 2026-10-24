@@ -79,7 +79,8 @@ async def test_queue_serializes_turns_during_drain():
         await _type_and_enter(pilot, "第一条")
         await _poll(pilot, lambda: agent._calls >= 1, msg="第一条流未启动")
         await asyncio.sleep(0.2)
-        app.action_cancel()
+        app.action_cancel()  # tui-ux15：Esc#1 prime 取消
+        app.action_cancel()  # Esc#2 实际取消（drain 收尾）
         await pilot.pause()
         await _type_and_enter(pilot, "第二条")
         # 此刻门必须仍被持有（drain 未结束），第二条只能排队
@@ -104,10 +105,12 @@ async def test_double_esc_during_drain_no_implicit_undo():
         await _type_and_enter(pilot, "第一条")
         await _poll(pilot, lambda: agent._calls >= 1, msg="第一条流未启动")
         await asyncio.sleep(0.2)
-        app.action_cancel()   # worker 活跃 → 取消分支（drain）
-        app.action_cancel()   # worker 未 finished → 仍取消分支，不进撤回
+        app.action_cancel()   # tui-ux15：Esc#1 prime 取消（worker 活跃）
+        app.action_cancel()   # Esc#2 实际取消（worker pop；取消体设撤回 prime）
+        app.action_cancel()   # Esc#3 门占用 → 撤回被拒，prime 保留
         await pilot.pause()
-        # drain 结束后也无迟到的撤回（撤回只可能由 action_cancel 空闲路径触发）
+        # drain 结束后也无迟到的撤回（撤回只可能由 action_cancel 空闲路径触发；
+        # prime 保留但无第四次按下 → 不产生撤回）
         await _poll(pilot, lambda: not app._turn_gate_threads, msg="门未释放")
         await pilot.pause()
         log = pilot.app.query_one(CopyableRichLog)
@@ -123,7 +126,8 @@ async def test_new_session_drops_queued_message():
         await _type_and_enter(pilot, "第一条")
         await _poll(pilot, lambda: agent._calls >= 1, msg="第一条流未启动")
         await asyncio.sleep(0.2)
-        app.action_cancel()
+        app.action_cancel()  # tui-ux15：Esc#1 prime 取消
+        app.action_cancel()  # Esc#2 实际取消（drain 收尾）
         await pilot.pause()
         await _type_and_enter(pilot, "第二条")
         assert app.thread_id in app._turn_gate_threads, "第二条入口时门已释放"
@@ -183,7 +187,8 @@ async def test_yolo_background_gate_release_keeps_queue():
         await _type_and_enter(pilot, "第一条")
         await _poll(pilot, lambda: agent._calls >= 1, msg="第一条流未启动")
         await asyncio.sleep(0.2)
-        app.action_cancel()
+        app.action_cancel()  # tui-ux15：Esc#1 prime 取消
+        app.action_cancel()  # Esc#2 实际取消（drain 收尾）
         await pilot.pause()
         await _type_and_enter(pilot, "第二条")
         assert "tyolo" in app._turn_gate_threads, "第二条入口时门已释放"
@@ -208,7 +213,8 @@ async def test_switch_back_to_yolo_session_redelivers_queue():
         await _type_and_enter(pilot, "第一条")
         await _poll(pilot, lambda: agent._calls >= 1, msg="第一条流未启动")
         await asyncio.sleep(0.2)
-        app.action_cancel()
+        app.action_cancel()  # tui-ux15：Esc#1 prime 取消
+        app.action_cancel()  # Esc#2 实际取消（drain 收尾）
         await pilot.pause()
         await _type_and_enter(pilot, "第二条")
         app.action_new_session()

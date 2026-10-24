@@ -37,7 +37,8 @@ async def _enter_gate(app, agent, pilot):
     await _type_and_enter(pilot, "第一条")
     await _poll(pilot, lambda: agent._calls >= 1, msg="第一条流未启动")
     await asyncio.sleep(0.2)
-    app.action_cancel()
+    app.action_cancel()  # tui-ux15 Esc 三段：#1 prime 取消（仅提醒）
+    app.action_cancel()  # #2 实际取消（drain 收尾）
     await pilot.pause()
 
 

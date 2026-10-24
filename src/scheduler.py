@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.jobstores.base import JobLookupError
 from apscheduler.triggers.cron import CronTrigger
 
 from src.config import Config
@@ -210,10 +211,46 @@ def register_jobs(scheduler: BackgroundScheduler, agent, config: Config) -> list
     return [f"{t['id']}({describe_cron(t.get('cron', '0 8 * * *'))})" for t in tasks]
 
 
+
+def _dream_job(agent):
+    """梦境沉淀进程内任务：每次执行前重读 jarvis.json；异常不炸穿调度器。"""
+    from src import dream
+
+    try:
+        from src.config import load_config
+        config = load_config()
+        enabled, _cron = dream.dream_job_config(config)
+        if not enabled:
+            return
+        print(f"[dream] {dream.run_dream(agent, config)}", file=sys.stderr)
+    except Exception:  # noqa: BLE001
+        traceback.print_exc(file=sys.stderr)
+
+
+def register_dream_job(scheduler: BackgroundScheduler, agent, config: Config) -> str:
+    """注册/替换/停用梦境沉淀 cron 任务（id=javis-dream），返回状态文本。"""
+    from src import dream
+
+    enabled, cron = dream.dream_job_config(config)
+    if not enabled:
+        try:
+            scheduler.remove_job("javis-dream")
+        except JobLookupError:
+            pass
+        return "dream: 已停用"
+    try:
+        trigger = CronTrigger.from_crontab(cron)
+    except ValueError:
+        return f"dream: cron 表达式无效（{cron!r}），未注册梦境任务"
+    scheduler.add_job(_dream_job, trigger, args=[agent], id="javis-dream", replace_existing=True)
+    return f"dream({describe_cron(cron)})"
+
+
 def make_scheduler(agent, config: Config) -> BackgroundScheduler:
-    """装配调度器：为每个 enabled 任务注册 CronTrigger。"""
+    """装配调度器：为每个 enabled 任务注册 CronTrigger + 梦境沉淀任务。"""
     scheduler = BackgroundScheduler()
     register_jobs(scheduler, agent, config)
+    register_dream_job(scheduler, agent, config)
     return scheduler
 
 
@@ -226,7 +263,9 @@ def reload_schedules(scheduler: BackgroundScheduler, agent, config: Config) -> s
         if job.id.startswith("javis-"):
             job.remove()
     registered = register_jobs(scheduler, agent, config)
+    dream_line = register_dream_job(scheduler, agent, config)
     if not registered:
-        return "已重载：schedules/ 下无 enabled 定时任务。"
+        return f"已重载：schedules/ 下无 enabled 定时任务。 {dream_line}。"
     lines = [f"已重载 {len(registered)} 个定时任务:"] + [f"  - {r}" for r in registered]
+    lines.append(f"  - {dream_line}")
     return "\n".join(lines)

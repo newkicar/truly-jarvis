@@ -464,3 +464,47 @@ def test_build_main_prompt_includes_project_instructions(tmp_path):
     cfg2 = make_fake_config(empty_root)
     prompt2 = build_main_prompt(config=cfg2)
     assert "项目指令" not in prompt2
+
+
+def test_build_agent_injects_dream_knowledge_when_present(tmp_path, monkeypatch):
+    """memory/dream/knowledge.md 存在时须显式补注入 memory=（顶层 glob 非递归）。"""
+    import src.agent as agent_mod
+    from src.agent import create_deep_agent
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
+    cfg = make_fake_config(tmp_path)
+    dream_dir = cfg.memory_dir / "dream"
+    dream_dir.mkdir(parents=True, exist_ok=True)
+    (dream_dir / "knowledge.md").write_text("# 梦境知识库\n- 条目A\n", encoding="utf-8")
+
+    captured = {}
+
+    def spy(**kwargs):
+        captured.update(kwargs)
+        return create_deep_agent(**kwargs)
+
+    monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+    build_agent(cfg, model=ToolCapableFake(reply="ok"))
+
+    assert any(str(p).replace("\\", "/").endswith("dream/knowledge.md") for p in captured.get("memory", []))
+
+
+def test_build_agent_no_dream_injection_when_absent(tmp_path, monkeypatch):
+    import src.agent as agent_mod
+    from src.agent import create_deep_agent
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
+    cfg = make_fake_config(tmp_path)
+    cfg.memory_dir.mkdir(parents=True, exist_ok=True)
+    (cfg.memory_dir / "user-profile.md").write_text("# 用户资料\n", encoding="utf-8")
+
+    captured = {}
+
+    def spy(**kwargs):
+        captured.update(kwargs)
+        return create_deep_agent(**kwargs)
+
+    monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+    build_agent(cfg, model=ToolCapableFake(reply="ok"))
+
+    assert not any(str(p).replace("\\", "/").endswith("dream/knowledge.md") for p in captured.get("memory", []))

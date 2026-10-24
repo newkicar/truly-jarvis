@@ -50,6 +50,10 @@ jarvis --cli    # 纯 CLI 模式
 
 也可用 `python -m jarvis` 或 `python -m src.main`。
 
+若终端提示找不到 `jarvis` 命令（`pip install -e .` 已正常执行）：可执行文件安装在 Python 环境的
+`Scripts\` 目录（如 `D:\python_env\Scripts\jarvis.exe`）——新开终端（PATH 刷新）、把该 `Scripts\` 目录加入 PATH，
+或直接兜底 `python -m jarvis` 运行。
+
 **项目根**：在哪运行，哪就是 `/workspace/`。JARVIS 从 cwd 向上找 `jarvis.json` 确定项目根；也可设 `JARVIS_PROJECT_ROOT` 覆盖。
 
 **手动初始化**（如需自定义配置）：

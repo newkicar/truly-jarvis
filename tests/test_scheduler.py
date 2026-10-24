@@ -198,3 +198,82 @@ def test_resolve_save_path_vault_without_kb_raises(tmp_path):
         assert False, "应当抛 ScheduleConfigError"
     except scheduler.ScheduleConfigError as e:
         assert "knowledge_base" in str(e)
+
+
+def test_make_scheduler_registers_dream_job(tmp_path):
+    cfg = make_fake_config(tmp_path)
+    sched = scheduler.make_scheduler(object(), cfg)
+    try:
+        assert sched.get_job("javis-dream") is not None
+    finally:
+        try:
+            sched.shutdown(wait=False)
+        except Exception:
+            pass
+
+
+def test_register_dream_job_disabled_removes_job(tmp_path):
+    import dataclasses
+
+    cfg = dataclasses.replace(make_fake_config(tmp_path), dream={"enabled": False})
+    sched = BackgroundScheduler()
+    try:
+        text = scheduler.register_dream_job(sched, object(), make_fake_config(tmp_path))
+        assert "dream" in text  # 先注册
+        assert sched.get_job("javis-dream") is not None
+        text2 = scheduler.register_dream_job(sched, object(), cfg)
+        assert text2 == "dream: 已停用"
+        assert sched.get_job("javis-dream") is None
+    finally:
+        try:
+            sched.shutdown(wait=False)
+        except Exception:
+            pass
+
+
+def test_register_dream_job_disabled_no_existing_job(tmp_path):
+    import dataclasses
+
+    cfg = dataclasses.replace(make_fake_config(tmp_path), dream={"enabled": False})
+    sched = BackgroundScheduler()
+    try:
+        # 无既有 job → JobLookupError 容忍，不抛
+        assert scheduler.register_dream_job(sched, object(), cfg) == "dream: 已停用"
+    finally:
+        try:
+            sched.shutdown(wait=False)
+        except Exception:
+            pass
+
+
+def test_register_dream_job_bad_cron(tmp_path):
+    import dataclasses
+
+    cfg = dataclasses.replace(make_fake_config(tmp_path), dream={"cron": "not a cron"})
+    sched = BackgroundScheduler()
+    try:
+        text = scheduler.register_dream_job(sched, object(), cfg)
+        assert "cron 表达式无效" in text
+        assert sched.get_job("javis-dream") is None
+    finally:
+        try:
+            sched.shutdown(wait=False)
+        except Exception:
+            pass
+
+
+def test_reload_schedules_reregisters_dream(tmp_path):
+    cfg = make_fake_config(tmp_path)
+    _write_schedule(cfg.schedules_dir, "a.json", {"id": "a", "task": "t", "cron": "0 8 * * *"})
+    sched = BackgroundScheduler()
+    try:
+        assert scheduler.make_scheduler(object(), cfg).get_job("javis-dream") is not None
+        text = scheduler.reload_schedules(sched, object(), cfg)
+        assert "已重载 1 个定时任务" in text
+        assert "dream" in text
+        assert sched.get_job("javis-dream") is not None
+    finally:
+        try:
+            sched.shutdown(wait=False)
+        except Exception:
+            pass

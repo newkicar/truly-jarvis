@@ -9,7 +9,7 @@
 import json
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from src.project_paths import (
@@ -96,6 +96,8 @@ class Config:
     tui: dict[str, object]
     # #03: 模型图片输入能力门（auto/on/off，缺省 auto：首发多模态，被拒后路径引用重试一次）。
     model_image_input: str = "auto"
+    # tui-ux15: 梦境沉淀（dream 段：enabled/cron，缺省 enabled=True、cron='0 3 * * *'）
+    dream: dict[str, object] = field(default_factory=dict)
 
 
 def parse_env_text(text: str) -> dict[str, str]:
@@ -219,6 +221,9 @@ def load_config(
     tui_cfg = data.get("tui", {})
     if not isinstance(tui_cfg, dict):
         tui_cfg = {}
+    dream_cfg = data.get("dream", {})
+    if not isinstance(dream_cfg, dict):
+        dream_cfg = {}
 
     cfg = Config(
         project_root=root,
@@ -240,6 +245,7 @@ def load_config(
         execution_max_steps=max_steps,
         tui=tui_cfg,
         model_image_input=str(model_cfg.get("image_input", "auto")),
+        dream=dream_cfg,
     )
     ensure_user_home()
     set_runtime_project_root(cfg.project_root)

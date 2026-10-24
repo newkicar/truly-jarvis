@@ -347,11 +347,16 @@ def build_agent(
         default_deny_middleware=deny_middleware,
     )
 
-    memory = [
+    memory_files = [
         str(f).replace("\\", "/")
         for f in sorted(config.memory_dir.glob("*.md"))
         if f.name.lower() != "readme.md"
     ]
+    # tui-ux15: 梦境知识库（memory/dream/knowledge.md，顶层 glob 非递归）存在时显式补注入
+    _dream_knowledge = config.memory_dir / "dream" / "knowledge.md"
+    if _dream_knowledge.exists():
+        memory_files.append(str(_dream_knowledge).replace("\\", "/"))
+    memory = memory_files
 
     # #08 Plan/Act 模式闸门（与 deny_middleware 共享同一 permission_state 引用）
     from src.plan_mode import PlanModeMiddleware

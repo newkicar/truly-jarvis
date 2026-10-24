@@ -1,6 +1,7 @@
 """TUI 骨架测试：app 启动/退出、输入路由、命令分发到 commands.py。"""
 
 import asyncio
+import threading
 import time
 import types
 
@@ -217,7 +218,9 @@ async def test_escape_cancels_streaming():
         await _type_and_enter(pilot, "慢请求")
         await pilot.pause()
         await asyncio.sleep(0.1)
-        app.action_cancel()
+        app.action_cancel()  # tui-ux15：Esc#1 prime 取消（仅提醒，不取消）
+        assert "已取消" not in "".join(l.text for l in pilot.app.query_one(CopyableRichLog).lines)
+        app.action_cancel()  # Esc#2 实际取消（drain 收尾）
         await pilot.pause()
         await asyncio.sleep(0.4)
         await pilot.pause()
@@ -255,7 +258,8 @@ async def test_escape_cancel_banner_replaces_spinner():
         await _type_and_enter(pilot, "慢请求")
         await pilot.pause()
         await asyncio.sleep(0.1)
-        app.action_cancel()
+        app.action_cancel()  # tui-ux15：Esc#1 prime 取消（不写 banner）
+        app.action_cancel()  # Esc#2 实际取消（同步写 banner）
         # tui-ux7 CI-flake 修复：banner 由 action_cancel 在 UI 线程*同步*写入
         # （_show_cancel_banner）；worker 的 _hide_spinner 只能经事件循环（call_from_thread）
         # 执行。故此处*不* yield 事件循环（去掉原 pilot.pause）——同步读 spinner 必为
@@ -1340,3 +1344,200 @@ async def test_yolo_badge_session_switch_linkage(monkeypatch):
         app._switch_session("default")
         await pilot.pause()
         assert badge.has_class("-active")
+
+
+# ---------------------------------------------------------------------------
+# tui-ux15：Esc 三段（prime 取消 → 取消 → 撤回）与 Ctrl+C 二次确认退出
+# ---------------------------------------------------------------------------
+
+
+class _EscUndoAgent(FakeAgent):
+    """慢流（取消后 drain 窗口仍在）+ 可撤回 checkpoint 历史，Esc 三段测试宿主。"""
+
+    def __init__(self):
+        super().__init__(reply="")
+        from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage
+        self._rm = RemoveMessage
+        m1, a1 = HumanMessage("问题 1", id="m1"), AIMessage("回答 1", id="m2")
+        self._snaps = [
+            _UndoSnap("c0", "input", [m1]),
+            _UndoSnap("c1", "update", [m1, a1]),
+        ]
+        self._head = self._snaps[-1]
+        self.updates = []
+        self._drain_started = False
+
+    def stream_events(self, *args, **kwargs):
+        self._calls += 1
+
+        class S(_FakeStream):
+            interrupted = False
+            interrupts = None
+            output = None
+
+            def __init__(self):
+                self._items = [("messages", _FakeMsg(f"思考 {i}")) for i in range(6)]
+
+            def interleave(self, *kinds):
+                agent = self_agent
+                try:
+                    for item in self._items:
+                        time.sleep(0.15)
+                        yield item
+                finally:
+                    agent._drain_started = True
+
+        self_agent = self
+        return S()
+
+    def get_state_history(self, config=None):
+        return [self._head] + [s for s in reversed(self._snaps) if s is not self._head]
+
+    def get_state(self, config):
+        return self._head
+
+    def update_state(self, config, values=None, as_node=None):
+        self.updates.append((config, values, as_node))
+        return config
+
+
+@pytest.mark.asyncio
+async def test_single_esc_does_not_cancel_active_worker():
+    """tui-ux15：运行中单按 Esc 只 prime（提醒），不取消（worker 继续）。"""
+    agent = _EscUndoAgent()
+    app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "慢请求")
+        await pilot.pause()
+        await asyncio.sleep(0.1)
+        w = app._turn_workers.get(app.thread_id)
+        assert w is not None and not w.is_finished, "worker 未启动"
+        app.action_cancel()  # Esc#1：prime 取消
+        await pilot.pause()
+        w = app._turn_workers.get(app.thread_id)
+        assert w is not None and not w.is_finished, "单 Esc 不得取消 worker"
+        joined = "".join(l.text for l in pilot.app.query_one(CopyableRichLog).lines)
+        assert "已取消" not in joined
+
+
+@pytest.mark.asyncio
+async def test_esc_three_fast_primes_undo_survives_gate_release():
+    """tui-ux15：Esc×3 快速连按（#3 门占用撤回被拒、prime 保留）→ 门释放后单 Esc 即撤回。"""
+    agent = _EscUndoAgent()
+    app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "慢请求")
+        await pilot.pause()
+        await asyncio.sleep(0.1)
+        app.action_cancel()  # Esc#1 prime 取消
+        app.action_cancel()  # Esc#2 取消（drain）+ 撤回 prime
+        app.action_cancel()  # Esc#3 门占用 → 撤回被拒，prime 保留
+        # 门释放（drain 收尾 finally 释门，清阶段位、保留 prime）
+        deadline = time.monotonic() + 15
+        while app.thread_id in app._turn_gate_threads and time.monotonic() < deadline:
+            await pilot.pause()
+            await asyncio.sleep(0.05)
+        assert app.thread_id not in app._turn_gate_threads, "drain 收尾未释门"
+        app.action_cancel()  # 门开后单 Esc：隐式撤回上一轮
+        joined = await _wait_for_text(pilot, "已撤回")
+        assert "已撤回 1 条消息" in joined
+        assert agent.updates, "门保留 prime 后单 Esc 应触发撤回"
+
+
+@pytest.mark.asyncio
+async def test_ctrl_c_single_primes_no_exit():
+    """tui-ux15：单按 Ctrl+C 只 prime（提醒），应用不退出。"""
+    app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        app.action_prime_quit()
+        await pilot.pause()
+        assert app.is_running, "单按 Ctrl+C 不得退出"
+        assert app._quit_primed_at > 0, "prime 计时应置位"
+
+
+@pytest.mark.asyncio
+async def test_ctrl_c_double_exits():
+    """tui-ux15：1.5s 内连按两次 Ctrl+C 才退出（action_quit 生效）。"""
+    app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        app.action_prime_quit()  # Ctrl+C #1 prime
+        await pilot.pause()
+        assert app.is_running
+        app.action_prime_quit()  # Ctrl+C #2（窗口内）→ 退出
+        await pilot.pause()
+        assert not app.is_running, "窗口内双按 Ctrl+C 应退出"
+
+
+@pytest.mark.asyncio
+async def test_ctrl_c_expired_prime_reprimes_not_exit():
+    """tui-ux15：prime 过期后按 Ctrl+C 重新 prime（不退出、计时刷新）。"""
+    app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        app._quit_primed_at = time.monotonic() - 2.0  # 窗口已过期
+        app.action_prime_quit()
+        await pilot.pause()
+        assert app.is_running, "过期 prime 按下应重新 prime，不退出"
+        assert app._quit_primed_at > 0, "重新 prime 应刷新计时"
+
+
+class _CompactBlockModel:
+    """tui-ux15：compact 期间阻塞直到测试放行（用于持有回合门做生命周期断言）。"""
+
+    def __init__(self, release: "threading.Event"):
+        self._release = release
+
+    def invoke(self, msgs):
+        from langchain_core.messages import AIMessage
+        self._release.wait(20)
+        return AIMessage(content="摘要：完成了任务")
+
+
+class _CompactGateAgent(FakeAgent):
+    """tui-ux15：带模型与状态的 FakeAgent（/compact 门控生命周期用）。"""
+
+    def __init__(self):
+        super().__init__()
+        self._release = threading.Event()
+        self.updated = None
+        self._jarvis_model = _CompactBlockModel(self._release)
+
+    def get_state(self, config=None):
+        from langchain_core.messages import AIMessage, HumanMessage
+        msgs = [
+            HumanMessage("你好"),
+            AIMessage("您好"),
+            HumanMessage("做任务 A"),
+            AIMessage("任务 A 完成"),
+        ]
+
+        class _Head:
+            values = {"messages": msgs}
+
+        return _Head()
+
+    def update_state(self, config, values, as_node=None):
+        self.updated = (config, values, as_node)
+        return {}
+
+
+@pytest.mark.asyncio
+async def test_compact_gated_in_tui():
+    """tui-ux15：/compact 走门控 worker（提交即加门、模型完成前持门、完成释门）。"""
+    agent = _CompactGateAgent()
+    app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "/compact")
+        deadline = time.monotonic() + 15
+        while app.thread_id not in app._turn_gate_threads and time.monotonic() < deadline:
+            await pilot.pause()
+            await asyncio.sleep(0.05)
+        assert app.thread_id in app._turn_gate_threads, "/compact 应立即加门"
+        agent._release.set()
+        deadline = time.monotonic() + 15
+        while app.thread_id in app._turn_gate_threads and time.monotonic() < deadline:
+            await pilot.pause()
+            await asyncio.sleep(0.05)
+        assert app.thread_id not in app._turn_gate_threads, "门应在 /compact 完成后释放"
+        assert agent.updated is not None, "compact 成功应写回状态"
+        joined = "".join(l.text for l in pilot.app.query_one(CopyableRichLog).lines)
+        assert "已压缩上下文" in joined

@@ -47,8 +47,9 @@ from src.tui_format import (
 )
 
 
-# 空闲双 Esc 撤回窗口（秒）：窗口内第二次 Esc 触发上一轮消息层撤回（工单 07）。
+# Esc 取消/撤回与 Ctrl+C 退出缓冲窗口（秒）：窗口内第二次按下才生效（工单 07；tui-ux15 三段化）。
 ESC_UNDO_WINDOW = 1.5
+QUIT_CONFIRM_WINDOW = 1.5
 
 
 def read_os_clipboard() -> str:
@@ -776,7 +777,7 @@ class MessageQueueRow(Static):
 
 
 class JarvisApp(App):
-    """JARVIS TUI。侧边栏 Y/Ctrl+Insert 复制会话 ID；Ctrl+C/Q 退出。"""
+    """JARVIS TUI。侧边栏 Y/Ctrl+Insert 复制会话 ID；Ctrl+Q 立即退出，Ctrl+C 需 1.5s 内按两次。"""
 
     ALLOW_SELECT = True
 
@@ -792,7 +793,7 @@ class JarvisApp(App):
         Binding("tab", "accept_suggestion", "接受建议", show=False),
         Binding("escape", "cancel", "取消", show=False),
         Binding("ctrl+q", "quit", "退出"),
-        Binding("ctrl+c", "quit", "退出", priority=True),
+        Binding("ctrl+c", "prime_quit", "退出(两次)", priority=True),
     ]
 
     CSS = """
@@ -1000,6 +1001,10 @@ class JarvisApp(App):
         self._image_seq = 0  # #03: 剪贴板图片附件序号（[Image #N]）
         self._image_attachments: dict[int, str] = {}  # #03: 占位符号 → 临时图片文件
         self._esc_primed_at = 0.0  # 空闲双 Esc 撤回窗口计时（monotonic；工单 07）
+        # tui-ux15: Esc 三段（prime 取消 → 取消 → 撤回）与 Ctrl+C 二次确认计时
+        self._esc_phase = "none"  # "none" / "cancel"（worker 活跃时 Esc#1 的 prime 取消阶段）
+        self._esc_phase_at = 0.0
+        self._quit_primed_at = 0.0
         self._ime_drift_notified = False  # tui-ux13 L1: IME 漂移一次性 notify 标记
         self._turn_gate_threads: set[str] = set()  # tui-ux7 #02: 回合门（执行/收尾中的 thread 集合）
         # tui-ux14 #04: 插队消息缓存区（单一事实源 JumpInRegistry，与主代理 before_model 注入共享）
@@ -1254,6 +1259,9 @@ class JarvisApp(App):
         会话已切走（tid != 当前）→ 旧会话排队消息作废 + 提示；否则弹出 tid 队首重入
         _handle_user_message（重入时门已空 → 获取门并启动下一轮，FIFO 保守）。
         """
+        # tui-ux15: 门释放——只清 Esc 三段阶段位，保留取消体中设的撤回 prime（_esc_primed_at），
+        # 使「门占用期保留 prime、门开后单 Esc 即撤回」成立。
+        self._esc_phase = "none"
         self._turn_gate_threads.discard(tid)
         if tid in self._bg_turns:
             # tui-ux14 #03: YOLO 会话切走但回合仍在后台跑——队列属于该会话，静默保留
@@ -1364,7 +1372,8 @@ class JarvisApp(App):
         self._write_system(
             log,
             "会话：Ctrl+B 开侧边栏 → 点选 → Y 复制 ID / D 删除；或 /delete-session 2 按序号。"
-            " 复制：对话区拖选（松开自动复制）；/copy 或 Ctrl+Shift+Y 选复制内容；Ctrl+Insert。退出：/exit 或 Ctrl+Q。",
+            " 复制：对话区拖选（松开自动复制）；/copy 或 Ctrl+Shift+Y 选复制内容；Ctrl+Insert。"
+            " 退出：/exit 或 Ctrl+Q（立即）；Ctrl+C 需 1.5s 内按两次。",
         )
         # #02: conhost 标点提示（tui.ime_hint auto/on/off；auto 时仅 conhost 显示）
         hint = ime_hint_line(self._ime_hint_mode(), is_conhost_like())
@@ -1390,10 +1399,13 @@ class JarvisApp(App):
             return
         vpmapping = commands.virtual_path_mappings(self.config)
         # tui-ux7 #02: 回合串行化门——收尾期新消息排队而非并发启动（不清输入、不写日志，不重复）。
-        # 入门类型 = 普通消息（含虚拟路径引用）+ /replay + /use + /undo；
+        # 入门类型 = 普通消息（含虚拟路径引用）+ /replay + /use + /undo + /compact + /dream；
         # 读类 slash（/exit、/help、/copy、其他命令）不入门。
         is_slash_cmd = text.startswith("/") and not commands.is_virtual_path_reference(text, vpmapping)
-        turn_message = (not is_slash_cmd) or text.split()[0] in ("/replay", "/undo", "/use")
+        turn_message = (
+            (not is_slash_cmd)
+            or text.split()[0] in ("/replay", "/undo", "/use", "/compact", "/dream")
+        )
         if turn_message and self.thread_id in self._turn_gate_threads:
             n = self._queue.push(self.thread_id, text)
             self.notify(
@@ -1460,6 +1472,13 @@ class JarvisApp(App):
                     partial(self._stream_agent, user_input=msg)
                 )
                 return
+            if parts[0] in ("/compact", "/dream"):
+                # tui-ux15: /compact、/dream 门控（模型调用可阻塞；完成后释放回合门）
+                log.write(system_message_markup(f"正在执行 {parts[0]}…"))
+                self._show_spinner()
+                self._turn_gate_threads.add(self.thread_id)
+                self._spawn_turn_worker(partial(self._gate_command_worker, text))
+                return
             cmd = parts[0]
             log.write(system_message_markup(f"正在执行 {cmd}…"))
             self._spawn_turn_worker(partial(self._run_command_worker, text))
@@ -1498,6 +1517,20 @@ class JarvisApp(App):
         self.call_from_thread(
             self._apply_command_result, result, new_thread, self._yolo_notify_text(text)
         )
+
+    def _gate_command_worker(self, text: str) -> None:
+        """tui-ux15: /compact、/dream 门控 worker（模型调用可阻塞，完成后释放回合门）。"""
+        try:
+            result, new_thread, _replay_cid = commands.dispatch_command(
+                self.agent, self.thread_id, text, self.sched,
+                permission_state=self.permission_state,
+            )
+        except Exception as exc:  # noqa: BLE001
+            result, new_thread = f"命令失败: {exc}", None
+        self.call_from_thread(
+            self._apply_command_result, result, new_thread, self._yolo_notify_text(text)
+        )
+        self.call_from_thread(self._release_turn_gate, self.thread_id)
 
     def _yolo_notify_text(self, text: str) -> str | None:
         """tui-ux12: /yolo on/off 执行后短 banner（幂等同文案）；裸查询/非法参数不弹。"""
@@ -1544,12 +1577,15 @@ class JarvisApp(App):
             input_box.text = restored
             input_box.cursor_location = (restored.count("\n"), len(restored.rsplit("\n", 1)[-1]))
 
-    def _trigger_implicit_undo(self) -> None:
-        """双 Esc 隐式撤回：作废本线程悬挂 HITL，然后撤回 1 条（与 /undo 1 同 worker 路径）。"""
+    def _trigger_implicit_undo(self) -> bool:
+        """双 Esc 隐式撤回：作废本线程悬挂 HITL，然后撤回 1 条（与 /undo 1 同 worker 路径）。
+
+        返回是否实际启动撤回（False = 门占用被拒绝，调用方保留 prime 待门释放）。
+        """
         # tui-ux7 #02: 收尾中撤回被拒绝（不排队——撤销操作不能隔回重放）
         if self.thread_id in self._turn_gate_threads:
             self.notify("上一轮取消收尾中，请等待收尾结束后再撤回", timeout=2)
-            return
+            return False
         self._mark_hitl_resolved(self.thread_id, set(self._pending_hitl_keys))
         self._pending_hitl_keys.clear()
         self._bump_hitl_generation()
@@ -1558,6 +1594,7 @@ class JarvisApp(App):
         self._show_spinner()
         self._turn_gate_threads.add(self.thread_id)
         self._spawn_turn_worker(partial(self._undo_worker, 1))
+        return True
 
     def _spawn_turn_worker(self, worker_func) -> None:
         """tui-ux14 #03: 为当前 thread 启动回合 worker（UI 线程专用）。
@@ -1638,6 +1675,11 @@ class JarvisApp(App):
 
     def _adopt_thread(self, thread_id: str, message: str, *, clear: bool = False) -> None:
         """接管新会话：换 id → 副标题 → 侧边栏 → 写入消息。clear=True 时先清空显示栏。"""
+        # tui-ux15: 会话切换清零 Esc 三段 / Ctrl+C 二次确认计时
+        self._esc_phase = "none"
+        self._esc_phase_at = 0.0
+        self._esc_primed_at = 0.0
+        self._quit_primed_at = 0.0
         self.thread_id = thread_id
         self._update_sub_title()
         self._refresh_session_sidebar()
@@ -1975,8 +2017,20 @@ class JarvisApp(App):
         self.action_copy_session_or_selection()
 
     def action_cancel(self) -> None:
+        """tui-ux15 Esc 三段：运行中 Esc#1 prime 取消 → Esc#2（1.5s 内）取消 →
+        Esc#3（1.5s 内）撤回 1 轮；空闲态双 Esc 撤回语义不变。"""
         worker = self._turn_workers.get(self.thread_id)
         if worker is not None and not worker.is_finished:
+            now = monotonic()
+            if self._esc_phase != "cancel" or now - self._esc_phase_at > ESC_UNDO_WINDOW:
+                # Esc#1：prime 取消——只提醒，不取消
+                self._esc_phase, self._esc_phase_at = "cancel", now
+                self.notify(
+                    f"再按一次 Esc（{ESC_UNDO_WINDOW:g}s 内）取消本轮",
+                    timeout=ESC_UNDO_WINDOW,
+                )
+                return
+            # Esc#2：既有取消体（drain 语义不变）
             log = self.query_one("#messages", CopyableRichLog)
             self._hide_ai_stream()
             self._bump_hitl_generation()
@@ -1984,18 +2038,39 @@ class JarvisApp(App):
             self._show_cancel_banner()
             worker.cancel()
             self._turn_workers.pop(self.thread_id, None)
+            # 取消完成 → 进入撤回 prime（收尾结束门释放后单 Esc 即撤回）
+            self._esc_phase, self._esc_phase_at = "none", 0.0
+            self._esc_primed_at = monotonic()
+            self.notify(
+                f"已取消；再按一次 Esc（{ESC_UNDO_WINDOW:g}s 内）可撤回上一轮",
+                timeout=ESC_UNDO_WINDOW,
+            )
             return
         # 空闲：双 Esc（ESC_UNDO_WINDOW 内）撤回上一轮；单 Esc 不退出应用。
         now = monotonic()
         if self._esc_primed_at and now - self._esc_primed_at <= ESC_UNDO_WINDOW:
             self._esc_primed_at = 0.0
-            self._trigger_implicit_undo()
+            if not self._trigger_implicit_undo():
+                self._esc_primed_at = now  # 门占用保留 prime，门释放后单 Esc 即撤回
         else:
             self._esc_primed_at = now
             self.notify(
                 f"再按一次 Esc（{ESC_UNDO_WINDOW:g}s 内）可撤回上一轮",
                 timeout=ESC_UNDO_WINDOW,
             )
+
+    def action_prime_quit(self) -> None:
+        """tui-ux15 Ctrl+C 二次确认：窗口内第一次只提醒，第二次才退出（exit 与 Ctrl+Q 同一收尾路径）。"""
+        now = monotonic()
+        if self._quit_primed_at and now - self._quit_primed_at <= QUIT_CONFIRM_WINDOW:
+            self._quit_primed_at = 0.0
+            self.exit()  # Textual 8.2.8 action_quit 是 async，同调 exit 与 Ctrl+Q 同一收尾路径
+            return
+        self._quit_primed_at = now
+        self.notify(
+            f"再按一次 Ctrl+C（{QUIT_CONFIRM_WINDOW:g}s 内）退出 JARVIS；单次不退出",
+            timeout=QUIT_CONFIRM_WINDOW,
+        )
 
     def action_new_session(self) -> None:
         import uuid
