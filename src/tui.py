@@ -1,10 +1,12 @@
 """Textual TUI 界面（对标 opencode 终端界面）。"""
 import asyncio
 import sys
+import threading
 from collections import defaultdict
 from functools import partial
 from pathlib import Path
 from rich.markup import escape
+from rich.text import Text
 from time import monotonic
 from typing import ClassVar
 from textual import events
@@ -31,6 +33,7 @@ from src.tui_completion import OverlayState, apply_suggestion_on_line, line_proj
 from src.tui_log import CopyableRichLog
 from src import tui_format
 from src.tui_turn import TurnPresenter
+from src.jump_in_queue import JumpInRegistry
 from src.tui_format import (
     DEFAULT_TUI_THEME,
     LEGACY_BAD_THEMES,
@@ -743,6 +746,35 @@ class SessionSidebar(OptionList):
                 self.highlighted = 0
 
 
+class MessageQueueRow(Static):
+    """tui-ux14 #04: 插队消息缓存行（左键点击 = 移出缓存区并回填输入框编辑）。"""
+
+    def __init__(self, idx: int, full: str, **kwargs) -> None:
+        snippet = full if len(full) <= 40 else full[:40] + "…"
+        super().__init__(Text(snippet, style="dim"), **kwargs)
+        self._msg_idx = idx
+        self._msg_full = full
+        self.tooltip = full
+
+    def update_row(self, idx: int, full: str) -> None:
+        """tui-ux14 #04 follow-up: update row content in place (zombie-row fix: row mounts once; content change only rewrites text/tooltip, no remount)."""
+        self._msg_idx = idx
+        self._msg_full = full
+        self.tooltip = full
+        snippet = full if len(full) <= 40 else full[:40] + "…"
+        self.update(Text(snippet, style="dim"))
+
+    def on_click(self, event: events.Click) -> None:
+        """tui-ux14 #04: 左键点击行 = 移出缓存区并回填输入框编辑（Textual 规范 on_click 处理器）。
+
+        勿写同步 on_event：会遮掉 MessagePump.on_event（协程），Compose 等通用事件
+        走 wait self.on_event(msg) -> wait None 崩（Textual 8.2.8 message_pump L599 实证）。
+        """
+        app = self.app
+        if isinstance(app, JarvisApp):
+            app._message_row_retracted(self._msg_idx, self._msg_full)
+
+
 class JarvisApp(App):
     """JARVIS TUI。侧边栏 Y/Ctrl+Insert 复制会话 ID；Ctrl+C/Q 退出。"""
 
@@ -916,6 +948,21 @@ class JarvisApp(App):
     #yolo_badge.-active {
         display: block;
     }
+
+    #message_queue {
+        display: none;
+        height: auto;
+        max-height: 8;
+        margin: 0 1 0 0;
+        padding: 0 1;
+        border: round $primary 30%;
+        background: $panel 40%;
+        overflow-y: auto;
+    }
+
+    #message_queue.-active {
+        display: block;
+    }
     """
 
     def __init__(
@@ -928,6 +975,7 @@ class JarvisApp(App):
         mcp_tool_count: int = 0,
         startup_lines: list[str] | None = None,
         startup_prompt: str | None = None,
+        jump_in_registry=None,
     ):
         super().__init__()
         self.config = config
@@ -938,7 +986,9 @@ class JarvisApp(App):
         self._mcp_tool_count = mcp_tool_count
         self._startup_lines = startup_lines or []
         self._startup_prompt = startup_prompt
-        self._worker: Worker | None = None
+        # tui-ux14 #03: 回合 worker 按 thread 管理——YOLO 会话切走后后台续跑
+        self._turn_workers: dict[str, Worker] = {}
+        self._bg_turns: set[str] = set()  # tui-ux14 #03: YOLO 后台回合（门释放时静默保留队列）
         self._hitl_generation = 0
         self._resolved_hitl: dict[str, set[str]] = defaultdict(set)
         self._pending_hitl_keys: set[str] = set()
@@ -952,10 +1002,17 @@ class JarvisApp(App):
         self._esc_primed_at = 0.0  # 空闲双 Esc 撤回窗口计时（monotonic；工单 07）
         self._ime_drift_notified = False  # tui-ux13 L1: IME 漂移一次性 notify 标记
         self._turn_gate_threads: set[str] = set()  # tui-ux7 #02: 回合门（执行/收尾中的 thread 集合）
-        self._queued_messages: list[tuple[str, str]] = []  # tui-ux7 #02: FIFO 排队（(thread_id, raw text)
+        # tui-ux14 #04: 插队消息缓存区（单一事实源 JumpInRegistry，与主代理 before_model 注入共享）
+        self._queue = jump_in_registry or JumpInRegistry()
+        self._queue.on_change(self._schedule_queue_refresh)
         self.title = "JARVIS"
         self._restore_theme()
         self._update_sub_title()
+
+    @property
+    def _queued_messages(self) -> list[tuple[str, str]]:
+        """tui-ux14 #04: 只读兼容面（旧 tui-ux7 FIFO 表 [(thread_id, raw)] 形状，test_tui_turn_gate._queued 消费；须跨 thread 快照）。"""
+        return self._queue.snapshot()
 
     def _config_path(self) -> Path:
         if self.config and getattr(self.config, "project_root", None):
@@ -1026,7 +1083,7 @@ class JarvisApp(App):
 
         if yolo_active(self.permission_state, self.thread_id):
             badge.add_class("-active")
-            badge.update("YOLO Mode")  # tui-ux14: 纯文本继承 CSS $error/bold（真彩 hex 在终端不渲染）
+            badge.update(Text("YOLO Mode", style="bold red"))  # tui-ux14 定案：Text 内嵌命名色 bold red（widget 渲染缓存实证 bold #ff0000、compositor strips 全链路含文本；markup=False 时 Static CSS color/text-style 不作用于内容，纯文本走默认前景色灰不可见故内嵌；命名色规避真彩 hex 空框历史坑 4a365c4/8fc7523）
         else:
             badge.remove_class("-active")
             badge.update("")
@@ -1086,6 +1143,7 @@ class JarvisApp(App):
                         )
                         yield Static("", id="ai_stream")
                 yield Static("", id="todo_panel")
+                yield VerticalScroll(id="message_queue", can_focus=False)  # tui-ux14 #04: 插队缓存区（can_focus 走构造参数；CSS 写 can-focus: no 炸样式表）
                 with Horizontal(id="editor_frame"):
                     yield Static("›", id="prompt")
                     yield JarvisTextArea(
@@ -1167,6 +1225,17 @@ class JarvisApp(App):
         spinner.remove_class("-active")
         spinner.update("")
 
+    def _hide_spinner_if_idle(self, exclude_tid: str | None = None) -> None:
+        """tui-ux14 #03: 仅当无其他未 finished 的回合 worker 时隐藏 spinner。
+
+        exclude_tid 排除调用回合自身（finally 执行时自身 worker 尚未 finished，
+        不排除会让普通无-YOLO 场景 spinner 永远不消）。
+        """
+        for tid, worker in self._turn_workers.items():
+            if tid != exclude_tid and not worker.is_finished:
+                return
+        self._hide_spinner()
+
     def _show_cancel_banner(self) -> None:
         """tui-ux7 #01: Esc 取消 → spinner 立即固定为「已取消」banner（收尾结束由 presenter finally 的 _hide_spinner 自动清空）。"""
         if self._spinner_config()[1] == "none":
@@ -1181,21 +1250,74 @@ class JarvisApp(App):
     def _release_turn_gate(self, tid: str) -> None:
         """tui-ux7 #02: 释放 tid 的回合门并重投排队队首（UI 线程；由 worker 终结经 call_from_thread 回调）。
 
+        YOLO 后台回合（tid in _bg_turns）→ 静默保留该 thread 队列（不作废、不 notify）；
         会话已切走（tid != 当前）→ 旧会话排队消息作废 + 提示；否则弹出 tid 队首重入
         _handle_user_message（重入时门已空 → 获取门并启动下一轮，FIFO 保守）。
         """
         self._turn_gate_threads.discard(tid)
+        if tid in self._bg_turns:
+            # tui-ux14 #03: YOLO 会话切走但回合仍在后台跑——队列属于该会话，静默保留
+            self._bg_turns.discard(tid)
+            return
         if tid != self.thread_id:
-            stale = [item for item in self._queued_messages if item[0] == tid]
-            if stale:
-                self._queued_messages = [item for item in self._queued_messages if item[0] != tid]
-                self.notify(f"会话 {tid} 有 {len(stale)} 条排队消息因会话切换未发送", timeout=3)
+            stale_n = self._queue.clear(tid)
+            if stale_n:
+                self.notify(f"会话 {tid} 有 {stale_n} 条排队消息因会话切换未发送", timeout=3)
             return
-        idx = next((i for i, (t, _x) in enumerate(self._queued_messages) if t == tid), None)
-        if idx is None:
+        raw = self._queue.pop_first(tid)
+        if raw is not None:
+            self._handle_user_message(raw)
+
+    def _schedule_queue_refresh(self) -> None:
+        """tui-ux14 #04: registry on_change 回调（worker 线程经 call_from_thread 刷 UI；UI 线程直刷——Textual 8.2.8 call_from_thread 同线程抛 RuntimeError；_thread_id 未设=app 未跑 → no-op）。"""
+        try:
+            same_thread = self._thread_id == threading.get_ident()
+        except AttributeError:
             return
-        _t, raw = self._queued_messages.pop(idx)
-        self._handle_user_message(raw)
+        if same_thread:
+            self._refresh_message_queue()
+        else:
+            self.call_from_thread(self._refresh_message_queue)
+
+    def _refresh_message_queue(self) -> None:
+        """tui-ux14 #04: queue-panel in-place reconcile (rows mount once / unmount once, no remount; NoMatches fallback on app teardown)."""
+        try:
+            panel = self.query_one("#message_queue", VerticalScroll)
+        except (NoMatches, ScreenStackError):
+            return
+        items = self._queue.items(self.thread_id)
+        # in-place reconcile: reuse existing rows, only add missing / remove surplus (remove-all+remount churn = zombie-row root cause)
+        rows = [
+            c for c in panel.children
+            if isinstance(c, MessageQueueRow) and not getattr(c, "_pruning", False)
+        ]
+        shared = min(len(rows), len(items))
+        for k in range(shared):
+            rows[k].update_row(k, items[k])
+        if len(items) > shared:
+            panel.mount(
+                *[MessageQueueRow(idx, msg) for idx, msg in enumerate(items[shared:], start=shared)]
+            )
+        elif len(rows) > len(items):
+            for row in rows[len(items):]:
+                row.remove()  # Textual 8.2.8: remove is the child widget's own method (async Prune)
+        if items:
+            panel.add_class("-active")
+        else:
+            panel.remove_class("-active")
+
+    def _message_row_retracted(self, idx: int, full: str) -> None:
+        """tui-ux14 #04: 左键点击缓存行 → 移出缓存区 + 回填输入框（面板由 on_change 自动刷新，此处不手动 refresh）。"""
+        removed = self._queue.pop_item(self.thread_id, idx)
+        if removed is None:
+            return  # 已被重投/清掉
+        try:
+            input_box = self.query_one("#input", JarvisTextArea)
+        except NoMatches:
+            return
+        input_box.text = removed
+        input_box.cursor_location = (removed.count("\n"), len(removed.rsplit("\n", 1)[-1]))
+        input_box.focus()
 
     def _update_ai_stream(self, text: str) -> None:
         try:
@@ -1273,10 +1395,9 @@ class JarvisApp(App):
         is_slash_cmd = text.startswith("/") and not commands.is_virtual_path_reference(text, vpmapping)
         turn_message = (not is_slash_cmd) or text.split()[0] in ("/replay", "/undo", "/use")
         if turn_message and self.thread_id in self._turn_gate_threads:
-            queued_here = sum(1 for t, _x in self._queued_messages if t == self.thread_id)
-            self._queued_messages.append((self.thread_id, text))
+            n = self._queue.push(self.thread_id, text)
             self.notify(
-                f"上一轮取消收尾中，已排队 {queued_here + 1} 条，收尾结束后自动发送",
+                f"任务执行中，已放入消息缓存 {n} 条，当前步骤完成后自动发送；左键点击可撤回编辑",
                 timeout=2,
             )
             return
@@ -1311,8 +1432,8 @@ class JarvisApp(App):
                 log.write(system_message_markup(f"正在重跑 checkpoint {parts[1]}…"))
                 self._show_spinner()
                 self._turn_gate_threads.add(self.thread_id)
-                self._worker = self.run_worker(
-                    partial(self._stream_agent, checkpoint_id=full_id), thread=True
+                self._spawn_turn_worker(
+                    partial(self._stream_agent, checkpoint_id=full_id)
                 )
                 return
             if parts[0] == "/undo":
@@ -1322,8 +1443,8 @@ class JarvisApp(App):
                 log.write(system_message_markup("正在撤回 1 条消息…"))
                 self._show_spinner()
                 self._turn_gate_threads.add(self.thread_id)
-                self._worker = self.run_worker(
-                    partial(self._undo_worker, 1), thread=True
+                self._spawn_turn_worker(
+                    partial(self._undo_worker, 1)
                 )
                 return
             if parts[0] == "/use":
@@ -1335,13 +1456,13 @@ class JarvisApp(App):
                 log.write(f"使用 skill「{parts[1]}」…")
                 self._show_spinner()
                 self._turn_gate_threads.add(self.thread_id)
-                self._worker = self.run_worker(
-                    partial(self._stream_agent, user_input=msg), thread=True
+                self._spawn_turn_worker(
+                    partial(self._stream_agent, user_input=msg)
                 )
                 return
             cmd = parts[0]
             log.write(system_message_markup(f"正在执行 {cmd}…"))
-            self._worker = self.run_worker(partial(self._run_command_worker, text), thread=True)
+            self._spawn_turn_worker(partial(self._run_command_worker, text))
             return
         stream_input: str | list = text
         image_fallback: str | None = None
@@ -1356,14 +1477,13 @@ class JarvisApp(App):
             self._clear_image_attachments()
         self._show_spinner()
         self._turn_gate_threads.add(self.thread_id)
-        self._worker = self.run_worker(
+        self._spawn_turn_worker(
             partial(
                 self._stream_agent,
                 user_input=stream_input,
                 image_input=self._image_input_mode(),
                 image_fallback=image_fallback,
-            ),
-            thread=True,
+            )
         )
 
     def _run_command_worker(self, text: str) -> None:
@@ -1437,12 +1557,26 @@ class JarvisApp(App):
         log.write(system_message_markup("正在撤回 1 条消息…"))
         self._show_spinner()
         self._turn_gate_threads.add(self.thread_id)
-        self._worker = self.run_worker(partial(self._undo_worker, 1), thread=True)
+        self._spawn_turn_worker(partial(self._undo_worker, 1))
+
+    def _spawn_turn_worker(self, worker_func) -> None:
+        """tui-ux14 #03: 为当前 thread 启动回合 worker（UI 线程专用）。
+
+        每 thread 一个回合 worker（thread_id 键控）：开新回合先 cancel + discard
+        该 thread 未 finished 的旧 worker 防叠加；同时清理其他 thread 已 finished
+        的 worker（YOLO 后台回合保留运行）。
+        """
+        tid = self.thread_id
+        old = self._turn_workers.pop(tid, None)
+        if old is not None and not old.is_finished:
+            old.cancel()
+        self._turn_workers = {t: w for t, w in self._turn_workers.items() if not w.is_finished}
+        self._turn_workers[tid] = self.run_worker(worker_func, thread=True)
 
     def _cancel_stream_worker(self) -> None:
-        if self._worker is not None:
-            self._worker.cancel()
-            self._worker = None
+        worker = self._turn_workers.pop(self.thread_id, None)
+        if worker is not None and not worker.is_finished:
+            worker.cancel()
 
     def _bump_hitl_generation(self) -> None:
         """作废进行中的 HITL Modal（切会话 / Esc / turn 未完成）。"""
@@ -1485,7 +1619,17 @@ class JarvisApp(App):
 
         cancel 流式 worker → 记 HITL 已决 → 清 pending → bump 代数 → finalize。
         任何要更换 self.thread_id 的路径都必须先走这里。
+        tui-ux14 #03: YOLO thread 跳过 cancel/finalize——回合并行后台续跑，
+        登记 _bg_turns（门释放路径静默保留队列）。
         """
+        from src.permissions import yolo_active
+
+        if yolo_active(self.permission_state, old_thread):
+            self._mark_hitl_resolved(old_thread, set(self._pending_hitl_keys))
+            self._pending_hitl_keys.clear()
+            self._bump_hitl_generation()
+            self._bg_turns.add(old_thread)
+            return
         self._cancel_stream_worker()
         self._mark_hitl_resolved(old_thread, set(self._pending_hitl_keys))
         self._pending_hitl_keys.clear()
@@ -1519,6 +1663,16 @@ class JarvisApp(App):
                 self._write_ai(log, content)
         if not pairs:
             log.write("[i][dim]（暂无历史）[/dim][/i]")
+
+        # tui-ux14 #03: 切回 YOLO 会话时，若回合门已释放则重投队首
+        # （bg 回合仍在收尾则门仍持有，此处不重投，由门释放路径处理）。
+        # 切回必须 discard bg 标记——否则门释放时 bg 分支会静默吞掉队列。
+        self._bg_turns.discard(thread_id)
+        if thread_id not in self._turn_gate_threads:
+            raw = self._queue.pop_first(thread_id)
+            if raw is not None:
+                self._handle_user_message(raw)
+        self._refresh_message_queue()  # tui-ux14 #04: 切会话后按新 thread 重绘缓存面板（bg 静默保留路径无 on_change 触发）
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option_list.id != "session_sidebar":
@@ -1821,7 +1975,7 @@ class JarvisApp(App):
         self.action_copy_session_or_selection()
 
     def action_cancel(self) -> None:
-        worker = self._worker
+        worker = self._turn_workers.get(self.thread_id)
         if worker is not None and not worker.is_finished:
             log = self.query_one("#messages", CopyableRichLog)
             self._hide_ai_stream()
@@ -1829,6 +1983,7 @@ class JarvisApp(App):
             log.write("[i][dim]（已取消）[/dim][/i]")
             self._show_cancel_banner()
             worker.cancel()
+            self._turn_workers.pop(self.thread_id, None)
             return
         # 空闲：双 Esc（ESC_UNDO_WINDOW 内）撤回上一轮；单 Esc 不退出应用。
         now = monotonic()

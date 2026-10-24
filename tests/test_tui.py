@@ -110,7 +110,7 @@ async def test_slash_command_runs_in_background_worker():
     async with app.run_test() as pilot:
         await _type_and_enter(pilot, "/history")
         await pilot.pause()
-        assert app._worker is not None
+        assert app._turn_workers
         await asyncio.sleep(0.55)
         await pilot.pause()
         log = pilot.app.query_one(CopyableRichLog)
@@ -1215,7 +1215,7 @@ async def test_yolo_command_full_tui_flow():
         assert "[YOLO]" not in app.sub_title
         await _type_and_enter(pilot, "/yolo on")
         await pilot.pause()
-        assert app._worker is not None
+        assert app._turn_workers
         await asyncio.sleep(0.55)
         await pilot.pause()
         log = pilot.app.query_one(CopyableRichLog)
@@ -1285,7 +1285,7 @@ async def test_yolo_badge_text_color_follows_theme_error():
         yolo_on(app.permission_state, app.thread_id)
         app._update_sub_title()
         await pilot.pause()
-        assert badge.content == "YOLO Mode"  # 纯文本，无 markup
+        assert badge.content.plain == "YOLO Mode"  # Text 富文本（bold red 内嵌 style），.plain 比对纯文本内容
         color = badge.styles.color
         assert color is not None
         assert color.r > color.g and color.r > color.b  # 红色系（主题 $error）

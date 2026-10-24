@@ -217,6 +217,11 @@ def main(argv=None) -> int:
 
     with SqliteSaver.from_conn_string(str(config.checkpoint_db)) as checkpointer:
         checkpointer.setup()  # 确保 checkpoints/writes 表存在（cursor() 内部也会懒触发，但显式调用更安全）
+
+        # tui-ux14 #04: 插队消息缓存（TUI 与主代理 before_model 注入共用；CLI 无排队 UI 恒空 → 零开销）
+        from src.jump_in_queue import JumpInRegistry
+
+        registry = JumpInRegistry()
         _, permission_state = build_permission_interrupts(
             config.permissions,
             hooks=config.hooks,
@@ -227,6 +232,7 @@ def main(argv=None) -> int:
             checkpointer=checkpointer,
             permission_state=permission_state,
             mcp_tools=mcp_tools,
+            jump_in_registry=registry,
         )
 
         sched = scheduler.make_scheduler(agent, config)
@@ -259,6 +265,7 @@ def main(argv=None) -> int:
                     thread_id,
                     mcp_tool_count=len(mcp_tools),
                     startup_lines=startup_lines,
+                    jump_in_registry=registry,
                 ).run()
             else:
                 _run_session(agent, thread_id, sched, permission_state, config)

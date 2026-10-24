@@ -52,7 +52,7 @@ async def test_spinner_shows_during_stream_and_hides_after():
             await _type_and_enter(pilot, "你好")
             # worker 启动后立即检查（流式未结束时 spinner 活跃）
             for _ in range(20):
-                if "-active" in spinner.classes or app._worker is not None:
+                if "-active" in spinner.classes or app._turn_workers:
                     break
                 await pilot.pause()
             # 流式很快结束，最终必须回到隐藏态

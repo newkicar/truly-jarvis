@@ -35,6 +35,8 @@ class TurnPresenter:
         image_fallback: str | None = None,
     ):
         self.app = app
+        # tui-ux14 #03: spawn 时捕获本轮归属 thread（YOLO bg 切会话后 app.thread_id 已被换走）
+        self.thread_id = app.thread_id
         self.user_input = user_input
         self.checkpoint_id = checkpoint_id
         self.image_input = image_input  # #03: model.image_input 能力门（None=读 config 默认）
@@ -123,7 +125,7 @@ class TurnPresenter:
     def handle_interrupts(self, interrupts):
         filtered = streaming.filter_pending_interrupts(
             interrupts,
-            self.app._resolved_hitl.get(self.app.thread_id, set()),
+            self.app._resolved_hitl.get(self.thread_id, set()),
         )
         if not filtered:
             return None
@@ -146,7 +148,7 @@ class TurnPresenter:
         )
 
     def on_turn_incomplete(self) -> None:
-        self.app.call_from_thread(self.app._on_turn_incomplete, self.app.thread_id)
+        self.app.call_from_thread(self.app._on_turn_incomplete, self.thread_id)
 
     def callbacks(self) -> dict:
         return {
@@ -171,13 +173,14 @@ class TurnPresenter:
         """在流式 worker 线程内驱动本轮（含异常兜底与收尾）。"""
         # tui-ux7 #02: 门键 = 本轮 thread_id（run 入口捕获）；收尾中用户切换会话时，
         # 释放仍落在旧 thread 上（_release_turn_gate 内部按 thread 判断）。
-        turn_thread_id = self.app.thread_id
+        # tui-ux14 #03: 归属 thread 于 TurnPresenter init（spawn）时捕获。
+        turn_thread_id = self.thread_id
         self.worker = get_current_worker()
         ok = False
         try:
             ok = streaming.run_agent_turn(
                 self.app.agent,
-                self.app.thread_id,
+                self.thread_id,
                 self.user_input,
                 checkpoint_id=self.checkpoint_id,
                 handle_interrupts=self.handle_interrupts,
@@ -206,7 +209,7 @@ class TurnPresenter:
             elapsed = time() - self.started
             model = getattr(self.app.config, "model_id", "") or "model"
             self.app.call_from_thread(self.app._hide_ai_stream)
-            self.app.call_from_thread(self.app._hide_spinner)
+            self.app.call_from_thread(self.app._hide_spinner_if_idle, self.thread_id)
             if self.cancelled() and not self.cancel_notified:
                 self.write_line("[i][dim]（已取消）[/dim][/i]")
             elif not ok and not self.cancelled():

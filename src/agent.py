@@ -280,6 +280,7 @@ def build_agent(
     store: BaseStore | None = None,
     permission_state: dict | None = None,
     mcp_tools: list | None = None,
+    jump_in_registry=None,
 ):
     """组装主代理。
 
@@ -289,6 +290,9 @@ def build_agent(
     always approve 等运行时修改与 deny middleware / when 谓词联动。
     mcp_tools 为 MCP server 加载出的额外工具（仅主代理），由调用方
     （如 main.py 经 src.mcps.load_mcp_tools）在启动时一次性注入。
+    jump_in_registry 为插队消息缓存（src.jump_in_queue.JumpInRegistry）：非 None 时
+    主代理挂 MessageQueueJumpInMiddleware（before_model drain 当前 thread 缓存注入），
+    子代理不挂（无队列概念）；CLI 传恒空 registry 时零开销安全。
     """
     model = model or _make_model(config)
     checkpointer = checkpointer or InMemorySaver()
@@ -397,6 +401,11 @@ def build_agent(
     )
     if inbox_snapshot is not None:
         middleware.append(inbox_snapshot)
+    # tui-ux14 #04: 插队消息缓存——before_model 整批注入当前 thread 的排队消息（仅主代理）
+    if jump_in_registry is not None:
+        from src.jump_in_queue import MessageQueueJumpInMiddleware
+
+        middleware.append(MessageQueueJumpInMiddleware(jump_in_registry, permission_state))
 
     compiled = create_deep_agent(
         model=model,

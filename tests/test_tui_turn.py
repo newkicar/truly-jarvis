@@ -9,6 +9,7 @@ def test_presenter_holds_per_turn_state():
     """构造即快照 start_mode；可变状态归 presenter 而非闭包。"""
     class _App:
         permission_state = {"mode": "plan"}
+        thread_id = "stub-t1"
 
         def call_from_thread(self, fn, *args):
             return fn(*args)
@@ -27,6 +28,7 @@ def test_presenter_holds_per_turn_state():
 def test_callbacks_dict_has_all_five_keys():
     class _App:
         permission_state = {}
+        thread_id = "stub-t2"
 
         def call_from_thread(self, fn, *args):
             return fn(*args)

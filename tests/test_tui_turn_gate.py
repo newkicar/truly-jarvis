@@ -9,7 +9,10 @@ import asyncio
 import time
 
 import pytest
+from unittest.mock import patch
 
+from src import commands
+from src.permissions import yolo_on
 from src.tui import JarvisApp
 from src.tui_log import CopyableRichLog
 from tests.test_tui import _FakeMsg, _FakeStream, FakeAgent, _type_and_enter
@@ -131,3 +134,90 @@ async def test_new_session_drops_queued_message():
         await _poll(pilot, lambda: old_tid not in app._turn_gate_threads, msg="旧 thread 门未释放")
         await pilot.pause()
         assert agent._calls == 1, "旧 thread 排队消息被重投递"
+
+def _yolo_state(tid: str) -> dict:
+    state = {"default": "ask", "tools": {}, "yolo_threads": set()}
+    yolo_on(state, tid)
+    return state
+
+
+@pytest.mark.asyncio
+async def test_switch_session_non_yolo_cancels_worker():
+    """tui-ux14 #03: 非 YOLO 切会话 → 旧回合 worker 被取消（既有语义回归守卫）。"""
+    app = JarvisApp(None, ConcurrencyAgent(), {"default": "ask", "tools": {}}, thread_id="treg")
+    agent = app.agent
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "第一条")
+        await _poll(pilot, lambda: agent._calls >= 1, msg="第一条流未启动")
+        w = app._turn_workers.get("treg")
+        assert w is not None and not w.is_finished, "回合 worker 未按 thread 键登记"
+        app.action_new_session()
+        await _poll(pilot, lambda: w.is_finished, msg="非 YOLO 切会话后 worker 未取消结束")
+
+
+@pytest.mark.asyncio
+async def test_switch_session_yolo_keeps_background_worker():
+    """tui-ux14 #03: YOLO 切会话 → 回合 worker 后台续跑（不取消、不 finalize）。"""
+    app = JarvisApp(None, ConcurrencyAgent(), _yolo_state("tyolo"), thread_id="tyolo")
+    agent = app.agent
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "第一条")
+        await _poll(pilot, lambda: agent._calls >= 1, msg="第一条流未启动")
+        w = app._turn_workers.get("tyolo")
+        assert w is not None and not w.is_finished, "YOLO 回合 worker 未登记"
+        with patch.object(commands, "finalize_turn") as fin:
+            app.action_new_session()
+            fin.assert_not_called()
+        assert "tyolo" in app._bg_turns, "YOLO 会话未登记后台续跑"
+        await _poll(pilot, lambda: w.is_finished, msg="YOLO 后台 worker 未自然结束")
+        assert not w.is_cancelled, "YOLO 后台 worker 被取消"
+        await _poll(pilot, lambda: "tyolo" not in app._bg_turns, msg="门释放后 bg 标记未清")
+
+
+@pytest.mark.asyncio
+async def test_yolo_background_gate_release_keeps_queue():
+    """tui-ux14 #03: YOLO drain 期排队 + 切走 → 门释放时静默保留队列（不作废不 notify）。"""
+    app = JarvisApp(None, ConcurrencyAgent(), _yolo_state("tyolo"), thread_id="tyolo")
+    agent = app.agent
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "第一条")
+        await _poll(pilot, lambda: agent._calls >= 1, msg="第一条流未启动")
+        await asyncio.sleep(0.2)
+        app.action_cancel()
+        await pilot.pause()
+        await _type_and_enter(pilot, "第二条")
+        assert "tyolo" in app._turn_gate_threads, "第二条入口时门已释放"
+        assert _queued(app, "tyolo") == ["第二条"], "第二条未入 FIFO 队列"
+        app.action_new_session()
+        await _poll(
+            pilot,
+            lambda: "tyolo" not in app._turn_gate_threads and "tyolo" not in app._bg_turns,
+            msg="门/bg 标记未释放",
+        )
+        await pilot.pause()
+        assert _queued(app, "tyolo") == ["第二条"], "门释放时排队消息被作废"
+        assert agent._calls == 1, "排队消息在新会话被重投递"
+
+
+@pytest.mark.asyncio
+async def test_switch_back_to_yolo_session_redelivers_queue():
+    """tui-ux14 #03: 切回 YOLO 会话（门已释放）→ 重投队首，排空队列。"""
+    app = JarvisApp(None, ConcurrencyAgent(), _yolo_state("tyolo"), thread_id="tyolo")
+    agent = app.agent
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "第一条")
+        await _poll(pilot, lambda: agent._calls >= 1, msg="第一条流未启动")
+        await asyncio.sleep(0.2)
+        app.action_cancel()
+        await pilot.pause()
+        await _type_and_enter(pilot, "第二条")
+        app.action_new_session()
+        await _poll(
+            pilot,
+            lambda: "tyolo" not in app._turn_gate_threads and "tyolo" not in app._bg_turns,
+            msg="门未释放",
+        )
+        app._switch_session("tyolo")
+        await _poll(pilot, lambda: agent._calls >= 2, msg="切回后排队消息未重投")
+        await pilot.pause()
+        assert _queued(app, "tyolo") == [], "排队消息未消费"

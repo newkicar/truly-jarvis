@@ -392,6 +392,12 @@ def run_agent_turn(
         permission_state, thread_id=thread_id, project_root=project_root
     )
 
+    # tui-ux14 #04: 绑定插队队列的 thread 上下文（MessageQueueJumpInMiddleware
+    # before_model drain 时取用；缺失回落 permission_state["thread_id"]）。
+    from src.jump_in_queue import set_current_thread_id
+
+    set_current_thread_id(thread_id)
+
     max_steps = max(10, int(max_steps))
     base_config = {**commands.thread_config(thread_id), "recursion_limit": max_steps}
     resume = None
@@ -593,3 +599,4 @@ def run_agent_turn(
     finally:
         if outcome != "complete":
             _finalize_if_needed()
+        set_current_thread_id(None)  # tui-ux14 #04: 成对清理 thread-local（replay 早退路径同走 finally）
