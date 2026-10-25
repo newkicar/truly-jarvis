@@ -17,8 +17,19 @@ class SkillLayer:
     fs_path: Path
 
 
+def _copy_if_missing(src: str, dst: str) -> None:
+    """仅当目标文件不存在时才拷贝（保留用户已编辑的 skill 内容）。"""
+    if not Path(dst).exists():
+        shutil.copy2(src, dst)
+
+
 def seed_builtin_skills() -> None:
-    """将安装包内置 skill 拷贝到 ~/.jarvis/skills（合并式：已存在则合并，不覆盖同名文件）。"""
+    """将安装包内置 skill 拷贝到 ~/.jarvis/skills（非破坏性合并：缺失才补，绝不覆盖同名文件）。
+
+    2026-10-25 修复：旧实现 shutil.copytree(dirs_exist_ok=True) 语义为"源覆盖目标"，
+    每次启动 ensure_user_home 都会把用户编辑过的同名 SKILL.md 刷回内置版；
+    现用 copy_function=_copy_if_missing 改为缺才补。
+    """
     builtin_skills = install_root() / "skills"
     user_skills = user_home() / "skills"
     user_skills.mkdir(parents=True, exist_ok=True)
@@ -27,7 +38,7 @@ def seed_builtin_skills() -> None:
         for child in builtin_skills.iterdir():
             if child.is_dir() and not child.name.startswith(".") and not child.name.startswith("__"):
                 target = user_skills / child.name
-                shutil.copytree(child, target, dirs_exist_ok=True)
+                shutil.copytree(child, target, dirs_exist_ok=True, copy_function=_copy_if_missing)
 
 
 def discover_skill_layers(config: Config) -> tuple[SkillLayer, ...]:

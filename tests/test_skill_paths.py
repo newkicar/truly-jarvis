@@ -142,3 +142,42 @@ def test_backend_lists_user_skill(tmp_path, monkeypatch):
     backend = _make_backend(cfg)
     names = [s["name"] for s in _list_skills(backend, USER_SKILLS_VPATH)]
     assert "demo-skill" in names
+
+
+def test_seed_builtin_skills_never_overwrites_user_edited_files(monkeypatch):
+    """回归（2026-10-25 覆盖 bug）：seed 必须是非破坏性合并——
+
+    用户已编辑的 ~/.jarvis/skills/<同名>/SKILL.md 不得被内置版覆盖；
+    内置版有而用户没有的新文件应补入。
+    """
+    import os
+    import shutil
+    import tempfile
+    import uuid
+
+    import src.skill_paths as sp
+
+    base = Path(tempfile.gettempdir()) / ("jarvis_seedtest_" + uuid.uuid4().hex[:12])
+    try:
+        install_dir = base / "install"
+        user_dir = base / "user"
+        builtin_skill = install_dir / "skills" / "demo-skill"
+        ref_dir = builtin_skill / "references"
+        os.makedirs(ref_dir)
+        (builtin_skill / "SKILL.md").write_text("BUILTIN-v1", encoding="utf-8")
+        (ref_dir / "flow.md").write_text("BUILTIN-ref", encoding="utf-8")
+
+        user_skill = user_dir / "skills" / "demo-skill"
+        os.makedirs(user_skill)
+        (user_skill / "SKILL.md").write_text("USER-EDITED", encoding="utf-8")
+
+        monkeypatch.setenv("JARVIS_HOME", str(user_dir))
+        monkeypatch.setattr(sp, "install_root", lambda: install_dir)
+        sp.seed_builtin_skills()
+
+        # 用户编辑的内容必须保留（当前 copytree 行为 = 红灯）
+        assert (user_skill / "SKILL.md").read_text(encoding="utf-8") == "USER-EDITED"
+        # 内置新增文件应补入
+        assert (user_skill / "references" / "flow.md").read_text(encoding="utf-8") == "BUILTIN-ref"
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
