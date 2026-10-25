@@ -136,6 +136,8 @@ class CopyableRichLog(RichLog):
         # tui-ux16 sticky scroll: 未确认写入计数 + 跳转提示 Button
         # （由 tui.py on_mount 注入；None 表示无 hint）
         self._pending_msgs: int = 0
+        self._stick = True
+        self._snap_scheduled = False
         self.hint: Button | None = None
 
     def focus_on_click(self) -> bool:
@@ -204,7 +206,7 @@ class CopyableRichLog(RichLog):
         # 上翻后停跳，累计未确认新消息。显式 scroll_end（kwarg，或
         # 第 4 个位置参数 = deferred 回放形态）原样尊重。
         if "scroll_end" not in kwargs and len(args) < 4:
-            if self._at_bottom():
+            if self._at_bottom() or self._stick:
                 kwargs["scroll_end"] = True
             else:
                 kwargs["scroll_end"] = False
@@ -224,6 +226,7 @@ class CopyableRichLog(RichLog):
     def clear(self, *args, **kwargs):
         self._plain_lines.clear()
         # tui-ux16: 日志清空同时复位 sticky scroll 计数 / hint
+        self._stick = True
         self._pending_msgs = 0
         self._hide_hint()
         return super().clear(*args, **kwargs)
@@ -240,11 +243,15 @@ class CopyableRichLog(RichLog):
         # tui-ux16：滚动变化唯一统一钩子（滚轮/键盘/滚动条/程序化
         # scroll_to/end 全走这里）——贴底清 pending、隐藏 hint。
         if self._at_bottom():
+            self._stick = True
             self._pending_msgs = 0
+        else:
+            self._stick = False
         self._refresh_hint()
 
     def _refresh_hint(self) -> None:
-        if self._pending_msgs > 0 and not self._at_bottom():
+        # tui-ux16r2: hint gate = not at bottom (pending count dropped)
+        if not self._at_bottom():
             self._show_hint()
         else:
             self._hide_hint()
@@ -253,7 +260,7 @@ class CopyableRichLog(RichLog):
         hint = self.hint
         if hint is None:
             return
-        hint.label = f"↓ {self._pending_msgs} 条新消息"
+
         hint.add_class("-active")
         hint.refresh()
 
@@ -265,9 +272,28 @@ class CopyableRichLog(RichLog):
 
     def jump_to_end(self) -> None:
         """点击 hint / 手动跳底：清 pending、隐 hint、滚到底。"""
+        self._stick = True
         self._pending_msgs = 0
         self._hide_hint()
         self.scroll_end(animate=False, immediate=True, x_axis=False)
+
+
+    def on_resize(self, event: events.Resize) -> None:
+        # tui-ux16r2: in-flow sibling show/hide (ai_stream) resizes the log;
+        # when sticking, re-snap to bottom after refresh so real-time
+        # follow survives viewport resizes (dock/hint layout changes)
+        super().on_resize(event)
+        if self._stick and not self._snap_scheduled:
+            self._snap_scheduled = True
+            self.call_after_refresh(self._snap_after_resize)
+
+    def _snap_after_resize(self) -> None:
+        self._snap_scheduled = False
+        if not self._stick:
+            return
+        self._pending_msgs = 0
+        self.scroll_end(animate=False, immediate=True, x_axis=False)
+        self._refresh_hint()
 
     def _sync_plain_lines_from_strips(self) -> None:
         """与 RichLog 渲染行对齐（wrap 后每 strip 一行）。"""

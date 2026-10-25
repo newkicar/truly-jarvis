@@ -842,8 +842,13 @@ class JarvisApp(App):
         height: 100%;
     }
 
-    #messages {
+    #messages_box {
         height: 1fr;
+        width: 100%;
+    }
+
+    #messages {
+        height: 100%;
         width: 100%;
         background: transparent;
         border: none;
@@ -868,6 +873,8 @@ class JarvisApp(App):
     }
 
     #jump_hint {
+        position: absolute;
+        dock: bottom;
         display: none;
         width: 100%;
         margin: 0;
@@ -1149,15 +1156,16 @@ class JarvisApp(App):
             with Vertical(id="content_column"):
                 with Container(id="chat_frame"):
                     with Vertical(id="chat_stack"):
-                        yield CopyableRichLog(
-                            id="messages",
-                            wrap=True,
-                            markup=True,
-                            auto_scroll=True,
-                            copy_on_select=self._copy_on_select(),
-                        )
+                        with Container(id="messages_box"):
+                            yield CopyableRichLog(
+                                id="messages",
+                                wrap=True,
+                                markup=True,
+                                auto_scroll=True,
+                                copy_on_select=self._copy_on_select(),
+                            )
+                            yield Button("Back to bottom", id="jump_hint")  # tui-ux16r2: docked bottom overlay
                         yield Static("", id="ai_stream")
-                        yield Button("↓ 有新消息", id="jump_hint")  # tui-ux16: 新消息跳转提示（常态 display:none）
                 yield Static("", id="todo_panel")
                 yield VerticalScroll(id="message_queue", can_focus=False)  # tui-ux14 #04: 插队缓存区（can_focus 走构造参数；CSS 写 can-focus: no 炸样式表）
                 with Horizontal(id="editor_frame"):
