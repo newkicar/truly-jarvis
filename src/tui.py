@@ -867,6 +867,16 @@ class JarvisApp(App):
         display: block;
     }
 
+    #jump_hint {
+        display: none;
+        width: 100%;
+        margin: 0;
+    }
+
+    #jump_hint.-active {
+        display: block;
+    }
+
     #editor_frame {
         height: auto;
         margin: 1 1 1 0;
@@ -1147,6 +1157,7 @@ class JarvisApp(App):
                             copy_on_select=self._copy_on_select(),
                         )
                         yield Static("", id="ai_stream")
+                        yield Button("↓ 有新消息", id="jump_hint")  # tui-ux16: 新消息跳转提示（常态 display:none）
                 yield Static("", id="todo_panel")
                 yield VerticalScroll(id="message_queue", can_focus=False)  # tui-ux14 #04: 插队缓存区（can_focus 走构造参数；CSS 写 can-focus: no 炸样式表）
                 with Horizontal(id="editor_frame"):
@@ -1366,6 +1377,11 @@ class JarvisApp(App):
 
     def on_mount(self) -> None:
         log = self.query_one("#messages", RichLog)
+        # tui-ux16 sticky scroll: 把新消息跳转 hint 注入 log
+        try:
+            log.hint = self.query_one("#jump_hint", Button)
+        except NoMatches:
+            log.hint = None
         self._write_system(
             log, "JARVIS 就绪。@ 引用路径，/ 命令；Tab 接受建议，Enter 发送；Tab（无补全时）切换 Plan/Act。"
         )
@@ -1386,6 +1402,14 @@ class JarvisApp(App):
         self.query_one("#input", JarvisTextArea).focus()
         if self._startup_prompt:
             self.call_after_refresh(self._submit_startup_prompt)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        # tui-ux16: 点击「有新消息」hint → 跳到日志底部
+        if event.button.id == "jump_hint":
+            try:
+                self.query_one("#messages", RichLog).jump_to_end()
+            except NoMatches:
+                return
 
     def _submit_startup_prompt(self) -> None:
         prompt = (self._startup_prompt or "").strip()

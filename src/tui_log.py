@@ -13,7 +13,7 @@ from textual.selection import Selection
 from rich.segment import Segment
 from rich.style import Style
 from textual.strip import Strip
-from textual.widgets import RichLog
+from textual.widgets import Button, RichLog
 
 
 def copy_via_win32(text: str, attempts: int = 2) -> bool:
@@ -133,6 +133,10 @@ class CopyableRichLog(RichLog):
         super().__init__(*args, **kwargs)
         self.copy_on_select = copy_on_select
         self._plain_lines: list[str] = []
+        # tui-ux16 sticky scroll: 未确认写入计数 + 跳转提示 Button
+        # （由 tui.py on_mount 注入；None 表示无 hint）
+        self._pending_msgs: int = 0
+        self.hint: Button | None = None
 
     def focus_on_click(self) -> bool:
         """允许拖选；不抢底部输入框焦点。"""
@@ -196,6 +200,17 @@ class CopyableRichLog(RichLog):
         return Strip(Segment.simplify(new_segments), total_cells)
 
     def write(self, content, *args, **kwargs):
+        # tui-ux16 sticky scroll（codex 交互模型）：贴底自动跟随；
+        # 上翻后停跳，累计未确认新消息。显式 scroll_end（kwarg，或
+        # 第 4 个位置参数 = deferred 回放形态）原样尊重。
+        if "scroll_end" not in kwargs and len(args) < 4:
+            if self._at_bottom():
+                kwargs["scroll_end"] = True
+            else:
+                kwargs["scroll_end"] = False
+                if content not in ("", None):
+                    self._pending_msgs += 1
+                    self._refresh_hint()
         result = super().write(content, *args, **kwargs)
         plain = renderable_to_plain(content)
         if plain:
@@ -208,7 +223,51 @@ class CopyableRichLog(RichLog):
 
     def clear(self, *args, **kwargs):
         self._plain_lines.clear()
+        # tui-ux16: 日志清空同时复位 sticky scroll 计数 / hint
+        self._pending_msgs = 0
+        self._hide_hint()
         return super().clear(*args, **kwargs)
+
+    def _at_bottom(self, tol: int = 2) -> bool:
+        """垂直方向是否贴底（容差 `tol` 行）。"""
+        max_y = self.max_scroll_y
+        if not max_y:
+            return True
+        return self.scroll_offset.y >= max(0, max_y - tol)
+
+    def watch_scroll_y(self, old_value: float, new_value: float) -> None:
+        super().watch_scroll_y(old_value, new_value)
+        # tui-ux16：滚动变化唯一统一钩子（滚轮/键盘/滚动条/程序化
+        # scroll_to/end 全走这里）——贴底清 pending、隐藏 hint。
+        if self._at_bottom():
+            self._pending_msgs = 0
+        self._refresh_hint()
+
+    def _refresh_hint(self) -> None:
+        if self._pending_msgs > 0 and not self._at_bottom():
+            self._show_hint()
+        else:
+            self._hide_hint()
+
+    def _show_hint(self) -> None:
+        hint = self.hint
+        if hint is None:
+            return
+        hint.label = f"↓ {self._pending_msgs} 条新消息"
+        hint.add_class("-active")
+        hint.refresh()
+
+    def _hide_hint(self) -> None:
+        hint = self.hint
+        if hint is not None:
+            hint.remove_class("-active")
+            hint.refresh()
+
+    def jump_to_end(self) -> None:
+        """点击 hint / 手动跳底：清 pending、隐 hint、滚到底。"""
+        self._pending_msgs = 0
+        self._hide_hint()
+        self.scroll_end(animate=False, immediate=True, x_axis=False)
 
     def _sync_plain_lines_from_strips(self) -> None:
         """与 RichLog 渲染行对齐（wrap 后每 strip 一行）。"""
