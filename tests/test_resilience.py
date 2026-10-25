@@ -920,3 +920,130 @@ def test_stagnation_guard_changchun_report_regression():
     for r in results[6:]:
         assert r.status == "error"
         assert resilience.STAGNATION_BLOCKED_MARKER in r.content
+
+
+# ---------------------------------------------------------------- 无进展守卫（NoProgressGuard，执行韧性四期）
+
+
+def test_no_progress_guard_soft_guidance_on_third_no_output():
+    """连续 3 次空输出（多行静默截断症状）→ 第 3 次结果尾部追加 harness 提醒，1/2 次原样。"""
+    mw = resilience.NoProgressGuardMiddleware()
+    make = _stagnation_requests()
+
+    def handler(req):
+        return ToolMessage(content="<no output>", name="execute", tool_call_id="c1")
+
+    results = [
+        mw.wrap_tool_call(make("execute", {"command": "python x.py"}), handler)
+        for _ in range(3)
+    ]
+    assert "无进展提醒" not in results[0].content
+    assert "无进展提醒" not in results[1].content
+    assert results[2].content.endswith(
+        resilience.NO_PROGRESS_SOFT_GUIDANCE.format(n=3, tool="execute")
+    )
+
+
+def test_no_progress_guard_soft_guidance_on_repeated_identical_results():
+    """相同非空结果：首调不算无进展，连续 3 次无进展 → 第 4 次调用提醒（n=3）。"""
+    mw = resilience.NoProgressGuardMiddleware()
+    make = _stagnation_requests()
+    executed = []
+
+    def handler(req):
+        executed.append(req.tool_call["args"])
+        return ToolMessage(content="result", name="quick_search", tool_call_id="c1")
+
+    results = [
+        mw.wrap_tool_call(make("quick_search", {"query": f"q{i}"}), handler)
+        for i in range(4)
+    ]
+    assert len(executed) == 4
+    for r in results[:3]:
+        assert "无进展提醒" not in r.content
+    assert results[3].content.endswith(
+        resilience.NO_PROGRESS_SOFT_GUIDANCE.format(n=3, tool="quick_search")
+    )
+
+
+def test_no_progress_guard_progress_resets_streak():
+    """空→空→全新非空结果（清零）→空：第二次空 streak=1，全程无提醒。"""
+    mw = resilience.NoProgressGuardMiddleware()
+    make = _stagnation_requests()
+    contents = iter(["<no output>", "<no output>", "fresh data", "<no output>"])
+    executed = 0
+
+    def handler(req):
+        nonlocal executed
+        executed += 1
+        return ToolMessage(content=next(contents), name="execute", tool_call_id="c1")
+
+    results = [
+        mw.wrap_tool_call(make("execute", {"command": "python x.py"}), handler)
+        for _ in range(4)
+    ]
+    assert executed == 4
+    for r in results:
+        assert "无进展提醒" not in r.content
+
+
+def test_no_progress_guard_hard_break_before_execution():
+    """4 次无进展 → 第 5 次预检拦截（handler 不执行），返回 error ToolMessage。"""
+    mw = resilience.NoProgressGuardMiddleware()
+    make = _stagnation_requests()
+    calls = []
+
+    def handler(req):
+        calls.append(1)
+        return ToolMessage(content="<no output>", name="execute", tool_call_id="c1")
+
+    results = [
+        mw.wrap_tool_call(make("execute", {"command": "python x.py"}), handler)
+        for _ in range(5)
+    ]
+    assert len(calls) == 4, "第 5 次应被预检拦截，handler 不得执行"
+    blocked = results[4]
+    assert blocked.status == "error"
+    assert blocked.name == "execute"
+    assert blocked.tool_call_id == "c1"
+    assert blocked.content.startswith(resilience.STAGNATION_BLOCKED_MARKER)
+    assert "连续 4 次" in blocked.content
+
+
+def test_no_progress_guard_thread_isolation():
+    """streak 按 thread 隔离：A 攒满 4（第 5 次熔断），B 同工具首调仍执行。"""
+    mw = resilience.NoProgressGuardMiddleware()
+    make_a = _stagnation_requests(thread_id="a")
+    make_b = _stagnation_requests(thread_id="b")
+
+    def handler(req):
+        return ToolMessage(content="<no output>", name="execute", tool_call_id="c1")
+
+    for _ in range(4):
+        mw.wrap_tool_call(make_a("execute", {"command": "x"}), handler)
+    r_a = mw.wrap_tool_call(make_a("execute", {"command": "x"}), handler)
+    assert r_a.status == "error"
+    r_b = mw.wrap_tool_call(make_b("execute", {"command": "x"}), handler)
+    assert r_b.status != "error"
+    assert "无进展提醒" not in r_b.content
+
+
+def test_no_progress_guard_tool_isolation():
+    """streak 按工具名隔离：execute 攒满 4，read_file 首调不受影响。"""
+    mw = resilience.NoProgressGuardMiddleware()
+    make = _stagnation_requests()
+    executed = []
+
+    def handler(req):
+        name = req.tool_call["name"]
+        executed.append(name)
+        if name == "execute":
+            return ToolMessage(content="<no output>", name=name, tool_call_id="c1")
+        return ToolMessage(content="file data", name=name, tool_call_id="c1")
+
+    for _ in range(4):
+        mw.wrap_tool_call(make("execute", {"command": "x"}), handler)
+    r = mw.wrap_tool_call(make("read_file", {"file_path": "f.md"}), handler)
+    assert "read_file" in executed
+    assert r.status != "error"
+    assert "无进展提醒" not in r.content

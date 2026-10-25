@@ -2016,7 +2016,11 @@ class JarvisApp(App):
         self.push_screen(CopyPickerModal(self), after_close)
 
     def action_copy_session_or_selection(self) -> None:
-        """复制：侧边栏高亮会话 ID > 日志区拖选 > 当前 thread_id。"""
+        """复制：侧边栏高亮会话 ID > 日志区拖选 > 当前 thread_id。
+
+        tui-ux17: 焦点在日志区且无选区时不做静默 thread 复制（避免读历史时
+        误按 y 的意外副作用），改为提示。
+        """
         sidebar = self._session_sidebar()
         if sidebar.has_focus:
             session_id = self._highlighted_session_id()
@@ -2027,6 +2031,9 @@ class JarvisApp(App):
         selected = log.selected_plain_text().strip()
         if selected:
             self._copy_to_clipboard(selected, "已复制选中文本")
+            return
+        if self.focused is log:
+            self.notify("Ctrl+B 打开侧边栏，选中会话后按 Y", timeout=3)
             return
         if self.thread_id:
             self._copy_to_clipboard(self.thread_id, f"已复制当前会话: {self.thread_id}")
@@ -2050,7 +2057,15 @@ class JarvisApp(App):
 
     def action_cancel(self) -> None:
         """tui-ux15 Esc 三段：运行中 Esc#1 prime 取消 → Esc#2（1.5s 内）取消 →
-        Esc#3（1.5s 内）撤回 1 轮；空闲态双 Esc 撤回语义不变。"""
+        Esc#3（1.5s 内）撤回 1 轮；空闲态双 Esc 撤回语义不变。
+
+        tui-ux17: 焦点在日志区（读历史）时，首个 Esc 只退出阅读态——焦点回
+        #input，不进入三段流程（防止误触发取消/撤回）。
+        """
+        log = self.query_one("#messages", CopyableRichLog)
+        if self.focused is log:
+            self.query_one("#input", JarvisTextArea).focus()
+            return
         worker = self._turn_workers.get(self.thread_id)
         if worker is not None and not worker.is_finished:
             now = monotonic()

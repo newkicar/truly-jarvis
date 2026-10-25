@@ -4,7 +4,7 @@ researcher / knowledge_keeper（SubAgent dict 形态）。
 researcher 定义见 .scratch/javis-implementation/issues/04-researcher-prompt.md Resolution。
 """
 from src.inbox_snapshot_middleware import InboxSnapshotMiddleware
-from src.resilience import StagnationGuardMiddleware, ToolErrorBoundaryMiddleware
+from src.resilience import NoProgressGuardMiddleware, StagnationGuardMiddleware, ToolErrorBoundaryMiddleware
 from src.vault_guard import VaultWriteGuardMiddleware
 
 _ERROR_BOUNDARY = ToolErrorBoundaryMiddleware()
@@ -22,7 +22,7 @@ RESEARCHER_PROMPT = """你是 JARVIS 的 researcher，负责「搜索互联网 +
 - **deep_search**：深度调研（行业分析、调研报告、多角度对比、复杂主题）→ 用它拿全文，约 5-10 秒。
 - 不确定时先用 search；发现摘要不够、需要细节时再升级 deep_search 补充。
 - 避免滥用 deep_search 处理简单问题（慢、费额度）。
-- 搜索停滞纪律：相似查询连续 3 次没有新信息（只是逐词追加）就必须换档：换工具 / 换数据源 / 用已获取信息直接得结论 / 在结论里标注卡点。切勿重复同样的搜索。
+- 搜索停滞纪律：相似查询连续 3 次没有新信息（只是逐词追加）就必须换档：换工具 / 换数据源 / 用已获取信息直接得结论 / 在结论里标注卡点。切勿重复同样的搜索。；结果连续 3 次空白/无新信息 = 方法无效，立即换方法类别（harness 第 3 次连发会提醒、第 5 次拦截）。
 
 ## 融合去重
 - 同一事实多来源时，取更新/更权威者；无关或重复内容直接丢弃。
@@ -65,10 +65,10 @@ def build_researcher(search_tools=(), wiki_tools=(), rag_tool=None, deny_middlew
         "description": RESEARCHER_DESCRIPTION,
         "system_prompt": RESEARCHER_PROMPT,
         "tools": tools,
-        "middleware": [_ERROR_BOUNDARY, StagnationGuardMiddleware()],
+        "middleware": [_ERROR_BOUNDARY, StagnationGuardMiddleware(), NoProgressGuardMiddleware()],
     }
     if deny_middleware is not None:
-        spec["middleware"] = [_ERROR_BOUNDARY, StagnationGuardMiddleware(), deny_middleware]
+        spec["middleware"] = [_ERROR_BOUNDARY, StagnationGuardMiddleware(), NoProgressGuardMiddleware(), deny_middleware]
     return spec  # type: ignore[return-value]
 
 

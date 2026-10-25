@@ -56,7 +56,9 @@ JARVIS_HARNESS_SUFFIX = """\
 - 可验证的事实：先工具、后结论。不凭训练记忆硬答，不在能自行获取时先反问用户，不问「是否需要我查询」——直接查。
 - **认识论纪律**：凡答案依赖本机/实时状态（时间、位置、版本、文件状态），唯一合法来源是 execute/工具实测。工具成功但结果不可用 → 换查询词/升档/换数据源/换工具类别；「我没拿到」不等于「不存在」。报告失败必须引用实际报错原文；无证据的归因 = 编造。
 - **唯一停下条件**：同一目标已用 ≥3 种**不同方法类别**尝试仍失败——向用户报告「已尝试清单 + 报错原文 + 卡点 + 建议」。被 harness 熔断的工具调用不许再发
-- 搜索停滞铁律：逐词追加同一查询没有新信息（「换本词之组」）。相似查询 约 3 次后必须换方法类别（换工具 / 换数据源 / 直接用已获取的信息作答 / 向用户报告卡点）；harness 会拦截第 6 次近似调用。。
+- 搜索停滞铁律：逐词追加同一查询没有新信息（「换本词之组」）。相似查询 约 3 次后必须换方法类别（换工具 / 换数据源 / 直接用已获取的信息作答 / 向用户报告卡点）；harness 会拦截第 6 次近似调用。
+- **无进展铁律**：同一工具的结果连续未带来新信息（空白 / 与前次相同 / 截断空输出）至多 3 次，第 4 次必须换方法类别，或直接用已有信息作答；微调参数 ≠ 换方法；harness 第 3 次连发会提醒、第 5 次拦截。
+- **Windows 多行禁令**：本机 shell 是 cmd，只支持单行命令——多行命令会被静默截断（症状「exit 0 但无输出」，成功但没输出其实是失败）；多行脚本先 write_file 落盘（如 tmp_read_docx.py），再单行 execute：python tmp_read_docx.py；python -c 只许单行；多个操作用 && 单行链接。
 - 完成声明必须附验证证据（测试/命令输出原文）；无法验证时明确说明未验证，不谎称已完成。
 - 匹配任务时先读相关 SKILL.md（read_file），再按 skill 步骤选 tool / task(researcher)。
 - eval / CodeInterpreter 仅用于代码计算与 fan-out，不用于读取系统环境。"""
@@ -75,7 +77,8 @@ TOOL_DESCRIPTION_OVERRIDES = {
         "Use to inspect environment, run programs, or gather facts (time, paths, command output). "
         "Check the command output before claiming success; on failure diagnose the cause, "
         "fix it and re-run with a changed approach instead of repeating the same call. "
-        "Do not use CodeInterpreter/eval for environment reads."
+        "Do not use CodeInterpreter/eval for environment reads. "
+        "On Windows the shell is cmd: single-line commands only — multi-line commands are silently truncated (exit 0 but no output means failure, not success); for multi-line scripts write the .py file first via write_file, then run `python <file>`; `python -c` must stay on one line; chain operations with && on one line."
     ),
     "task": (
         "Delegate work to a subagent in an isolated context. "
@@ -371,6 +374,7 @@ def build_agent(
     # 执行韧性（对标 codex/opencode harness，见 .scratch/javis-execution-resilience/）
     from src.resilience import (
         DoomLoopMiddleware,
+        NoProgressGuardMiddleware,
         StagnationGuardMiddleware,
         StepBudgetMiddleware,
         ToolErrorBoundaryMiddleware,
@@ -397,6 +401,8 @@ def build_agent(
     middleware.append(StepBudgetMiddleware(config.execution_max_steps))
     # 停滞防復（近似成功循环：3 次软引导 / 6 次硬熔断），放在 DoomLoop 之外（DoomLoop 仍最内层）；实例有状态，不共享。
     middleware.append(StagnationGuardMiddleware())
+    # 无进展守卫（结果级：连续 3 次无新信息 -> 软引导 / 第 5 次硬熔断），实例有状态，不共享。
+    middleware.append(NoProgressGuardMiddleware())
     middleware.append(DoomLoopMiddleware())
     # #08: manual-only skill（disable-model-invocation）不进模型上下文；仅主代理挂 skills 中间件
     from src.jarvis_skills import JarvisSkillsMiddleware

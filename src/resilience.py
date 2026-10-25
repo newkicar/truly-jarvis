@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import random
 import re
@@ -552,3 +553,134 @@ class StagnationGuardMiddleware(AgentMiddleware):
     def reset(self) -> None:
         self._windows.clear()
         self._streaks.clear()
+
+
+# ---------------------------------------------------------------------------
+# 无进展守卫（执行韧性四期，结果级检测）
+# ---------------------------------------------------------------------------
+
+NO_PROGRESS_SOFT = 3
+NO_PROGRESS_HARD = 5
+NO_PROGRESS_NO_OUTPUT = "<no output>"
+
+NO_PROGRESS_SOFT_GUIDANCE = (
+    "\n\n[harness 无进展提醒] {tool} 的结果已连续 {n} 次未带来新信息"
+    "（空白或与前次结果相同——含 shell 静默截断 / 多行命令被截导致空输出的情形）。"
+    "注意：微调参数不是换方案。请换方法类别"
+    "（换工具 / 换数据源 / 脚本落盘再执行 / 直接用已有信息作答）；"
+    "仍不行则向用户报告「已尝试清单 + 缺什么 + 卡点」。"
+)
+
+NO_PROGRESS_HARD_BREAK = (
+    STAGNATION_BLOCKED_MARKER
+    + " {tool} 已连续 {n} 次工具调用未带来新信息（空白或与前次相同）。"
+    "本次调用在执行前已被 harness 拦截——继续沿此方向不会带来新信息。"
+    "请改用已获取的信息直接作答，或换方法类别"
+    "（换工具 / 换数据源 / 脚本落盘再执行 / 直接用已有信息作答）；"
+    "仍卡住则向用户报告「已尝试清单 + 缺什么 + 卡点」。"
+)
+
+
+def result_fingerprint(content: object) -> str:
+    """工具结果内容指纹（纯函数）：相同内容 -> 相同指纹。
+
+    str 原样参与哈希，非 str 用 repr；sha1 足以去重（非安全用途）。
+    """
+    text = content if isinstance(content, str) else repr(content)
+    return hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()
+
+
+def is_no_progress(prev_fp: str | None, fp: str, content: object) -> bool:
+    """判定本次工具调用是否未带来新信息（纯函数，恰好三条）。
+
+    a) 结果指纹与前次相同（内容无变化）；
+    b) str 空/纯空白（execute 空输出，cmd 多行截断的典型症状）；
+    c) 含 "<no output>" 占位（shell_backend 空输出标记）。
+    其余 = 有进展。
+    """
+    if prev_fp is not None and fp == prev_fp:
+        return True
+    if isinstance(content, str) and not content.strip():
+        return True
+    if isinstance(content, str) and NO_PROGRESS_NO_OUTPUT in content:
+        return True
+    return False
+
+class NoProgressGuardMiddleware(AgentMiddleware):
+    """无进展守卫（结果级，执行韧性四期）：连续 3 次结果无新信息 -> 软引导 / 第 5 次硬熔断。
+
+    补 DoomLoop / Stagnation 的盲区：二者看「参数」（精确重复 / 近似重复），
+    不看「结果」——同一类命令靠微调参数连续成功、或 cmd 多行截断的
+    空输出（exit 0 + <no output>，甚至不算失败）都能穿过参数级检测器。
+    检测器保持愚蠢：结果内容指纹 + 空输出标记，两级处置：
+    - NO_PROGRESS_SOFT（3 次）：软引导——结果尾部追加「换方法类别」提示；
+    - NO_PROGRESS_HARD（5 次）：预检硬熔断——不执行工具，直接返回 error ToolMessage。
+    作用域 = thread_id × 工具名（各会话 / 各工具独立计数）；有进展立即清零 streak，
+    合法批量工作（每次结果不同的 grep / 翻页类调用）不误伤。
+    实例有状态，不共享（每个 agent 各自构造）；见 AGENTS.md 执行韧性四期。
+    """
+
+    def __init__(self, soft: int = NO_PROGRESS_SOFT, hard: int = NO_PROGRESS_HARD):
+        super().__init__()
+        self.soft = max(2, int(soft))
+        self.hard = max(self.soft + 1, int(hard))
+        self._streaks: dict[str, dict[str, int]] = {}
+        self._last_fp: dict[str, dict[str, str]] = {}
+
+    @property
+    def name(self) -> str:
+        return "no-progress-guard"
+
+    def _hard_break(self, request, tool: str, streak: int):
+        from langchain_core.messages import ToolMessage
+
+        tool_call = getattr(request, "tool_call", None) or {}
+        return ToolMessage(
+            content=NO_PROGRESS_HARD_BREAK.format(n=streak, tool=tool),
+            name=tool,
+            tool_call_id=str(tool_call.get("id", "")),
+            status="error",
+        )
+
+    def _post(self, request, tool: str, scope: str, result):
+        content = getattr(result, "content", "")
+        fp = result_fingerprint(content)
+        prev = self._last_fp.get(scope, {}).get(tool)
+        # 永远存「加软引导前的原始内容」指纹，不污染后续比对。
+        self._last_fp.setdefault(scope, {})[tool] = fp
+        streaks = self._streaks.setdefault(scope, {})
+        if is_no_progress(prev, fp, content):
+            streak = streaks.get(tool, 0) + 1
+            streaks[tool] = streak
+            if streak >= self.hard:
+                # 兜底（正常路径已在 wrap/awrap 预检拦截）：不执行，返回 error。
+                return self._hard_break(request, tool, streak)
+            if streak >= self.soft and isinstance(content, str):
+                result.content = content + NO_PROGRESS_SOFT_GUIDANCE.format(
+                    n=streak, tool=tool
+                )
+        else:
+            streaks[tool] = 0
+        return result
+
+    def _pre_check(self, request) -> tuple[str, str, int]:
+        tool, scope = _request_scope(request)
+        streak = self._streaks.get(scope, {}).get(tool, 0)
+        return tool, scope, streak
+
+    def wrap_tool_call(self, request, handler):
+        tool, scope, streak = self._pre_check(request)
+        if streak >= self.hard - 1:
+            return self._hard_break(request, tool, streak)
+        return self._post(request, tool, scope, handler(request))
+
+    async def awrap_tool_call(self, request, handler):
+        tool, scope, streak = self._pre_check(request)
+        if streak >= self.hard - 1:
+            return self._hard_break(request, tool, streak)
+        return self._post(request, tool, scope, await handler(request))
+
+    def reset(self) -> None:
+        self._streaks.clear()
+        self._last_fp.clear()
+

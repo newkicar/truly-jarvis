@@ -10,6 +10,9 @@ text=True 无 errors 参数，父进程开 UTF-8 模式时 GBK 控制台输出�
 3. 虚拟前缀守卫：execute 收到 /workspace/ 等文件工具专用前缀时，执行前拦截并
    返回可行动的错误（cmd 会把 /workspace 当开关静默忽略，模型永远猜不到根因——
    0006 课原则：提示词是建议，代码才是边界）。
+4. 多行拦截：Windows 下 shell 为 cmd，不支持多行命令（换行被静默截断，
+   症状 = exit 0 但无输出）；execute 执行前预拦截并返回可行动指引
+   （执行韧性四期四层防线第 1 层，详见 AGENTS.md）。
 """
 from __future__ import annotations
 
@@ -27,6 +30,10 @@ from deepagents.backends.protocol import ExecuteResponse
 def _console_encoding() -> str | None:
     """Windows 控制台输出用系统 ANSI 码页（中文 Windows=GBK/mbcs），确定性解码。"""
     return "mbcs" if sys.platform == "win32" else None
+
+
+_IS_WINDOWS = os.name == "nt"
+# 测试 monkeypatch 目标：直接改本模块属性（见 tests/test_shell_backend.py）。
 
 
 class InheritedEnvShellBackend(LocalShellBackend):
@@ -115,6 +122,19 @@ class InheritedEnvShellBackend(LocalShellBackend):
         guard = self._virtual_prefix_error(command)
         if guard is not None:
             return guard
+
+        if _IS_WINDOWS and "\n" in command:
+            return ExecuteResponse(
+                output=(
+                    "错误：本机 shell 是 Windows cmd，不支持多行命令——命令中的换行被静默截断，"
+                    "结果为 exit 0 且无输出（这是失败，不是成功）。请换方法：\n"
+                    "1) 多行脚本：先用 write_file 落盘（如 tmp_read_docx.py），再单行执行：python tmp_read_docx.py\n"
+                    "2) 多个操作：用 && 或 ; 链接成单行\n"
+                    "3) python -c 只允许单行；需要多行请用方法 1"
+                ),
+                exit_code=1,
+                truncated=False,
+            )
 
         effective_timeout = timeout if timeout is not None else self._default_timeout
         if effective_timeout <= 0:

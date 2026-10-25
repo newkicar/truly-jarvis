@@ -6,7 +6,7 @@ import pytest
 from textual.containers import Container
 from textual.widgets import Button, Static
 
-from src.tui import JarvisApp
+from src.tui import JarvisApp, JarvisTextArea
 from src.tui_log import CopyableRichLog
 from tests.test_tui import FakeAgent
 
@@ -236,3 +236,121 @@ async def test_hint_stick_recovery():
         assert log.scroll_offset.y == log.max_scroll_y
         assert log._pending_msgs == 0  # noqa: SLF001
         assert not _hint(pilot).has_class("-active")
+
+
+# ---------------------------------------------------------------------------
+# tui-ux17: 点击日志区聚焦 + 原生翻页键 + y/Esc 阅读态门控
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_click_log_focuses_it():
+    """tui-ux17: 点击日志区使其获得焦点（原生翻页键生效的前置条件）。"""
+    app = _new_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        log = pilot.app.query_one("#messages", CopyableRichLog)
+        await _fill(pilot, log, 20)
+        await pilot.click(log, offset=(40, 5))
+        assert pilot.app.focused is log
+
+
+@pytest.mark.asyncio
+async def test_pagedown_pages_after_focus():
+    """tui-ux17: 聚焦后 PgDn 原生翻一页下（先手动滚到顶制造距离）。"""
+    app = _new_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        log = pilot.app.query_one("#messages", CopyableRichLog)
+        await _fill(pilot, log, 40)
+        log.scroll_y = 0
+        await pilot.pause()
+        await pilot.click(log, offset=(40, 5))
+        await pilot.press("pagedown")
+        await pilot.pause()
+        assert log.scroll_offset.y > 0
+
+
+@pytest.mark.asyncio
+async def test_end_key_jumps_to_bottom_clears_pending():
+    """tui-ux17: 聚焦后 End 键跳底（带默认动画，有界等待循环），恢复贴底、
+    清 pending、隐藏 hint。"""
+    app = _new_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        log = pilot.app.query_one("#messages", CopyableRichLog)
+        await _fill(pilot, log, 40)
+        log.scroll_y = 0
+        await pilot.pause()
+        log.write("x")
+        await pilot.pause()
+        assert log._pending_msgs == 1  # noqa: SLF001
+        await pilot.click(log, offset=(40, 5))
+        await pilot.press("end")
+        for _ in range(100):
+            await pilot.pause()
+            if log.is_vertical_scroll_end:
+                break
+        assert log.is_vertical_scroll_end
+        assert log._pending_msgs == 0  # noqa: SLF001
+        assert not _hint(pilot).has_class("-active")
+
+
+@pytest.mark.asyncio
+async def test_pageup_shows_hint_after_focus():
+    """tui-ux17: 聚焦后 PgUp 翻一页上，离开底部 →「Back to bottom」hint 常显。"""
+    app = _new_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        log = pilot.app.query_one("#messages", CopyableRichLog)
+        await _fill(pilot, log, 40)
+        await pilot.click(log, offset=(40, 5))
+        await pilot.press("pageup")
+        await pilot.pause()
+        assert log.scroll_offset.y < log.max_scroll_y
+        assert _hint(pilot).has_class("-active")
+
+
+@pytest.mark.asyncio
+async def test_home_key_jumps_to_top():
+    """tui-ux17: 聚焦后 Home 键跳顶（带默认动画，有界等待循环）。"""
+    app = _new_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        log = pilot.app.query_one("#messages", CopyableRichLog)
+        await _fill(pilot, log, 40)
+        await pilot.click(log, offset=(40, 5))
+        await pilot.press("home")
+        for _ in range(100):
+            await pilot.pause()
+            if log.scroll_offset.y == 0:
+                break
+        assert log.scroll_offset.y == 0
+
+
+@pytest.mark.asyncio
+async def test_y_on_focused_log_notifies_not_silent_copy():
+    """tui-ux17: 焦点在日志区且无选区时，y 弹侧边栏提示，不再静默复制 thread_id。"""
+    app = _new_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        log = pilot.app.query_one("#messages", CopyableRichLog)
+        await _fill(pilot, log, 20)
+        await pilot.click(log, offset=(40, 5))
+        assert pilot.app.focused is log
+        assert pilot.app.thread_id  # 无门控时走静默复制分支的前置条件
+        calls: list = []
+        pilot.app.notify = lambda *a, **k: calls.append(a)  # type: ignore[method-assign]
+        pilot.app.action_copy_session_or_selection()
+        texts = " ".join(str(x) for tup in calls for x in tup)
+        assert "侧边栏" in texts
+        assert "已复制" not in texts
+
+
+@pytest.mark.asyncio
+async def test_esc_on_focused_log_exits_reading_mode_only():
+    """tui-ux17: 焦点在日志区时首个 Esc 仅退出阅读态（焦点回 #input），
+    不进三段取消/撤回流程（_esc_phase 保持 none）。"""
+    app = _new_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        log = pilot.app.query_one("#messages", CopyableRichLog)
+        await _fill(pilot, log, 20)
+        await pilot.click(log, offset=(40, 5))
+        assert pilot.app.focused is log
+        await pilot.press("escape")
+        await pilot.pause()
+        assert pilot.app.focused is pilot.app.query_one("#input", JarvisTextArea)
+        assert pilot.app._esc_phase == "none"  # noqa: SLF001

@@ -202,3 +202,74 @@ def test_resolve_path_relative_unchanged(tmp_path):
 
     result = b._resolve_path("sub/dir")
     assert result == proj / "sub" / "dir", f"应落到项目根下，实际: {result}"
+
+
+# ---------------------------------------------------------------- Windows 多行命令拦截（执行韧性四期 L1）
+
+
+class _FakeCompleted:
+    """模拟 subprocess.CompletedProcess（execute 只读 stdout/stderr/returncode）。"""
+
+    def __init__(self, command: str):
+        self.returncode = 0
+        self.stdout = f"ran: {command!r}\n"
+        self.stderr = ""
+
+
+def test_windows_multiline_command_blocked(monkeypatch):
+    """Windows 多行命令执行前拦截：可行动指引，subprocess 根本不被调用。"""
+    import src.shell_backend as sb
+
+    b = sb.InheritedEnvShellBackend(root_dir=".", virtual_mode=False)
+    monkeypatch.setattr(sb, "_IS_WINDOWS", True)
+    called = []
+
+    def fake_run(command, *args, **kwargs):
+        called.append(command)
+        raise AssertionError("多行命令应被执行前拦截")
+
+    monkeypatch.setattr(sb.subprocess, "run", fake_run)
+    res = b.execute('python -c "\nimport sys\nprint(\'hello\')"')
+    assert res.exit_code == 1
+    assert "多行" in res.output
+    assert "落盘" in res.output
+    assert "write_file" in res.output
+    assert not called, "多行命令必须执行前拦截，subprocess.run 不应被调用"
+
+
+def test_windows_single_line_command_allowed(monkeypatch):
+    """Windows 单行命令不被多行守卫误伤。"""
+    import src.shell_backend as sb
+
+    b = sb.InheritedEnvShellBackend(root_dir=".", virtual_mode=False)
+    monkeypatch.setattr(sb, "_IS_WINDOWS", True)
+    seen = []
+
+    def fake_run(command, *args, **kwargs):
+        seen.append(command)
+        return _FakeCompleted(command)
+
+    monkeypatch.setattr(sb.subprocess, "run", fake_run)
+    res = b.execute("echo hello")
+    assert res.exit_code == 0
+    assert seen == ["echo hello"]
+    assert "ran:" in res.output
+
+
+def test_posix_multiline_command_allowed(monkeypatch):
+    """POSIX shell（sh/bash）支持多行：不拦截，原样放行。"""
+    import src.shell_backend as sb
+
+    b = sb.InheritedEnvShellBackend(root_dir=".", virtual_mode=False)
+    monkeypatch.setattr(sb, "_IS_WINDOWS", False)
+    seen = []
+
+    def fake_run(command, *args, **kwargs):
+        seen.append(command)
+        return _FakeCompleted(command)
+
+    monkeypatch.setattr(sb.subprocess, "run", fake_run)
+    multi = "echo line1\necho line2"
+    res = b.execute(multi)
+    assert res.exit_code == 0
+    assert seen == [multi]

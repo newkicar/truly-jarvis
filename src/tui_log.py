@@ -141,8 +141,14 @@ class CopyableRichLog(RichLog):
         self.hint: Button | None = None
 
     def focus_on_click(self) -> bool:
-        """允许拖选；不抢底部输入框焦点。"""
-        return False
+        """tui-ux17: 点击日志区即聚焦（对标 opencode 列表点击聚焦模型；Textual 8.2.8
+        Screen._on_click → get_focusable_widget_at + focus_on_click → set_focus 实证）。
+        聚焦后 ScrollableContainer 内置键绑定生效：PgUp/PgDn 翻页、Home/End 跳顶/跳底
+        （action 解析链 widget→screen→app，RichLog 无同名键，天然不冲突）；
+        watch_scroll_y 的 sticky 状态机对键盘滚动同样联动（上翻自动停跟随、hint 出现）。
+        拖选走 Screen 级 ALLOW_SELECT 路径，与焦点无关；点回 #input 即回到输入焦点。
+        旧版 return False 导致点击永远不聚焦 → 翻页键全部失效（本条修复的遗留 bug 根因）。"""
+        return True
 
     def render_line(self, y: int) -> Strip:
         """渲染叠加：offset meta（选区命中）+ 选区高亮底色（用户 P4：框选可见）。
