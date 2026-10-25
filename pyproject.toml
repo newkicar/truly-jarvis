@@ -16,6 +16,7 @@ dependencies = [
     "langgraph-checkpoint-sqlite==3.1.1",
     "langchain-quickjs>=0.3.3",
     "langchain-mcp-adapters>=0.3.2",
+    "langmem==0.0.30",
     "textual>=0.40.0",
     "tavily-python",
     "httpx",
