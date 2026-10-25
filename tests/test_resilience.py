@@ -681,3 +681,242 @@ def test_run_agent_turn_handoff_falls_back_without_model():
     )
     assert ok is False
     assert any("步数超过上限 15" in s for s in statuses + fallbacks)
+
+# ---------------------------------------------------------------- 停滞防御（StagnationGuard）
+
+_BASE = "长春 逐小时天气 10月25日 周日 每小时 气温 降水概率"
+
+
+def _stagnation_ok_handler():
+    def handler(req):
+        return ToolMessage(
+            content="result", name=req.tool_call["name"], tool_call_id="c1"
+        )
+    return handler
+
+
+def _stagnation_requests(thread_id=None):
+    def make(name, args, req_id="c1"):
+        req = type("Req", (), {"tool_call": {"id": req_id, "name": name, "args": args}})()
+        if thread_id is not None:
+            req.state = {"configurable": {"thread_id": thread_id}}
+        return req
+    return make
+
+
+def test_arg_tokens_cjk_ascii_mixed_and_none():
+    assert resilience.arg_tokens(None) == frozenset()
+    toks = resilience.arg_tokens({"query": "长春 天气 2026"})
+    assert "长春" in toks      # CJK 双字
+    assert "2026" in toks      # ASCII 数字串
+    assert "" not in toks
+
+
+def test_arg_tokens_single_ascii_char_excluded():
+    # key/value 均为单字母（<2 字符）-> 空 token 集
+    assert resilience.arg_tokens({"a": "x"}) == frozenset()
+
+
+def test_token_similarity_edge_cases():
+    empty = frozenset()
+    assert resilience.token_similarity(empty, empty) == 1.0
+    assert resilience.token_similarity(empty, frozenset({"abc"})) == 0.0
+    assert resilience.token_similarity(frozenset({"abc"}), empty) == 0.0
+    assert resilience.token_similarity(frozenset({"abc"}), frozenset({"xyz"})) == 0.0
+    # 单字母 ASCII 参数 -> 空 token 集 -> 双空相似度 1.0（不误判近似）
+    assert resilience.token_similarity(
+        resilience.arg_tokens({"query": "x"}), resilience.arg_tokens({"query": "y"})
+    ) == 1.0
+
+
+def test_stagnation_guard_ignores_legitimate_polling():
+    mw = resilience.StagnationGuardMiddleware()
+    make = _stagnation_requests()
+
+    calls = []
+
+    def handler(req):
+        calls.append(req.tool_call["args"])
+        return ToolMessage(content="ok", name="quick_search", tool_call_id="c1")
+
+    for i in ("123", "456", "789", "101112", "20212223"):
+        out = mw.wrap_tool_call(
+            make("quick_search", {"job": "ci-status", "id": i}), handler
+        )
+        assert out.content == "ok"
+        assert "[系统提示]" not in out.content
+    assert len(calls) == 5
+
+
+def test_stagnation_guard_soft_guidance_at_third_near_dup():
+    mw = resilience.StagnationGuardMiddleware()
+    make = _stagnation_requests()
+    seq = [_BASE, _BASE + " 2026", _BASE + " 2026年", _BASE + " 2026年10月"]
+    executed = []
+
+    def handler(req):
+        executed.append(req.tool_call["args"])
+        return ToolMessage(content="result", name="quick_search", tool_call_id="c1")
+
+    results = [
+        mw.wrap_tool_call(make("quick_search", {"query": q}), handler) for q in seq
+    ]
+    assert len(executed) == 4
+    for r in results[:3]:
+        assert "[系统提示]" not in r.content
+    assert results[3].content.endswith(
+        resilience.STAGNATION_SOFT_GUIDANCE.format(n=3, tool="quick_search")
+    )
+
+
+def test_stagnation_guard_hard_break_at_sixth_near_dup():
+    mw = resilience.StagnationGuardMiddleware()
+    make = _stagnation_requests()
+    seq = [
+        _BASE,
+        _BASE + " 2026",
+        _BASE + " 2026年",
+        _BASE + " 2026年10月",
+        _BASE + "2026年10月25日",
+        _BASE + "2026年10月25日 周日",
+        _BASE + "2026年10月25日 周日 逐小时",
+    ]
+    executed = []
+
+    def handler(req):
+        executed.append(req.tool_call["args"])
+        return ToolMessage(content="result", name="quick_search", tool_call_id="c1")
+
+    results = [
+        mw.wrap_tool_call(make("quick_search", {"query": q}), handler) for q in seq
+    ]
+    assert len(executed) == 6
+    assert "[系统提示]" in results[3].content
+    blocked = results[6]
+    assert blocked.status == "error"
+    assert resilience.STAGNATION_BLOCKED_MARKER in blocked.content
+    assert "连续 6 次" in blocked.content
+    assert blocked.name == "quick_search"
+    assert blocked.tool_call_id == "c1"
+
+
+def test_stagnation_guard_reset_on_distinct_args():
+    mw = resilience.StagnationGuardMiddleware()
+    make = _stagnation_requests()
+    handler = _stagnation_ok_handler()
+    for q in (_BASE, _BASE + " 2026", _BASE + " 2026年"):
+        mw.wrap_tool_call(make("quick_search", {"query": q}), handler)
+    out4 = mw.wrap_tool_call(
+        make("quick_search", {"query": _BASE + " 2026年10月"}), handler
+    )
+    assert "[系统提示]" in out4.content
+    for i in range(3):
+        r = mw.wrap_tool_call(
+            make("quick_search", {"query": f"东京 地铁 路线 车站{i}"}), handler
+        )
+        assert "[系统提示]" not in r.content
+
+
+def test_stagnation_guard_tools_independent():
+    mw = resilience.StagnationGuardMiddleware()
+    make = _stagnation_requests()
+    handler = _stagnation_ok_handler()
+    seqA = ["长春 逐小时天气 每小时 气温 降水概率"]
+    seqA.append(seqA[0] + " 每小时")
+    seqA.append(seqA[1] + " 温度")
+    seqA.append(seqA[2] + " 周日 预报")
+    seqB = ["特斯拉 股价 周线 收盘价 走势"]
+    seqB.append(seqB[0] + " 收盘")
+    seqB.append(seqB[1] + " 收盘 涨跌")
+    seqB.append(seqB[2] + " 涨跌 幅度")
+    resA, resB = [], []
+    for i in range(4):
+        resA.append(mw.wrap_tool_call(make("quick_search", {"query": seqA[i]}), handler))
+        resB.append(mw.wrap_tool_call(make("deep_search", {"query": seqB[i]}), handler))
+    for r in resA[:3] + resB[:3]:
+        assert "[系统提示]" not in r.content
+    assert "[系统提示]" in resA[3].content
+    assert "[系统提示]" in resB[3].content
+
+
+def test_stagnation_guard_thread_isolation():
+    mw = resilience.StagnationGuardMiddleware()
+    make_a = _stagnation_requests(thread_id="a")
+    make_b = _stagnation_requests(thread_id="b")
+    handler = _stagnation_ok_handler()
+    seq = [_BASE, _BASE + " 2026", _BASE + " 2026年", _BASE + " 2026年10月"]
+    res_a, res_b = [], []
+    for i in range(4):
+        res_a.append(mw.wrap_tool_call(make_a("quick_search", {"query": seq[i]}), handler))
+        res_b.append(mw.wrap_tool_call(make_b("quick_search", {"query": seq[i]}), handler))
+    for r in res_a[:3] + res_b[:3]:
+        assert "[系统提示]" not in r.content
+    assert "[系统提示]" in res_a[3].content
+    assert "[系统提示]" in res_b[3].content
+    assert res_a[3].status != "error" and res_b[3].status != "error"
+
+
+def test_stagnation_guard_async_path():
+    import asyncio
+
+    mw = resilience.StagnationGuardMiddleware()
+    make = _stagnation_requests()
+    seq = [
+        _BASE,
+        _BASE + " 2026",
+        _BASE + " 2026年",
+        _BASE + " 2026年10月",
+        _BASE + "2026年10月25日",
+        _BASE + "2026年10月25日 周日",
+        _BASE + "2026年10月25日 周日 逐小时",
+    ]
+    executed = []
+
+    async def handler(req):
+        executed.append(req.tool_call["args"])
+        return ToolMessage(content="result", name="quick_search", tool_call_id="c1")
+
+    async def run():
+        return [
+            await mw.awrap_tool_call(make("quick_search", {"query": q}), handler)
+            for q in seq
+        ]
+
+    results = asyncio.run(run())
+    assert len(executed) == 6
+    assert "[系统提示]" in results[3].content
+    assert results[6].status == "error"
+    assert resilience.STAGNATION_BLOCKED_MARKER in results[6].content
+
+
+def test_stagnation_guard_changchun_report_regression():
+    mw = resilience.StagnationGuardMiddleware()
+    make = _stagnation_requests()
+    executed = 0
+
+    def counting_handler(req):
+        nonlocal executed
+        executed += 1
+        return ToolMessage(content="result", name="quick_search", tool_call_id="c1")
+
+    q = _BASE
+    seq = [
+        q,
+        q + " 2026",
+        q + " 2026年",
+        q + " 2026年10月",
+        q + " 2026年10月25日",
+        q + " 2026年10月25日 周日",
+        q + " 2026年10月25日 周日 逐小时",
+        q + " 2026年10月25日 周日 逐小时 天气",
+        q + " 2026年10月25日 周日 逐小时 天气 预报",
+    ]
+    results = [
+        mw.wrap_tool_call(make("quick_search", {"query": qq}), counting_handler)
+        for qq in seq
+    ]
+    assert executed == 6
+    assert "[系统提示]" in results[3].content
+    for r in results[6:]:
+        assert r.status == "error"
+        assert resilience.STAGNATION_BLOCKED_MARKER in r.content

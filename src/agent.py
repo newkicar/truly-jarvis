@@ -55,7 +55,8 @@ JARVIS_HARNESS_SUFFIX = """\
 - **路径约定**：文件工具（ls/read/write/edit/glob/grep）接受任意磁盘路径——绝对路径直接用，相对路径以项目根为基准；/workspace/（=项目根）、/vault/、/memories/、/skills/ 等前缀仍是快捷方式（自动映射对应目录）。写操作走审批。execute 的 shell 工作目录就是项目根本身——shell 命令里用真实/相对路径，**禁止**带 /workspace/ 等虚拟前缀（shell 不认识，cmd 会把它当开关静默忽略）。
 - 可验证的事实：先工具、后结论。不凭训练记忆硬答，不在能自行获取时先反问用户，不问「是否需要我查询」——直接查。
 - **认识论纪律**：凡答案依赖本机/实时状态（时间、位置、版本、文件状态），唯一合法来源是 execute/工具实测。工具成功但结果不可用 → 换查询词/升档/换数据源/换工具类别；「我没拿到」不等于「不存在」。报告失败必须引用实际报错原文；无证据的归因 = 编造。
-- **唯一停下条件**：同一目标已用 ≥3 种**不同方法类别**尝试仍失败——向用户报告「已尝试清单 + 报错原文 + 卡点 + 建议」。被 harness 熔断的工具调用不许再发。
+- **唯一停下条件**：同一目标已用 ≥3 种**不同方法类别**尝试仍失败——向用户报告「已尝试清单 + 报错原文 + 卡点 + 建议」。被 harness 熔断的工具调用不许再发
+- 搜索停滞铁律：逐词追加同一查询没有新信息（「换本词之组」）。相似查询 约 3 次后必须换方法类别（换工具 / 换数据源 / 直接用已获取的信息作答 / 向用户报告卡点）；harness 会拦截第 6 次近似调用。。
 - 完成声明必须附验证证据（测试/命令输出原文）；无法验证时明确说明未验证，不谎称已完成。
 - 匹配任务时先读相关 SKILL.md（read_file），再按 skill 步骤选 tool / task(researcher)。
 - eval / CodeInterpreter 仅用于代码计算与 fan-out，不用于读取系统环境。"""
@@ -370,6 +371,7 @@ def build_agent(
     # 执行韧性（对标 codex/opencode harness，见 .scratch/javis-execution-resilience/）
     from src.resilience import (
         DoomLoopMiddleware,
+        StagnationGuardMiddleware,
         StepBudgetMiddleware,
         ToolErrorBoundaryMiddleware,
     )
@@ -393,6 +395,8 @@ def build_agent(
         ]
     )
     middleware.append(StepBudgetMiddleware(config.execution_max_steps))
+    # 停滞防復（近似成功循环：3 次软引导 / 6 次硬熔断），放在 DoomLoop 之外（DoomLoop 仍最内层）；实例有状态，不共享。
+    middleware.append(StagnationGuardMiddleware())
     middleware.append(DoomLoopMiddleware())
     # #08: manual-only skill（disable-model-invocation）不进模型上下文；仅主代理挂 skills 中间件
     from src.jarvis_skills import JarvisSkillsMiddleware

@@ -378,3 +378,177 @@ class DoomLoopMiddleware(AgentMiddleware):
 
     def reset(self) -> None:
         self._streaks.clear()
+
+
+STAGNATION_WINDOW = 6
+STAGNATION_SOFT = 3
+STAGNATION_HARD = 6
+STAGNATION_JACCARD = 0.7
+
+STAGNATION_SOFT_GUIDANCE = (
+    "\n\n[系统提示] {tool} 已连续 {n} 次以高度相似的参数被调用——"
+    "只是微调参数、未获得新信息。请停止逐词追加，改为：① 用已获取的信息直接作答；"
+    "② 换方法类别（换工具 / 换数据源 / 换入口——微调参数不算换方案）；"
+    "③ 仍卡住则停下向用户报告「已尝试什么、缺什么、卡点」。"
+)
+
+STAGNATION_HARD_BREAK = (
+    "[harness 拒绝执行] {tool} 已连续 {n} 次以高度相似的参数被调用，"
+    "本次调用在执行前已被 harness 拦截——继续沿此方向不会带来新信息。"
+    "请改用已获取的信息直接作答，或换方法类别（换工具 / 换数据源 / 换入口）；"
+    "仍卡住则向用户报告「已尝试清单 + 缺什么 + 卡点」。"
+)
+
+# 硬熔断 error ToolMessage 的前缀标记（测试 / harness 文桉共用同一出处）。
+STAGNATION_BLOCKED_MARKER = "[harness 拒绝执行]"
+
+_ASCII_TOKEN_RE = re.compile(r"[a-z0-9]{2,}")
+_CJK_RUN_RE = re.compile(r"[\u4e00-\u9fff]+")
+
+
+def arg_tokens(args: object) -> frozenset[str]:
+    """把工具参数规范化成 token 集（纯 stdlib；CJK 用双字）。
+
+    用于「近似重复」的 Jaccard 相似度：ASCII 保留 [a-z0-9]{2,}
+    （避免单数字/符号误判）；CJK 取连续段的字符双字（「长春」相邻 -> ["长春"]，
+    单个 CJK 段贡献该字符本身），让中文查询一字之差仍算高度相似。None/空 -> frozenset()。
+    """
+    if args is None:
+        return frozenset()
+    try:
+        text = json.dumps(args, sort_keys=True, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        text = repr(args)
+    text = text.lower()
+    tokens: list[str] = _ASCII_TOKEN_RE.findall(text)
+    for run in _CJK_RUN_RE.findall(text):
+        if len(run) == 1:
+            tokens.append(run)
+        else:
+            tokens.extend(run[i : i + 2] for i in range(len(run) - 1))
+    return frozenset(tokens)
+
+
+def token_similarity(a: frozenset[str], b: frozenset[str]) -> float:
+    """Jaccard 相似度：交/并。双空 -> 1.0，一空 -> 0.0。"""
+    if not a and not b:
+        return 1.0
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def _request_scope(request) -> tuple[str, str]:
+    """返回 (工具名, thread 作用域)。scope 防御式取 thread_id，缺省 "default"。
+
+    支持两种 request 形态：对象属性 (.state) 与 dict (["state"])；
+    测试用的无 state 假 request 落入 "default" 作用域。
+    """
+    tool_call = getattr(request, "tool_call", None) or {}
+    state = getattr(request, "state", None)
+    if state is None and isinstance(request, dict):
+        state = request.get("state")
+    thread_id = "default"
+    if isinstance(state, dict):
+        configurable = state.get("configurable")
+        if isinstance(configurable, dict):
+            thread_id = str(configurable.get("thread_id") or "default")
+    return str(tool_call.get("name", "?")), thread_id
+
+
+class StagnationGuardMiddleware(AgentMiddleware):
+    """停滞防御（doom-loop 的泛化）：同一工具以高度相似参数成功 N 次连发 -> 注入引导 / 硬熔断。
+
+    补 DoomLoopMiddleware 的盲区：DoomLoop 只抓「精确重复签名 且 失败」；
+    「调用全成功 + 参数每次加一个词」（逐词堆砌式搜索）才是烧穿步数预算的常见
+    现实病灶——检测器必须认「成功但不前进」。检测器保持愚蠢：参数 token 集
+    （ASCII 字母数字 + CJK 双字）做 Jaccard，滑窗 STAGNATION_WINDOW、阈值
+    STAGNATION_JACCARD；两级处置同 doom-loop：
+    - STAGNATION_SOFT（3 次）：软引导——成功结果尾部追加换方案提示；
+    - STAGNATION_HARD（6 次）：硬熔断——不执行工具，直接返回 error ToolMessage。
+    作用域 = thread_id，各会话独立计数；不同工具独立计数；
+    参数显著不同（相似度 < 阈值）立即清零 streak，合法批量工作 / fan-out 不误伤。
+    """
+
+    def __init__(
+        self,
+        window: int = STAGNATION_WINDOW,
+        soft: int = STAGNATION_SOFT,
+        hard: int = STAGNATION_HARD,
+        jaccard: float = STAGNATION_JACCARD,
+    ):
+        super().__init__()
+        self.window = max(2, int(window))
+        self.soft = max(2, int(soft))
+        self.hard = max(self.soft + 1, int(hard))
+        self.jaccard = float(jaccard)
+        self._windows: dict[str, dict[str, deque[frozenset[str]]]] = {}
+        self._streaks: dict[str, dict[str, int]] = {}
+
+    @property
+    def name(self) -> str:
+        return "stagnation-guard"
+
+    def _near(self, scope: str, tool: str, tokens: frozenset[str]) -> int:
+        """tokens 与最近 window 内任一调用是否近似；更新并返回 streak。
+
+        近似 -> +1（累加）；显著不同 -> 0（清零重武装）。
+        """
+        window = self._windows.setdefault(scope, {}).setdefault(
+            tool, deque(maxlen=self.window)
+        )
+        streaks = self._streaks.setdefault(scope, {})
+        near = any(token_similarity(tokens, w) >= self.jaccard for w in window)
+        streak = streaks.get(tool, 0) + 1 if near else 0
+        streaks[tool] = streak
+        return streak
+
+    def _record(self, scope: str, tool: str, tokens: frozenset[str]) -> None:
+        self._windows.setdefault(scope, {}).setdefault(
+            tool, deque(maxlen=self.window)
+        ).append(tokens)
+
+    def _hard_break(self, request, tool: str, streak: int):
+        from langchain_core.messages import ToolMessage
+
+        tool_call = getattr(request, "tool_call", None) or {}
+        return ToolMessage(
+            content=STAGNATION_HARD_BREAK.format(n=streak, tool=tool),
+            name=tool,
+            tool_call_id=str(tool_call.get("id", "")),
+            status="error",
+        )
+
+    def _pre_check(self, request) -> tuple[str, str, frozenset[str], int]:
+        tool, scope = _request_scope(request)
+        args = (getattr(request, "tool_call", None) or {}).get("args") or {}
+        tokens = arg_tokens(args)
+        streak = self._near(scope, tool, tokens)
+        return tool, scope, tokens, streak
+
+    def _post(self, request, tool, scope, tokens, streak, result):
+        if streak >= self.hard:
+            # 兜底（正常路径已在 wrap/awrap 预检拦截）：不执行，返回 error。
+            return self._hard_break(request, tool, streak)
+        self._record(scope, tool, tokens)
+        if streak >= self.soft:
+            content = getattr(result, "content", "")
+            if isinstance(content, str):
+                result.content = f"{content}{STAGNATION_SOFT_GUIDANCE.format(n=streak, tool=tool)}"
+        return result
+
+    def wrap_tool_call(self, request, handler):
+        tool, scope, tokens, streak = self._pre_check(request)
+        if streak >= self.hard:
+            return self._hard_break(request, tool, streak)
+        return self._post(request, tool, scope, tokens, streak, handler(request))
+
+    async def awrap_tool_call(self, request, handler):
+        tool, scope, tokens, streak = self._pre_check(request)
+        if streak >= self.hard:
+            return self._hard_break(request, tool, streak)
+        return self._post(request, tool, scope, tokens, streak, await handler(request))
+
+    def reset(self) -> None:
+        self._windows.clear()
+        self._streaks.clear()
