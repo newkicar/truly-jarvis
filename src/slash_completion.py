@@ -31,7 +31,7 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("/use", "/use <skill> [说明]", "手动注入指定 skill（名称模糊补全）"),
     SlashCommand("/yolo", "/yolo on | off", "YOLO 模式开关（仅当前会话）"),
     SlashCommand("/compact", "/compact [提示]", "压缩当前会话上下文为延续性摘要（可选文字提示引导方向）"),
-    SlashCommand("/dream", "/dream", "梦境沉淀：回顾近期会话，蒸馏可复用知识到 memory/dream/knowledge.md"),
+    SlashCommand("/dream", "/dream", "梦境沉淀：回顾近期会话，蒸馏可复用知识到 梦境知识库（默认全局 ~/.jarvis/memory/dream/）"),
 )
 
 

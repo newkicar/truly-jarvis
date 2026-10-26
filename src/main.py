@@ -201,6 +201,15 @@ def main(argv=None) -> int:
         auto_init_project()
         config = load_config()
 
+    # javis-global-memory: one-time migration of old project-dir memory/ to global ~/.jarvis/memory/ (idempotent, never deletes target)
+    try:
+        from src.memory_dir import maybe_migrate_memory
+
+        for _note in maybe_migrate_memory(config):
+            print(f"[memory] {_note}", file=sys.stderr)
+    except Exception as _e:  # migration failure must not block startup
+        print(f"[memory] migration warning: {str(_e)}", file=sys.stderr)
+
     thread_id = "default"
     use_tui = "--cli" not in args
     if "-n" in args or "--new" in args:

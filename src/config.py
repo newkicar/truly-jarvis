@@ -21,6 +21,7 @@ from src.project_paths import (
     resolve_jarvis_json,
     resolve_user_jarvis_json,
     set_runtime_project_root,
+    user_home,
 )
 
 REQUIRED_ENV_KEYS = ("BASE_URL", "API_KEY", "MODEL_ID", "TAVILY_KEY")
@@ -189,7 +190,14 @@ def load_config(
     # 空字符串 / null / 两键均缺省 → None（本次会话没有 /vault/）。
     kb_raw = data.get("knowledge_base", data.get("obsidian_vault"))
     vault = Path(os.path.expandvars(str(kb_raw))).resolve() if kb_raw else None
-    memory = (root / data.get("memory_dir", "memory")).resolve()
+    # javis-global-memory: memory_dir missing or sentinel value (old template default "memory", empty string, both treated as unset) → user global ~/.jarvis/memory (cross-project reuse, JARVIS_HOME can override)
+    # Other explicit values: relative → resolved against project root; absolute → as-is.
+    _mem_raw = data.get("memory_dir", "memory")
+    if _mem_raw in ("memory", "", None):
+        memory = (user_home() / "memory").resolve()
+    else:
+        _mem_p = Path(os.path.expandvars(str(_mem_raw)))
+        memory = _mem_p.resolve() if _mem_p.is_absolute() else (root / _mem_p).resolve()
     checkpoint_db = (root / CHECKPOINTS_DIR / "checkpoints.sqlite").resolve()
     schedules_dir = (root / data.get("schedules_dir", "schedules")).resolve()
     skills = tuple((root / s).resolve() for s in data.get("skills", []))

@@ -25,7 +25,6 @@ JARVIS_JSON_TEMPLATE: dict = {
     # 知识库（可选）：填路径启用 /vault/；留空 "" 或删除本键 = 无知识库。
     # 兼容旧键 obsidian_vault（knowledge_base 优先）。
     "knowledge_base": "vault",
-    "memory_dir": "memory",
     "checkpoint_db": f"{CHECKPOINTS_DIR}/checkpoints.sqlite",
     "skills": ["skills/"],
     "schedules_dir": "schedules",
@@ -115,7 +114,7 @@ def init_project(
     else:
         skipped.append(str(env_file))
 
-    for rel in ("memory", "schedules", "skills", "vault", "vault/Inbox", "vault/Reports"):
+    for rel in ("schedules", "skills", "vault", "vault/Inbox", "vault/Reports"):
         path = root / rel
         if path.is_dir():
             skipped.append(str(path))

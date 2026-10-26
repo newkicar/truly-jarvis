@@ -8,12 +8,13 @@ def test_init_project_creates_layout(tmp_path: Path):
     created, skipped, messages = init_project(tmp_path, vault_path="D:/vault")
     assert (tmp_path / "jarvis.json").is_file()
     assert (tmp_path / ".env").is_file()
-    assert (tmp_path / "memory").is_dir()
+    assert not (tmp_path / "memory").exists()  # javis-global-memory: memory/ is not created in the project dir (it is global ~/.jarvis/memory/)
     assert (tmp_path / "vault" / "Inbox").is_dir()
     assert (tmp_path / "run-javis.cmd").is_file()
     data = (tmp_path / "jarvis.json").read_text(encoding="utf-8")
     assert "D:/vault" in data
     assert "copy_on_select" in data
+    assert "memory_dir" not in data
     assert created
     assert any("API" in m for m in messages)
 

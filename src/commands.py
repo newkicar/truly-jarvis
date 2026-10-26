@@ -43,7 +43,7 @@ _HELP_COMMANDS = """\
   /use <skill> [说明]  手动调用 manual-only skill（注入完整指令）
   /yolo on | off  YOLO 模式开关：本会话所有动作免审批（仅当前会话、重启即关）
   /compact [提示]  压缩当前会话历史为一条延续性摘要写回（可选文字提示压缩倾向）
-  /dream   梦境沉淀：回顾近期会话，蒸馏可复用知识到 memory/dream/knowledge.md
+  /dream   梦境沉淀：回顾近期会话，蒸馏可复用知识到 梦境知识库（默认全局 ~/.jarvis/memory/dream/）
   /snapshot       记录当前文件状态到当前 checkpoint（git 快照）
   /snapshots      列出文件快照（git）
   /rollback <id>  按 checkpoint 回退项目文件到对应 git 提交（序号 / 短 id）
