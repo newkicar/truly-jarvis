@@ -16,6 +16,10 @@ apscheduler
 textual>=0.40.0
 chromadb>=0.5.0
 
+# GUI（桌面端；打包用 Essentials 避免捆 Addons/WebEngine）
+PySide6-Essentials>=6.5
+keyring
+
 # Office skills
 openpyxl>=3.1
 pandas>=2.0
