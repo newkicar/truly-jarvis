@@ -44,8 +44,8 @@ def test_full_turn_streams_and_persists(qapp):
 
         tid = presenter.new_session_id()
         win._switch_to(tid)
-        win.input.setPlainText("跑一遍 HITL 全流程")
-        win._submit()
+        win.input_bar.edit.setPlainText("跑一遍 HITL 全流程")
+        win._on_input_submit("跑一遍 HITL 全流程")
 
         assert wait_until(lambda: events["turn_done"] >= 1, timeout=180.0)
         _pump(qapp)
@@ -88,8 +88,8 @@ def test_turn_gate_blocks_second_submission(qapp):
 
         tid = presenter.new_session_id()
         win._switch_to(tid)
-        win.input.setPlainText("第一条")
-        assert win._submit() is None
+        win.input_bar.edit.setPlainText("第一条")
+        win._on_input_submit("第一条")
         # 第一回合在跑（脚本模型会触发 HITL 审批——自动放行很快，抢在结束前发第二条）
         verdict = presenter.start_turn(tid, "第二条排队")
         assert verdict in ("started", "queued")

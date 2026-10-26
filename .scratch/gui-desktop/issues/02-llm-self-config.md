@@ -15,7 +15,7 @@
 
 **Blocked by:** None — can start immediately（与 01 并行；GUI 骨架先用既有 .env 路径，本工单接通后切自配层）
 
-**Status:** ready-for-agent
+**Status:** done（2026-10-26）
 
 - [ ] 五档探测纯函数（status_code→文案/动作表）单测全覆盖，网络注入 fake
 - [ ] keyring 读写/缺失/悬空 ref 分支测试（CM 后端可注入 fake；DPAPI 降级路径断言）

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -16,7 +16,6 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
-    QPlainTextEdit,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -25,7 +24,8 @@ from PySide6.QtWidgets import (
 
 from src import commands
 from src.gui.events import UiBridge
-from src.gui.pane import ChatPane
+from src.gui.input_bar import InputBar
+from src.gui.pane import RENDER_BATCH_MS, ChatPane
 from src.gui.runtime import GuiPresenter
 
 
@@ -36,6 +36,7 @@ class MainWindow(QMainWindow):
         self.bridge = bridge
         self.panes: dict[str, ChatPane] = {}
         self.active_tid: str | None = None
+        self._last_input_text = ""
         self._build_ui()
         self._wire_bridge()
         for tid in presenter.session_ids():
@@ -80,40 +81,21 @@ class MainWindow(QMainWindow):
         self.status_label.setStyleSheet("color:#bbbbbb; padding:2px;")
         ml.addWidget(self.status_label)
 
-        self.input = QPlainTextEdit()
-        self.input.setPlaceholderText("输入消息（Enter 发送，Shift+Enter 换行）")
-        self.input.setFixedHeight(30)
-        self.input.installEventFilter(self)
-        input_row = QHBoxLayout()
-        self.btn_cancel = QPushButton("取消")
-        self.btn_cancel.setEnabled(False)
-        self.btn_cancel.clicked.connect(self._cancel_active)
-        self.btn_send = QPushButton("发送")
-        self.btn_send.setStyleSheet(
-            "QPushButton { background:#2e7d32; color:white; font-weight:bold;"
-            " border-radius:4px; padding:2px 12px; }"
-        )
-        self.btn_send.clicked.connect(self._submit)
-        input_row.addWidget(self.input, stretch=1)
-        input_row.addWidget(self.btn_cancel)
-        input_row.addWidget(self.btn_send)
-        ml.addLayout(input_row)
+        self.input_bar = InputBar()
+        self.input_bar.edit.setPlaceholderText("输入消息（Enter 发送，Shift+Enter 换行）")
+        self.input_bar.submit_requested.connect(self._on_input_submit)
+        self.input_bar.cancel_requested.connect(self._cancel_active)
+        ml.addWidget(self.input_bar)
         root.addWidget(mid, 1)
 
         self.setCentralWidget(central)
         self.resize(1060, 700)
 
-    # ---- 事件过滤：Enter 发送 / Shift+Enter 换行
-    def eventFilter(self, obj, event) -> bool:
-        from PySide6.QtGui import QKeyEvent
-
-        if obj is self.input and isinstance(event, QKeyEvent) and event.type() == event.Type.KeyPress:
-            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
-                if event.modifiers() & Qt.ShiftModifier:
-                    return False  # 换行走默认
-                self._submit()
-                return True
-        return super().eventFilter(obj, event)
+        # 150ms 合批重渲（工单 03；逐 token 即时 = pane.render_strategy="instant"）
+        self._render_timer = QTimer(self)
+        self._render_timer.setInterval(RENDER_BATCH_MS)
+        self._render_timer.timeout.connect(self._flush_all_dirty)
+        self._render_timer.start()
 
     # ---- 会话栈
     def _ensure_pane(self, tid: str) -> ChatPane:
@@ -136,7 +118,7 @@ class MainWindow(QMainWindow):
         p.stick = True
         p.snap_to_bottom()
         self.refresh_sessions()
-        self.input.setFocus()
+        self.input_bar.edit.setFocus()
         note = "（回合进行中，切走不影响执行）" if self.presenter.gate.is_running(tid) else ""
         self.status_label.setText(f"会话 {tid}{note}")
 
@@ -164,7 +146,8 @@ class MainWindow(QMainWindow):
 
     # ---- 发送 / 回合
     def _submit(self) -> None:
-        raw = self.input.toPlainText()
+        # InputBar 已清空编辑框并 emit 原始多行文本（含换行，走 build_submission）
+        raw = self._last_input_text
         payload, note = commands.build_submission(
             raw, tuple(commands.virtual_path_mappings(self.presenter.runtime.config))
         )
@@ -176,13 +159,23 @@ class MainWindow(QMainWindow):
         tid = self.active_tid
         p = self._ensure_pane(tid)
         p.append_user(payload)
-        self.input.clear()
         verdict = self.presenter.start_turn(tid, payload)
-        self.status_label.setText("已发送，执行中…" if verdict == "started" else "已排队，回合结束后自动续发")
+        self.input_bar.set_cancel_enabled(verdict == "started")
+        self.status_label.setText(
+            "已发送，执行中…" if verdict == "started" else "已排队，回合结束后自动续发"
+        )
+
+    def _on_input_submit(self, raw: str) -> None:
+        self._last_input_text = raw
+        self._submit()
 
     def _cancel_active(self) -> None:
         if self.active_tid:
             self.presenter.cancel(self.active_tid)
+
+    def _flush_all_dirty(self) -> None:
+        for p in self.panes.values():
+            p.flush_dirty()
 
     # ---- 桥接（worker → 主线程渲染）
     def _wire_bridge(self) -> None:
@@ -229,7 +222,8 @@ class MainWindow(QMainWindow):
     def _on_turn_done(self, tid: str, ok: bool) -> None:
         p = self.panes.get(tid)
         if p is not None:
-            p.running = False
+            p.running = self.presenter.gate.is_running(tid)
+        self.input_bar.set_cancel_enabled(bool(self.presenter.gate.running_threads()))
         self.refresh_sessions()
 
     def _on_notify(self, text: str) -> None:

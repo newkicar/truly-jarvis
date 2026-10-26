@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately
 
-**Status:** ready-for-agent
+**Status:** done（2026-10-26）
 
 - [ ] 运行新入口：输入→流式回答逐字上屏→完成，检查点落 SqliteSaver（与 TUI 同一 db 语义）
 - [ ] 既有 200+ 单测全绿（streaming/commands/permissions 零行为改动回归网）
