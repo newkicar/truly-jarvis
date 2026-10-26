@@ -2,7 +2,7 @@
 id: T-004
 title: 事件边界最小重构面（读本仓）
 labels: [wayfinder:research]
-status: open
+status: done
 assignee: uida0712
 blocked_by: []
 ---

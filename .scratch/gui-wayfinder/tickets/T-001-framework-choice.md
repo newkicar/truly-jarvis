@@ -2,7 +2,7 @@
 id: T-001
 title: 原生 GUI 框架选型（Python/Windows）
 labels: [wayfinder:research]
-status: open
+status: done
 assignee: uida0712
 blocked_by: []
 ---

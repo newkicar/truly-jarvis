@@ -2,7 +2,7 @@
 id: T-003
 title: 桌面用户自配 LLM 端点/密钥先例
 labels: [wayfinder:research]
-status: open
+status: done
 assignee: uida0712
 blocked_by: []
 ---

@@ -2,7 +2,7 @@
 id: T-002
 title: agent 类项目 GUI 的 runtime/UI 解耦先例
 labels: [wayfinder:research]
-status: open
+status: done
 assignee: uida0712
 blocked_by: []
 ---
