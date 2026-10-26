@@ -46,3 +46,4 @@ skills/
 # 本地工作目录（探针/CI 轮询临时产物，不入仓库）
 .ci_tmp/
 scratch/
+.scratch/prototype/proto_home/

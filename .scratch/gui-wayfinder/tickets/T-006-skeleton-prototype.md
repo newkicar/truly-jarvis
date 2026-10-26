@@ -2,8 +2,8 @@
 id: T-006
 title: GUI 骨架原型（聊天 + 审批卡片）
 labels: [wayfinder:prototype]
-status: open
-assignee: 待T-001/T-005完成后
+status: claimed
+assignee: uida0712（代理驱动，HITL 过稿）
 blocked_by: [T-001, T-005]
 ---
 
