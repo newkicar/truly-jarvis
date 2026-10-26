@@ -126,27 +126,33 @@ class PasteTextArea(TextArea):
     def action_paste(self) -> None:
         self.run_worker(self._read_clipboard_worker, thread=True, exclusive=True)
 
+    def _insert_image_placeholder(self, image_path: str) -> None:
+        """登记图片附件并把 [Image #N] 占位符粘进输入框（worker 线程调用）。"""
+        idx = self.app.call_from_thread(self.app._register_image_attachment, image_path)
+        if idx is not None:
+            self.app.call_from_thread(self._apply_paste, f"[Image #{idx}]")
+            self.app.call_from_thread(self.app.notify, f"已插入 [Image #{idx}]")
+
     def _read_clipboard_worker(self) -> None:
+        # 优先级：OS 文本 → OS 图片 → app 剪贴板（app 内复制内容）。
+        # OS 图片必须先于 app 回落：图片独占剪贴板时 Get-Clipboard -Raw 恒空，
+        # 旧顺序「先回落 app.clipboard」会让上轮对话文字永久挡住图片通道
+        # （「复制图片后粘贴仍是旧文字」根因 B，claude-code #42440 同款）。
         text = read_os_clipboard()
-        if not text:
-            # OS 剪贴板无文本 → 回落 app 剪贴板（app 内复制的内容）
-            text = self.app.clipboard or ""
         if text:
             image_path = looks_like_image_path(text)
             if image_path:
-                idx = self.app.call_from_thread(self.app._register_image_attachment, image_path)
-                if idx is not None:
-                    self.app.call_from_thread(self._apply_paste, f"[Image #{idx}]")
-                    self.app.call_from_thread(self.app.notify, f"已插入 [Image #{idx}]")
+                self._insert_image_placeholder(image_path)
                 return
             self.app.call_from_thread(self._apply_paste, text)
             return
         image = try_copy_clipboard_image()
         if image:
-            idx = self.app.call_from_thread(self.app._register_image_attachment, image)
-            if idx is not None:
-                self.app.call_from_thread(self._apply_paste, f"[Image #{idx}]")
-                self.app.call_from_thread(self.app.notify, f"已插入 [Image #{idx}]")
+            self._insert_image_placeholder(image)
+            return
+        fallback = self.app.clipboard or ""
+        if fallback:
+            self.app.call_from_thread(self._apply_paste, fallback)
 
     def _apply_paste(self, text: str) -> None:
         if not text or not self.is_mounted:
@@ -454,12 +460,21 @@ class ModalTextArea(PasteTextArea):
         self.run_worker(self._paste_from_os, thread=True, exclusive=True)
 
     def _paste_from_os(self) -> None:
+        # 与主输入框同序：OS 文本 → OS 图片 → app 剪贴板。
+        # 图片独占剪贴板时不回落 app 剪贴板（旧对话文字粘进参数编辑框
+        # 比空值更具误导性），只提示图片无法进入参数框。
         text = read_os_clipboard()
-        if not text:
-            # OS 剪贴板无文本 → 回落 app 剪贴板（app 内复制的内容）
-            text = self.app.clipboard or ""
         if text:
             self.app.call_from_thread(self._apply_paste, text)
+            return
+        if try_copy_clipboard_image():
+            self.app.call_from_thread(
+                self.app.notify, "剪贴板中是图片，无法粘贴到参数编辑框"
+            )
+            return
+        fallback = self.app.clipboard or ""
+        if fallback:
+            self.app.call_from_thread(self._apply_paste, fallback)
 
 class EditParamsModal(ModalScreen):
     """编辑工具参数（从权限审批进入）：逐 key 两行——原文只读展示（Label）+
@@ -880,7 +895,7 @@ class JarvisApp(App):
         margin: 0;
     }
 
-    #jump_hint.-active {
+    #jump_hint.-visible {
         display: block;
     }
 

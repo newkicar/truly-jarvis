@@ -43,7 +43,7 @@ async def test_stream_shrink_still_follows():
             await pilot.pause()
         assert log.scroll_offset.y == log.max_scroll_y
         assert log._pending_msgs == 0  # noqa: SLF001
-        assert not _hint(pilot).has_class("-active")
+        assert not _hint(pilot).has_class("-visible")
 
 
 @pytest.mark.asyncio
@@ -57,7 +57,7 @@ async def test_bottom_write_follows_no_hint():
         await pilot.pause()
         assert log.scroll_offset.y == log.max_scroll_y
         assert log._pending_msgs == 0  # noqa: SLF001
-        assert not _hint(pilot).has_class("-active")
+        assert not _hint(pilot).has_class("-visible")
 
 
 @pytest.mark.asyncio
@@ -74,7 +74,7 @@ async def test_scrolled_up_write_no_jump_counts_pending():
         assert log.scroll_offset.y == 0
         assert log._pending_msgs == 1  # noqa: SLF001
         hint = _hint(pilot)
-        assert hint.has_class("-active")
+        assert hint.has_class("-visible")
         assert hint.label.plain == "Back to bottom"
 
 
@@ -119,16 +119,39 @@ async def test_click_hint_jumps_and_resumes_follow():
         await pilot.pause()
         log.write("m0")
         await pilot.pause()
-        assert log._pending_msgs == 1 and _hint(pilot).has_class("-active")  # noqa: SLF001
+        assert log._pending_msgs == 1 and _hint(pilot).has_class("-visible")  # noqa: SLF001
         # pilot 合成鼠标事件不置 grabber，Button._on_click 不按压（Textual 测试惯用法：.press()）
         _hint(pilot).press()
         await pilot.pause()
         assert log._pending_msgs == 0  # noqa: SLF001
-        assert not _hint(pilot).has_class("-active")
+        assert not _hint(pilot).has_class("-visible")
         assert log.scroll_offset.y == log.max_scroll_y
         log.write("m1")
         await pilot.pause()
         assert log._pending_msgs == 0  # noqa: SLF001
+
+
+@pytest.mark.asyncio
+async def test_real_mouse_click_hint_jumps_to_bottom():
+    """真实鼠标路径（pilot.click -> MouseDown/MouseUp/Click -> Button._on_click）
+    必须触发跳转。回归锚点：Textual 8.2.8 Button._on_click 内有
+    `if not self.has_class("-active"): self.press()`——hint 的「可见」态若复用
+    Button 内部按压态类名 `-active`，真实点击会被吞掉（本 bug 根因）。"""
+    app = _new_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        log = pilot.app.query_one("#messages", CopyableRichLog)
+        await _fill(pilot, log)
+        log.scroll_y = 0
+        await pilot.pause()
+        log.write("m0")
+        await pilot.pause()
+        hint = _hint(pilot)
+        assert hint.has_class("-visible")
+        ok = await pilot.click(hint)
+        assert ok, "hint 未在指针下（z-order/几何错误）"
+        await pilot.pause()
+        assert log._pending_msgs == 0  # noqa: SLF001
+        assert log.scroll_offset.y == log.max_scroll_y
 
 
 @pytest.mark.asyncio
@@ -147,7 +170,7 @@ async def test_manual_scroll_to_bottom_clears_hint():
         log.scroll_end(animate=False, immediate=True, x_axis=False)
         await pilot.pause()
         assert log._pending_msgs == 0  # noqa: SLF001
-        assert not _hint(pilot).has_class("-active")
+        assert not _hint(pilot).has_class("-visible")
 
 
 @pytest.mark.asyncio
@@ -165,7 +188,7 @@ async def test_clear_resets_pending_and_hint():
         log.clear()
         await pilot.pause()
         assert log._pending_msgs == 0  # noqa: SLF001
-        assert not _hint(pilot).has_class("-active")
+        assert not _hint(pilot).has_class("-visible")
 
 
 @pytest.mark.asyncio
@@ -186,12 +209,12 @@ async def test_scrolled_up_shrink_no_yank():
         await pilot.pause()
         assert log.scroll_offset.y == 0
         assert log._pending_msgs == 1  # noqa: SLF001
-        assert _hint(pilot).has_class("-active")
+        assert _hint(pilot).has_class("-visible")
         _hint(pilot).press()
         await pilot.pause()
         assert log.scroll_offset.y == log.max_scroll_y
         assert log._pending_msgs == 0  # noqa: SLF001
-        assert not _hint(pilot).has_class("-active")
+        assert not _hint(pilot).has_class("-visible")
 
 
 @pytest.mark.asyncio
@@ -208,7 +231,7 @@ async def test_hint_docked_at_log_bottom():
         await pilot.pause()
         log.write("m")
         await pilot.pause()
-        assert hint.has_class("-active")
+        assert hint.has_class("-visible")
         hint_region = hint.region
         box_region = box.region
         log_region = log.region
@@ -235,7 +258,7 @@ async def test_hint_stick_recovery():
         await pilot.pause()
         assert log.scroll_offset.y == log.max_scroll_y
         assert log._pending_msgs == 0  # noqa: SLF001
-        assert not _hint(pilot).has_class("-active")
+        assert not _hint(pilot).has_class("-visible")
 
 
 # ---------------------------------------------------------------------------
@@ -289,7 +312,7 @@ async def test_end_key_jumps_to_bottom_clears_pending():
                 break
         assert log.is_vertical_scroll_end
         assert log._pending_msgs == 0  # noqa: SLF001
-        assert not _hint(pilot).has_class("-active")
+        assert not _hint(pilot).has_class("-visible")
 
 
 @pytest.mark.asyncio
@@ -303,7 +326,7 @@ async def test_pageup_shows_hint_after_focus():
         await pilot.press("pageup")
         await pilot.pause()
         assert log.scroll_offset.y < log.max_scroll_y
-        assert _hint(pilot).has_class("-active")
+        assert _hint(pilot).has_class("-visible")
 
 
 @pytest.mark.asyncio

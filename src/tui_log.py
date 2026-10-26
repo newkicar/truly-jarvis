@@ -263,17 +263,20 @@ class CopyableRichLog(RichLog):
             self._hide_hint()
 
     def _show_hint(self) -> None:
+        # -visible 是本项目的「hint 可见」态；不可复用 Button 内部类名 -active：
+        # Textual 8.2.8 Button._on_click 内 `if not self.has_class("-active"): self.press()`
+        # 会把常驻 -active 的按钮判为「按压中」，真实鼠标点击被吞掉（点击无跳转根因）。
         hint = self.hint
         if hint is None:
             return
 
-        hint.add_class("-active")
+        hint.add_class("-visible")
         hint.refresh()
 
     def _hide_hint(self) -> None:
         hint = self.hint
         if hint is not None:
-            hint.remove_class("-active")
+            hint.remove_class("-visible")
             hint.refresh()
 
     def jump_to_end(self) -> None:

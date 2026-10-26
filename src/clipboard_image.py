@@ -52,14 +52,20 @@ def _new_temp_target() -> str:
 def try_copy_clipboard_image() -> str | None:
     """读 OS 剪贴板中的图片并落盘为临时 PNG，返回路径；无图片/失败返回 None。
 
-    Windows：PowerShell Get-Clipboard -Format Image + System.Drawing Save（零新依赖）；
+    Windows：PowerShell WinForms [System.Windows.Forms.Clipboard]::GetImage()
+    + Bitmap.Save（零新依赖）。不用 Get-Clipboard -Format Image——该参数依赖
+    PowerShell 7.3+ 的 Management 模块，低版本/企业策略裁剪下报
+    「找不到参数 Format」（本机 PS 7.6.7 但 Management 7.0.0.0 实测不可用）；
+    WinForms GetImage 本机实证：图片独占剪贴板时写出 PNG，纯文本剪贴板
+    返回 $null（无误报）。单参 Save 按 .png 扩展名推 PNG。
     目标路径经 JARVIS_CLIP_FILE 环境变量传入，避免命令行引号问题。
     Unix：尽力 wl-paste / xclip，不可用返回 None。
     """
     target = _new_temp_target()
     if sys.platform == "win32":
         script = (
-            "$img = Get-Clipboard -Format Image -ErrorAction SilentlyContinue\n"
+            "Add-Type -AssemblyName System.Windows.Forms\n"
+            "$img = [System.Windows.Forms.Clipboard]::GetImage()\n"
             "if ($img) { $img.Save([System.IO.Path]::GetFullPath($env:JARVIS_CLIP_FILE)) }"
         )
         env = {**os.environ, "JARVIS_CLIP_FILE": target}
