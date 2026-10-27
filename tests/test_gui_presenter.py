@@ -34,8 +34,16 @@ def _fake_runtime():
         vault_path=None,
         memory_dir=home / "memory",
         schedules_dir=home / "schedules",
+        # 工单 12：doctor 报告读取的 LLM/rag/checkpoint 字段（fake 兜底值）
+        api_key="sk-fake",
+        base_url="https://fake.example/v1",
+        model_id="fake-model",
+        rag_ollama_base_url="http://localhost:11434",
+        rag_embed_model="bge-small-zh-v1.5",
+        checkpoint_db=home / "checkpoints" / "checkpoints.sqlite",
     )
     rt = SimpleNamespace(agent=None, config=cfg, permission_state={}, model_label="fake")
+    rt.mcp_tool_count = 0
     from src.gui.runtime import SchedulerGate
 
     rt.gate = SchedulerGate(rt, enabled=False)

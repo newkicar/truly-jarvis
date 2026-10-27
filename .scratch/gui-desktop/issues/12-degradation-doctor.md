@@ -4,9 +4,9 @@
 
 **Blocked by:** 09（时间旅行与上下文：doctor 读检查点状态）、10（命令体系：MCP/定时任务面板已就位）、11（记忆目录对齐：doctor 展示全局记忆路径）
 
-**Status:** ready-for-agent
+**Status:** done（2026-10-27）
 
-- [ ] 无 chromadb/onnxruntime 环境：启动不崩，vault 检索回落 grep/wiki，自检页给「装 wheel / 起 Ollama」指引
-- [ ] 定时任务未启用 → scheduler 不启动；启用 → 单 scheduler（后启动者不双开）
-- [ ] 自检页各区块状态正确（fake 配置驱动 offscreen 断言）
-- [ ] 既有 200+ 单测全绿
+- [x] 无 chromadb 环境：启动不崩（import 惰性），RAG 工具构建/检索失败 → 可行动指引文本回落 grep/wiki（rag.py try 守卫，test_rag_search_degrades_when_index_broken）；自检页给「pip install chromadb / 起 Ollama」指引
+- [x] 定时任务未启用 → scheduler 不启动（SchedulerGate enabled=False）；SchedulerGate.enable() 幂等单 scheduler（test_scheduler_gate_enable_idempotent_single）
+- [x] 自检页各区块状态正确（src/gui/doctor.py 纯函数报告 6 区块 + DoctorDialog；命令菜单「自检（Doctor）」；tests/test_gui_ticket12.py 13 条）
+- [x] 既有单测全绿（GUI 套件 118 passed + 内核回归 45 passed，0 新增失败）

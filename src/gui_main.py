@@ -91,7 +91,8 @@ def main(argv: list[str] | None = None) -> int:
     app = QApplication.instance() or QApplication(sys.argv[:1])
     bridge = UiBridge()
     presenter = wire_presenter(runtime, bridge, app=app)
-    win = MainWindow(presenter, bridge)
+    key_store = llm_config.make_key_store() if llm is not None else None
+    win = MainWindow(presenter, bridge, llm=llm, key_store=key_store)
     win.show()
 
     try:

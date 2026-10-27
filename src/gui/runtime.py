@@ -137,6 +137,16 @@ class SchedulerGate:
     def enabled(self) -> bool:
         return self._sched is not None
 
+    def enable(self) -> str:
+        """幂等启动（遗留 d 单 scheduler 约束）：已运行 → 提示不双开。"""
+        if self._sched is not None:
+            return "scheduler 已在运行（单 scheduler，不会双开）"
+        from src import scheduler
+
+        self._sched = scheduler.make_scheduler(self._runtime.agent, self._runtime.config)
+        self._sched.start()
+        return "定时任务已启动（scheduler）"
+
     def jobs(self) -> list:
         return self._sched.get_jobs() if self._sched else []
 

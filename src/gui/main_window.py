@@ -34,10 +34,12 @@ from src.gui.runtime import GuiPresenter
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, presenter: GuiPresenter, bridge: UiBridge) -> None:
+    def __init__(self, presenter: GuiPresenter, bridge: UiBridge, *, llm=None, key_store=None) -> None:
         QMainWindow.__init__(self)
         self.presenter = presenter
         self.bridge = bridge
+        self._llm = llm  # LlmConfig | None（GUI 自配层；None = 走项目 .env）
+        self._key_store = key_store
         self.panes: dict[str, ChatPane] = {}
         self.active_tid: str | None = None
         self._last_input_text = ""
@@ -85,6 +87,8 @@ class MainWindow(QMainWindow):
         filter_action = cmd.addAction("筛选命令…")
         filter_action.triggered.connect(self._on_filter_commands)
         cmd.addSeparator()
+        doctor_action = cmd.addAction("自检（Doctor）…")
+        doctor_action.triggered.connect(self._on_doctor)
         self._build_command_menu(cmd)
 
         theme_menu = self.menuBar().addMenu("主题")
@@ -246,6 +250,33 @@ class MainWindow(QMainWindow):
         cmds = filter_commands(SLASH_COMMANDS, q.strip())
         lines = "\n".join(f"{c.usage}  — {c.summary}" for c in cmds) or "（无匹配）"
         self._show_text(f"命令（{q}）", lines)
+
+    def _probe_ollama(self) -> bool:
+        """Ollama 可达性（2s 超时，任何异常 = 不可达；注入点便于测试跳过）。"""
+        import httpx
+
+        base = self.presenter.runtime.config.rag_ollama_base_url or "http://localhost:11434"
+        try:
+            r = httpx.get(f"{base.rstrip('/')}/api/tags", timeout=2.0)
+            return r.status_code == 200
+        except Exception:
+            return False
+
+    def _on_doctor(self) -> None:
+        from src.gui import doctor
+
+        rt = self.presenter.runtime
+        gate = getattr(rt, "gate", None)
+        rows = doctor.build_doctor_report(
+            rt.config,
+            llm=self._llm,
+            key_store=self._key_store,
+            ollama_reachable=self._probe_ollama(),
+            mcp_tool_count=rt.mcp_tool_count,
+            scheduler_running=bool(gate and gate.enabled),
+        )
+        dlg = doctor.make_doctor_dialog(rows, self)
+        dlg.exec()
 
     def _execute_slash(self, raw: str) -> None:
         tid = self.active_tid
