@@ -1,0 +1,562 @@
+[
+  {
+    "name": "ai",
+    "path": "packages/ai",
+    "sha": "43a958523c5038c7105505f5f2efd3bd0cc9214d",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/ai?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/ai",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/43a958523c5038c7105505f5f2efd3bd0cc9214d",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/ai?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/43a958523c5038c7105505f5f2efd3bd0cc9214d",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/ai"
+    }
+  },
+  {
+    "name": "app",
+    "path": "packages/app",
+    "sha": "8641b4f7c1ec6bd06976d5eca3c2c1713a12b7c5",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/app?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/app",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/8641b4f7c1ec6bd06976d5eca3c2c1713a12b7c5",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/app?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/8641b4f7c1ec6bd06976d5eca3c2c1713a12b7c5",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/app"
+    }
+  },
+  {
+    "name": "cli",
+    "path": "packages/cli",
+    "sha": "33c64d171bf5c3a75eb58b4c81dd9b07ca8fb6b0",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/cli?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/cli",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/33c64d171bf5c3a75eb58b4c81dd9b07ca8fb6b0",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/cli?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/33c64d171bf5c3a75eb58b4c81dd9b07ca8fb6b0",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/cli"
+    }
+  },
+  {
+    "name": "client",
+    "path": "packages/client",
+    "sha": "d2a1f222a0f8fe8d08c172ff6a1495f5bed5071b",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/client?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/client",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/d2a1f222a0f8fe8d08c172ff6a1495f5bed5071b",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/client?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/d2a1f222a0f8fe8d08c172ff6a1495f5bed5071b",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/client"
+    }
+  },
+  {
+    "name": "codemode",
+    "path": "packages/codemode",
+    "sha": "cc2e2cba70ca6048fdfc2059da84dba050e56155",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/codemode?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/codemode",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/cc2e2cba70ca6048fdfc2059da84dba050e56155",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/codemode?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/cc2e2cba70ca6048fdfc2059da84dba050e56155",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/codemode"
+    }
+  },
+  {
+    "name": "console",
+    "path": "packages/console",
+    "sha": "356f7fc88398ae878d57611a04d1fb74e35904ff",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/console?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/console",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/356f7fc88398ae878d57611a04d1fb74e35904ff",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/console?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/356f7fc88398ae878d57611a04d1fb74e35904ff",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/console"
+    }
+  },
+  {
+    "name": "core",
+    "path": "packages/core",
+    "sha": "b82bced5d09cf8b756d5c14ff08988c3824829ba",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/core?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/core",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/b82bced5d09cf8b756d5c14ff08988c3824829ba",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/core?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/b82bced5d09cf8b756d5c14ff08988c3824829ba",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/core"
+    }
+  },
+  {
+    "name": "desktop",
+    "path": "packages/desktop",
+    "sha": "e01485292916daa2315fe13c4408e30cbdefb5c7",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/desktop?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/desktop",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/e01485292916daa2315fe13c4408e30cbdefb5c7",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/desktop?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/e01485292916daa2315fe13c4408e30cbdefb5c7",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/desktop"
+    }
+  },
+  {
+    "name": "effect-drizzle-sqlite",
+    "path": "packages/effect-drizzle-sqlite",
+    "sha": "9711a9b03608de3aa47f5b797177ebfa7ebc58e2",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/effect-drizzle-sqlite?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/effect-drizzle-sqlite",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/9711a9b03608de3aa47f5b797177ebfa7ebc58e2",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/effect-drizzle-sqlite?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/9711a9b03608de3aa47f5b797177ebfa7ebc58e2",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/effect-drizzle-sqlite"
+    }
+  },
+  {
+    "name": "function",
+    "path": "packages/function",
+    "sha": "1e0964772a942fa2c4808dd49135700b484aec98",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/function?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/function",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/1e0964772a942fa2c4808dd49135700b484aec98",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/function?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/1e0964772a942fa2c4808dd49135700b484aec98",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/function"
+    }
+  },
+  {
+    "name": "gui-plugins",
+    "path": "packages/gui-plugins",
+    "sha": "ef131b8661d0fc8cf4043f7f401a9987de4fb123",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/gui-plugins?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/gui-plugins",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/ef131b8661d0fc8cf4043f7f401a9987de4fb123",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/gui-plugins?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/ef131b8661d0fc8cf4043f7f401a9987de4fb123",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/gui-plugins"
+    }
+  },
+  {
+    "name": "http-recorder",
+    "path": "packages/http-recorder",
+    "sha": "ded2a58031fecc1e59b52fb37a3f942b6ebff374",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/http-recorder?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/http-recorder",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/ded2a58031fecc1e59b52fb37a3f942b6ebff374",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/http-recorder?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/ded2a58031fecc1e59b52fb37a3f942b6ebff374",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/http-recorder"
+    }
+  },
+  {
+    "name": "httpapi-codegen",
+    "path": "packages/httpapi-codegen",
+    "sha": "bc780d9d4b601c4b0cd8875f48f5c6e3b3c655ba",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/httpapi-codegen?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/httpapi-codegen",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/bc780d9d4b601c4b0cd8875f48f5c6e3b3c655ba",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/httpapi-codegen?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/bc780d9d4b601c4b0cd8875f48f5c6e3b3c655ba",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/httpapi-codegen"
+    }
+  },
+  {
+    "name": "identity",
+    "path": "packages/identity",
+    "sha": "c9faa346e739fb61cba9335a678183e53e83fe5d",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/identity?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/identity",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/c9faa346e739fb61cba9335a678183e53e83fe5d",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/identity?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/c9faa346e739fb61cba9335a678183e53e83fe5d",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/identity"
+    }
+  },
+  {
+    "name": "latex",
+    "path": "packages/latex",
+    "sha": "de3354e94d3e0c845df36004ba42de0d5f1acf8f",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/latex?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/latex",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/de3354e94d3e0c845df36004ba42de0d5f1acf8f",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/latex?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/de3354e94d3e0c845df36004ba42de0d5f1acf8f",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/latex"
+    }
+  },
+  {
+    "name": "merman",
+    "path": "packages/merman",
+    "sha": "1a029bd9b3d42c42b4f2418f63772f538a5394fb",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/merman?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/merman",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/1a029bd9b3d42c42b4f2418f63772f538a5394fb",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/merman?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/1a029bd9b3d42c42b4f2418f63772f538a5394fb",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/merman"
+    }
+  },
+  {
+    "name": "patchmark",
+    "path": "packages/patchmark",
+    "sha": "18537a902b6b441e1794c8900e6033322942d9d3",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/patchmark?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/patchmark",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/18537a902b6b441e1794c8900e6033322942d9d3",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/patchmark?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/18537a902b6b441e1794c8900e6033322942d9d3",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/patchmark"
+    }
+  },
+  {
+    "name": "plugin-browser",
+    "path": "packages/plugin-browser",
+    "sha": "00659b1286b33e1d16fc4cdd581c536561a39e30",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/plugin-browser?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/plugin-browser",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/00659b1286b33e1d16fc4cdd581c536561a39e30",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/plugin-browser?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/00659b1286b33e1d16fc4cdd581c536561a39e30",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/plugin-browser"
+    }
+  },
+  {
+    "name": "plugin",
+    "path": "packages/plugin",
+    "sha": "764d9aaa1d81f6473ab04ff98cf3e70acfb0756f",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/plugin?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/plugin",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/764d9aaa1d81f6473ab04ff98cf3e70acfb0756f",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/plugin?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/764d9aaa1d81f6473ab04ff98cf3e70acfb0756f",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/plugin"
+    }
+  },
+  {
+    "name": "plugins",
+    "path": "packages/plugins",
+    "sha": "cdc4c78d1982c8b7ef7b5520bffdae5339e9ee3b",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/plugins?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/plugins",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/cdc4c78d1982c8b7ef7b5520bffdae5339e9ee3b",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/plugins?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/cdc4c78d1982c8b7ef7b5520bffdae5339e9ee3b",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/plugins"
+    }
+  },
+  {
+    "name": "posts",
+    "path": "packages/posts",
+    "sha": "16c8e231df67fc3446ab9b27f905219768419494",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/posts?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/posts",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/16c8e231df67fc3446ab9b27f905219768419494",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/posts?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/16c8e231df67fc3446ab9b27f905219768419494",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/posts"
+    }
+  },
+  {
+    "name": "protocol",
+    "path": "packages/protocol",
+    "sha": "1f3212e2a68de6d4ba71d983ba1966c33ce32109",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/protocol?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/protocol",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/1f3212e2a68de6d4ba71d983ba1966c33ce32109",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/protocol?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/1f3212e2a68de6d4ba71d983ba1966c33ce32109",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/protocol"
+    }
+  },
+  {
+    "name": "schema",
+    "path": "packages/schema",
+    "sha": "c06e0a1d397758a3883273d0d89d35ed91472fef",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/schema?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/schema",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/c06e0a1d397758a3883273d0d89d35ed91472fef",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/schema?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/c06e0a1d397758a3883273d0d89d35ed91472fef",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/schema"
+    }
+  },
+  {
+    "name": "script",
+    "path": "packages/script",
+    "sha": "d1b40d2f69002d43c1a61995f8cbd1b40b41fafa",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/script?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/script",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/d1b40d2f69002d43c1a61995f8cbd1b40b41fafa",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/script?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/d1b40d2f69002d43c1a61995f8cbd1b40b41fafa",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/script"
+    }
+  },
+  {
+    "name": "sdk",
+    "path": "packages/sdk",
+    "sha": "dbde918b962bb7ecf716965ab437c0088c5b8f52",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/sdk?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/sdk",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/dbde918b962bb7ecf716965ab437c0088c5b8f52",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/sdk?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/dbde918b962bb7ecf716965ab437c0088c5b8f52",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/sdk"
+    }
+  },
+  {
+    "name": "server",
+    "path": "packages/server",
+    "sha": "a372d15b38fbd4dfd4f54aba455b89eff47bee5a",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/server?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/server",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/a372d15b38fbd4dfd4f54aba455b89eff47bee5a",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/server?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/a372d15b38fbd4dfd4f54aba455b89eff47bee5a",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/server"
+    }
+  },
+  {
+    "name": "session-ui",
+    "path": "packages/session-ui",
+    "sha": "beac5634e32d1c2abfbd5d7c6f8e6712b9267721",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/session-ui?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/session-ui",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/beac5634e32d1c2abfbd5d7c6f8e6712b9267721",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/session-ui?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/beac5634e32d1c2abfbd5d7c6f8e6712b9267721",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/session-ui"
+    }
+  },
+  {
+    "name": "simulation",
+    "path": "packages/simulation",
+    "sha": "7c1b7bba84acb6d772c1f6f68f05480e7523b9eb",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/simulation?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/simulation",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/7c1b7bba84acb6d772c1f6f68f05480e7523b9eb",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/simulation?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/7c1b7bba84acb6d772c1f6f68f05480e7523b9eb",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/simulation"
+    }
+  },
+  {
+    "name": "stats",
+    "path": "packages/stats",
+    "sha": "71a1f8332fd8f1753a2f3d73e1fb5d957da1ffd5",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/stats?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/stats",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/71a1f8332fd8f1753a2f3d73e1fb5d957da1ffd5",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/stats?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/71a1f8332fd8f1753a2f3d73e1fb5d957da1ffd5",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/stats"
+    }
+  },
+  {
+    "name": "stories",
+    "path": "packages/stories",
+    "sha": "127a8fa20cc88c7ee0825185e335bfc7a5804b19",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/stories?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/stories",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/127a8fa20cc88c7ee0825185e335bfc7a5804b19",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/stories?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/127a8fa20cc88c7ee0825185e335bfc7a5804b19",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/stories"
+    }
+  },
+  {
+    "name": "theme",
+    "path": "packages/theme",
+    "sha": "6cf67ad50dad1996701f7d50072926fc2ba440ab",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/theme?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/theme",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/6cf67ad50dad1996701f7d50072926fc2ba440ab",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/theme?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/6cf67ad50dad1996701f7d50072926fc2ba440ab",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/theme"
+    }
+  },
+  {
+    "name": "tui",
+    "path": "packages/tui",
+    "sha": "8a4510c64ae5694e2d2f194cbf5fb218ddf3d34e",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/tui",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/8a4510c64ae5694e2d2f194cbf5fb218ddf3d34e",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/8a4510c64ae5694e2d2f194cbf5fb218ddf3d34e",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/tui"
+    }
+  },
+  {
+    "name": "ui",
+    "path": "packages/ui",
+    "sha": "19940b94547a75eec0ae21dd12a6cbc5ae3f7449",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/ui?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/ui",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/19940b94547a75eec0ae21dd12a6cbc5ae3f7449",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/ui?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/19940b94547a75eec0ae21dd12a6cbc5ae3f7449",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/ui"
+    }
+  },
+  {
+    "name": "util",
+    "path": "packages/util",
+    "sha": "33a857db681f6e90360ab4299ed43dfa3f8e3c3e",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/util?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/util",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/33a857db681f6e90360ab4299ed43dfa3f8e3c3e",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/util?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/33a857db681f6e90360ab4299ed43dfa3f8e3c3e",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/util"
+    }
+  },
+  {
+    "name": "web",
+    "path": "packages/web",
+    "sha": "a2556f70bffd808e61aef48038b11993396569a9",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/web?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/web",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/a2556f70bffd808e61aef48038b11993396569a9",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/web?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/a2556f70bffd808e61aef48038b11993396569a9",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/web"
+    }
+  }
+]

@@ -14,7 +14,7 @@ from textual.widgets import RichLog
 
 from src import commands, streaming
 from src.plan_mode import current_mode
-from src.tui_format import AiStreamThrottler, format_tool_call
+from src.tui_format import AiStreamThrottler, format_tool_call, reasoning_block_markup, tool_detail_block, tool_detail_worth_expanding
 
 
 class TurnPresenter:
@@ -109,9 +109,23 @@ class TurnPresenter:
         self.write_line(f"{prefix}[yellow]▌ [{name}] {status}[/yellow]")
 
     def on_tool_call(self, name: str, args: str, err: bool, output: str | None, depth: int) -> None:
-        self.write_line(format_tool_call(name, args, error=err, output=output, indent=depth))
+        # tui-ux19: 值得展开（失败/有输出/长参数）→ 注册可点击工具条目（折叠态上屏 + 展开态待命）；
+        # 否则普通单行调用（write_line 已含取消守卫）。
+        detail = tool_detail_worth_expanding(name, args, error=err, output=output)
+        collapsed = format_tool_call(name, args, error=err, output=output, indent=depth, detail=detail)
+        if detail and not self.cancelled():
+            expanded = tool_detail_block(name, args, error=err, output=output, indent=depth)
+            self.app.call_from_thread(self.log.write_tool_entry, collapsed, expanded)
+        else:
+            self.write_line(collapsed)
         if name == "write_todos" and not self.cancelled():
             self.app.call_from_thread(self.app._refresh_todos_panel)
+
+    def on_reasoning_end(self, text: str) -> None:
+        # tui-ux19: 思考内容上屏（💭 淡色斜体块，对标正文区分；正文之后渲染）
+        if self.cancelled() or not (text or "").strip():
+            return
+        self.write_line(reasoning_block_markup(text.strip()))
 
     def on_status(self, text: str) -> None:
         self.write_line(f"[i][dim]… {text}[/dim][/i]")
@@ -156,6 +170,7 @@ class TurnPresenter:
             "on_tool_call": self.on_tool_call,
             "on_message_delta": self.on_message_delta,
             "on_message_end": self.on_message_end,
+            "on_reasoning_end": self.on_reasoning_end,
             "on_status": self.on_status,
         }
 

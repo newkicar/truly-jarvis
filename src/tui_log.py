@@ -12,6 +12,8 @@ from textual import events
 from textual.selection import Selection
 from rich.segment import Segment
 from rich.style import Style
+from rich.measure import measure_renderables
+from textual.geometry import Size
 from textual.strip import Strip
 from textual.widgets import Button, RichLog
 
@@ -139,6 +141,14 @@ class CopyableRichLog(RichLog):
         self._stick = True
         self._snap_scheduled = False
         self.hint: Button | None = None
+        # tui-ux19: clickable tool entries (pre-rendered dual variants + splice toggle)
+        self._tool_entries: list[dict] = []
+        self._click_down: tuple[int, int] | None = None
+        self._size_known = False  # tui-ux19: 首次 on_show（布局落定）后置 True，工具条目双变体才可预渲染
+
+    def on_show(self, event: events.Show) -> None:
+        """tui-ux19: widget 首次上屏（父布局已完成，size.width 有效）→ 工具条目双变体预渲染可用。"""
+        self._size_known = True
 
     def focus_on_click(self) -> bool:
         """tui-ux17: 点击日志区即聚焦（对标 opencode 列表点击聚焦模型；Textual 8.2.8
@@ -231,6 +241,8 @@ class CopyableRichLog(RichLog):
 
     def clear(self, *args, **kwargs):
         self._plain_lines.clear()
+        self._tool_entries.clear()
+        self._click_down = None
         # tui-ux16: 日志清空同时复位 sticky scroll 计数 / hint
         self._stick = True
         self._pending_msgs = 0
@@ -354,6 +366,93 @@ class CopyableRichLog(RichLog):
         if self.app is not None and self.screen is not None:
             self.screen.clear_selection()
         self.refresh()
+
+    def _write_variant_strips(self, text: str) -> tuple[list[Strip], int]:
+        # 把一个 markup 文本折行成本 widget 宽度下的 strip 列表（对齐 RichLog 原生 write 管道）
+        from rich.console import Console
+        width = max(1, self.size.width)
+        local = Console(width=width)
+        opts = local.options
+        t = Text.from_markup(text)
+        measured = measure_renderables(local, opts, [t]).maximum
+        render_width = max(measured, width)
+        segments = list(local.render(t, opts.update_width(render_width)))
+        lines = [list(ln) for ln in Segment.split_lines(segments)]
+        if not lines:
+            return [Strip.blank(render_width)], render_width
+        strips = [s.adjust_cell_length(render_width) for s in Strip.from_lines(lines)]
+        row_w = max((sum(seg.cell_length for seg in s._segments) for s in strips), default=render_width)  # noqa: SLF001
+        return strips, max(render_width, row_w)
+
+    def write_tool_entry(self, collapsed: str, expanded: str) -> None:
+        # tui-ux19：注册一条可点击工具条目（折叠态上屏，展开态待命）。须在 UI 线程调用。
+        if not self._size_known or getattr(self, "max_lines", None) is not None:
+            self.write(collapsed)
+            return
+        c_strips, c_w = self._write_variant_strips(collapsed)
+        e_strips, e_w = self._write_variant_strips(expanded)
+        start = len(self.lines)
+        self.lines.extend(c_strips)
+        self._tool_entries.append({"active": False, "start": start, "end": start + len(c_strips), "strips": [c_strips, e_strips]})
+        self._widest_line_width = max(getattr(self, "_widest_line_width", 0), c_w, e_w)
+        self.virtual_size = Size(self._widest_line_width, len(self.lines))
+        if self._at_bottom() or self._stick:
+            self.scroll_end(animate=False, immediate=True, x_axis=False)
+        else:
+            self._pending_msgs += 1
+            self._refresh_hint()
+        self._sync_plain_lines_from_strips()
+        self.refresh()
+
+    def _toggle_tool_entry(self, index: int) -> None:
+        entry = self._tool_entries[index]
+        new_strips = entry["strips"][0 if entry["active"] else 1]
+        old_y = int(self.scroll_offset.y)
+        start, end = entry["start"], entry["end"]
+        delta = len(new_strips) - (end - start)
+        self.lines[start:end] = new_strips
+        entry["active"] = not entry["active"]
+        entry["end"] = start + len(new_strips)
+        for other in self._tool_entries:
+            if other is not entry and other["start"] >= end:
+                other["start"] += delta
+                other["end"] += delta
+        self._line_cache.clear()
+        self.virtual_size = Size(self._widest_line_width, len(self.lines))
+        if self._stick or self._at_bottom():
+            self.jump_to_end()
+        else:
+            target = min(max(old_y + delta, 0), self.max_scroll_y)
+            self.scroll_to(0, target, animate=False, immediate=True)
+        self._sync_plain_lines_from_strips()
+        self.refresh()
+
+    def on_mouse_down(self, event: events.MouseDown) -> None:
+        # 记录按下位置，区分单点击与拖选（拖选交给复制路径）
+        if event.widget is self and event.button == 1:
+            self._click_down = (int(event.x), int(event.y))
+        else:
+            self._click_down = None
+
+    def on_click(self, event: events.Click) -> None:
+        # 单点击命中工具条目 → 展开/收起（对标 codex/opencode 点击详情）
+        if event.widget is not self or event.button != 1:
+            return
+        if getattr(event, "chain", 1) != 1:
+            return
+        down = self._click_down
+        self._click_down = None
+        if down is None:
+            return
+        if abs(int(event.x) - down[0]) > 1 or abs(int(event.y) - down[1]) > 1:
+            return
+        content_row = int(self.scroll_offset.y) + int(event.y)
+        for idx, entry in enumerate(self._tool_entries):
+            if entry["start"] <= content_row < entry["end"]:
+                self._toggle_tool_entry(idx)
+                return
+        self._click_down = None
+
 
     # 拖选松开自动复制不在本 widget 实现：Textual 8.2.8 的 TextSelected 只由
     # Screen 在 MouseUp 时 post（bubble=True，路径 Screen→App），widget 级

@@ -1,0 +1,354 @@
+[
+  {
+    "name": "activity-summary.ts",
+    "path": "packages/tui/src/routes/session/activity-summary.ts",
+    "sha": "6578f50d632ae57f4c15069dac23131664d95691",
+    "size": 4520,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/activity-summary.ts?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/activity-summary.ts",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/blobs/6578f50d632ae57f4c15069dac23131664d95691",
+    "download_url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/tui/src/routes/session/activity-summary.ts",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/activity-summary.ts?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/blobs/6578f50d632ae57f4c15069dac23131664d95691",
+      "html": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/activity-summary.ts"
+    }
+  },
+  {
+    "name": "anchor-view.tsx",
+    "path": "packages/tui/src/routes/session/anchor-view.tsx",
+    "sha": "a21d76f75dacf2b5cac6ef9880c2d016cc8d9f2c",
+    "size": 1826,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/anchor-view.tsx?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/anchor-view.tsx",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/blobs/a21d76f75dacf2b5cac6ef9880c2d016cc8d9f2c",
+    "download_url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/tui/src/routes/session/anchor-view.tsx",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/anchor-view.tsx?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/blobs/a21d76f75dacf2b5cac6ef9880c2d016cc8d9f2c",
+      "html": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/anchor-view.tsx"
+    }
+  },
+  {
+    "name": "anchors.ts",
+    "path": "packages/tui/src/routes/session/anchors.ts",
+    "sha": "d4326de8d06e951b2cdb2253a1b32a74609c406c",
+    "size": 3221,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/anchors.ts?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/anchors.ts",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/blobs/d4326de8d06e951b2cdb2253a1b32a74609c406c",
+    "download_url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/tui/src/routes/session/anchors.ts",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/anchors.ts?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/blobs/d4326de8d06e951b2cdb2253a1b32a74609c406c",
+      "html": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/anchors.ts"
+    }
+  },
+  {
+    "name": "composer",
+    "path": "packages/tui/src/routes/session/composer",
+    "sha": "24b6b7b6a53c38c7f7c5d038b09c483d0baf3879",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/composer?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/tui/src/routes/session/composer",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/24b6b7b6a53c38c7f7c5d038b09c483d0baf3879",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/composer?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/24b6b7b6a53c38c7f7c5d038b09c483d0baf3879",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/tui/src/routes/session/composer"
+    }
+  },
+  {
+    "name": "dialog-execute.tsx",
+    "path": "packages/tui/src/routes/session/dialog-execute.tsx",
+    "sha": "ea324f75c1a38449910b2a4f83f5a5a94b009036",
+    "size": 11053,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/dialog-execute.tsx?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/dialog-execute.tsx",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/blobs/ea324f75c1a38449910b2a4f83f5a5a94b009036",
+    "download_url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/tui/src/routes/session/dialog-execute.tsx",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/dialog-execute.tsx?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/blobs/ea324f75c1a38449910b2a4f83f5a5a94b009036",
+      "html": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/dialog-execute.tsx"
+    }
+  },
+  {
+    "name": "dialog-fork.tsx",
+    "path": "packages/tui/src/routes/session/dialog-fork.tsx",
+    "sha": "2ba1a27fe144989498a33a5f113d4a9e41c0f25f",
+    "size": 2845,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/dialog-fork.tsx?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/dialog-fork.tsx",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/blobs/2ba1a27fe144989498a33a5f113d4a9e41c0f25f",
+    "download_url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/tui/src/routes/session/dialog-fork.tsx",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/dialog-fork.tsx?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/blobs/2ba1a27fe144989498a33a5f113d4a9e41c0f25f",
+      "html": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/dialog-fork.tsx"
+    }
+  },
+  {
+    "name": "dialog-message.tsx",
+    "path": "packages/tui/src/routes/session/dialog-message.tsx",
+    "sha": "bf706ddb566617e4e5c2243481460068aa89dbff",
+    "size": 3097,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/dialog-message.tsx?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/dialog-message.tsx",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/blobs/bf706ddb566617e4e5c2243481460068aa89dbff",
+    "download_url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/tui/src/routes/session/dialog-message.tsx",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/dialog-message.tsx?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/blobs/bf706ddb566617e4e5c2243481460068aa89dbff",
+      "html": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/dialog-message.tsx"
+    }
+  },
+  {
+    "name": "dialog-timeline.tsx",
+    "path": "packages/tui/src/routes/session/dialog-timeline.tsx",
+    "sha": "fdf6454cf4e42bb41b5fc90b11401a37543d95be",
+    "size": 1494,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/dialog-timeline.tsx?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/dialog-timeline.tsx",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/blobs/fdf6454cf4e42bb41b5fc90b11401a37543d95be",
+    "download_url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/tui/src/routes/session/dialog-timeline.tsx",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/dialog-timeline.tsx?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/blobs/fdf6454cf4e42bb41b5fc90b11401a37543d95be",
+      "html": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/dialog-timeline.tsx"
+    }
+  },
+  {
+    "name": "form.tsx",
+    "path": "packages/tui/src/routes/session/form.tsx",
+    "sha": "cba007198f026230d5c2051379fa7a9056c6aa52",
+    "size": 42176,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/form.tsx?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/form.tsx",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/blobs/cba007198f026230d5c2051379fa7a9056c6aa52",
+    "download_url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/tui/src/routes/session/form.tsx",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/form.tsx?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/blobs/cba007198f026230d5c2051379fa7a9056c6aa52",
+      "html": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/form.tsx"
+    }
+  },
+  {
+    "name": "group-view.tsx",
+    "path": "packages/tui/src/routes/session/group-view.tsx",
+    "sha": "402293943dc53c377317623be197679458ef0142",
+    "size": 15729,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/group-view.tsx?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/group-view.tsx",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/blobs/402293943dc53c377317623be197679458ef0142",
+    "download_url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/tui/src/routes/session/group-view.tsx",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/group-view.tsx?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/blobs/402293943dc53c377317623be197679458ef0142",
+      "html": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/group-view.tsx"
+    }
+  },
+  {
+    "name": "grouping",
+    "path": "packages/tui/src/routes/session/grouping",
+    "sha": "fd204778cb3303f4bfc62a6180d90a7638a604e5",
+    "size": 0,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/grouping?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/tree/dev/packages/tui/src/routes/session/grouping",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/trees/fd204778cb3303f4bfc62a6180d90a7638a604e5",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/grouping?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/trees/fd204778cb3303f4bfc62a6180d90a7638a604e5",
+      "html": "https://github.com/anomalyco/opencode/tree/dev/packages/tui/src/routes/session/grouping"
+    }
+  },
+  {
+    "name": "history.ts",
+    "path": "packages/tui/src/routes/session/history.ts",
+    "sha": "aa154fd91f0b5e4d72bb7efcee6fc9ac976964e2",
+    "size": 1931,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/history.ts?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/history.ts",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/blobs/aa154fd91f0b5e4d72bb7efcee6fc9ac976964e2",
+    "download_url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/tui/src/routes/session/history.ts",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/history.ts?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/blobs/aa154fd91f0b5e4d72bb7efcee6fc9ac976964e2",
+      "html": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/history.ts"
+    }
+  },
+  {
+    "name": "index.tsx",
+    "path": "packages/tui/src/routes/session/index.tsx",
+    "sha": "9f70bb81758c29584835a9afd67c27e74dffe44d",
+    "size": 139024,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/index.tsx?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/index.tsx",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/blobs/9f70bb81758c29584835a9afd67c27e74dffe44d",
+    "download_url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/tui/src/routes/session/index.tsx",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/index.tsx?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/blobs/9f70bb81758c29584835a9afd67c27e74dffe44d",
+      "html": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/index.tsx"
+    }
+  },
+  {
+    "name": "location-missing.tsx",
+    "path": "packages/tui/src/routes/session/location-missing.tsx",
+    "sha": "d42aada29fac26b1dec5372f03941be08aed14d5",
+    "size": 2979,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/location-missing.tsx?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/location-missing.tsx",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/blobs/d42aada29fac26b1dec5372f03941be08aed14d5",
+    "download_url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/tui/src/routes/session/location-missing.tsx",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/location-missing.tsx?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/blobs/d42aada29fac26b1dec5372f03941be08aed14d5",
+      "html": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/location-missing.tsx"
+    }
+  },
+  {
+    "name": "message-navigation.ts",
+    "path": "packages/tui/src/routes/session/message-navigation.ts",
+    "sha": "6f234371a912a2ac54eb9c46b9c6ab4e68d4839d",
+    "size": 1754,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/message-navigation.ts?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/message-navigation.ts",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/blobs/6f234371a912a2ac54eb9c46b9c6ab4e68d4839d",
+    "download_url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/tui/src/routes/session/message-navigation.ts",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/message-navigation.ts?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/blobs/6f234371a912a2ac54eb9c46b9c6ab4e68d4839d",
+      "html": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/message-navigation.ts"
+    }
+  },
+  {
+    "name": "message-parts.tsx",
+    "path": "packages/tui/src/routes/session/message-parts.tsx",
+    "sha": "5a7af359311f32dd1b05689851082653c713a335",
+    "size": 9561,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/message-parts.tsx?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/message-parts.tsx",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/blobs/5a7af359311f32dd1b05689851082653c713a335",
+    "download_url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/tui/src/routes/session/message-parts.tsx",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/message-parts.tsx?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/blobs/5a7af359311f32dd1b05689851082653c713a335",
+      "html": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/message-parts.tsx"
+    }
+  },
+  {
+    "name": "mount-budget.ts",
+    "path": "packages/tui/src/routes/session/mount-budget.ts",
+    "sha": "ac3727b6e6e2cfa3c7ecea7b3fd902b72dd4de2c",
+    "size": 1549,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/mount-budget.ts?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/mount-budget.ts",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/blobs/ac3727b6e6e2cfa3c7ecea7b3fd902b72dd4de2c",
+    "download_url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/tui/src/routes/session/mount-budget.ts",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/mount-budget.ts?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/blobs/ac3727b6e6e2cfa3c7ecea7b3fd902b72dd4de2c",
+      "html": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/mount-budget.ts"
+    }
+  },
+  {
+    "name": "permission.tsx",
+    "path": "packages/tui/src/routes/session/permission.tsx",
+    "sha": "07338aba69d81e27d5213e61131f7d2db0e2ff0a",
+    "size": 21149,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/permission.tsx?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/permission.tsx",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/blobs/07338aba69d81e27d5213e61131f7d2db0e2ff0a",
+    "download_url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/tui/src/routes/session/permission.tsx",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/permission.tsx?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/blobs/07338aba69d81e27d5213e61131f7d2db0e2ff0a",
+      "html": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/permission.tsx"
+    }
+  },
+  {
+    "name": "render-context.tsx",
+    "path": "packages/tui/src/routes/session/render-context.tsx",
+    "sha": "0fe106d5fe4413b018d071af88bfea991edcf914",
+    "size": 2034,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/render-context.tsx?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/render-context.tsx",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/blobs/0fe106d5fe4413b018d071af88bfea991edcf914",
+    "download_url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/tui/src/routes/session/render-context.tsx",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/render-context.tsx?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/blobs/0fe106d5fe4413b018d071af88bfea991edcf914",
+      "html": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/render-context.tsx"
+    }
+  },
+  {
+    "name": "rows.ts",
+    "path": "packages/tui/src/routes/session/rows.ts",
+    "sha": "4a8437a13548e0461c5e22651cc1a32d7d19f4eb",
+    "size": 18074,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/rows.ts?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/rows.ts",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/blobs/4a8437a13548e0461c5e22651cc1a32d7d19f4eb",
+    "download_url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/tui/src/routes/session/rows.ts",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/rows.ts?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/blobs/4a8437a13548e0461c5e22651cc1a32d7d19f4eb",
+      "html": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/rows.ts"
+    }
+  },
+  {
+    "name": "sidebar.tsx",
+    "path": "packages/tui/src/routes/session/sidebar.tsx",
+    "sha": "2a8a385f56741bfcca9106409098f7a83813e214",
+    "size": 2868,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/sidebar.tsx?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/sidebar.tsx",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/blobs/2a8a385f56741bfcca9106409098f7a83813e214",
+    "download_url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/tui/src/routes/session/sidebar.tsx",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/sidebar.tsx?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/blobs/2a8a385f56741bfcca9106409098f7a83813e214",
+      "html": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/sidebar.tsx"
+    }
+  },
+  {
+    "name": "thinking-syntax.ts",
+    "path": "packages/tui/src/routes/session/thinking-syntax.ts",
+    "sha": "78821b45298c1940311702fe089529d885a206ce",
+    "size": 361,
+    "url": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/thinking-syntax.ts?ref=dev",
+    "html_url": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/thinking-syntax.ts",
+    "git_url": "https://api.github.com/repos/anomalyco/opencode/git/blobs/78821b45298c1940311702fe089529d885a206ce",
+    "download_url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/tui/src/routes/session/thinking-syntax.ts",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/anomalyco/opencode/contents/packages/tui/src/routes/session/thinking-syntax.ts?ref=dev",
+      "git": "https://api.github.com/repos/anomalyco/opencode/git/blobs/78821b45298c1940311702fe089529d885a206ce",
+      "html": "https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/thinking-syntax.ts"
+    }
+  }
+]

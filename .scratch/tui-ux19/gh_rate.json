@@ -1,0 +1,40 @@
+{
+  "resources": {
+    "code_search": {
+      "limit": 60,
+      "remaining": 52,
+      "reset": 1793103560,
+      "used": 8
+    },
+    "core": {
+      "limit": 60,
+      "remaining": 52,
+      "reset": 1793103560,
+      "used": 8
+    },
+    "graphql": {
+      "limit": 0,
+      "remaining": 0,
+      "reset": 1793105336,
+      "used": 0
+    },
+    "integration_manifest": {
+      "limit": 5000,
+      "remaining": 5000,
+      "reset": 1793105336,
+      "used": 0
+    },
+    "search": {
+      "limit": 10,
+      "remaining": 10,
+      "reset": 1793101796,
+      "used": 0
+    }
+  },
+  "rate": {
+    "limit": 60,
+    "remaining": 52,
+    "reset": 1793103560,
+    "used": 8
+  }
+}

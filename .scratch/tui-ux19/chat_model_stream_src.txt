@@ -1,0 +1,149 @@
+class ChatModelStream(_ChatModelStreamBase):
+    """Synchronous per-message streaming object for a single LLM response.
+
+    Returned by `BaseChatModel.stream_events(version="v3")`.  Content-block protocol
+    events are fed into this object and accumulated into typed projections.
+
+    Projections (always return the same cached object):
+
+    - `.text` — iterable of `str` deltas; `str()` for full text
+    - `.reasoning` — same as `.text` for reasoning content
+    - `.tool_calls` — iterable of `ToolCallChunk` deltas;
+      `.get()` returns `list[ToolCall]`
+    - `.output` — blocking property, returns assembled `AIMessage`
+
+    Usage info is available on `.output.usage_metadata` once the stream
+    has finished.
+
+    !!! note "Output shape is always v1 content blocks"
+
+        `.output.content` is always a list of v1 protocol blocks
+        (text, reasoning, tool_call, image, …), regardless of the
+        underlying model's `output_version` setting. That attribute
+        only controls the legacy `stream()` / `astream()` / `invoke()`
+        paths; `ChatModelStream` is built on the content-block
+        protocol and emits v1 shapes by construction.
+
+    Raw event iteration::
+
+        for event in stream:
+            print(event)  # MessagesData dicts
+    """
+
+    _text_proj: SyncTextProjection
+    _reasoning_proj: SyncTextProjection
+    _tool_calls_proj: SyncProjection
+
+    def __init__(  # noqa: D107
+        self,
+        *,
+        namespace: list[str] | None = None,
+        node: str | None = None,
+        message_id: str | None = None,
+    ) -> None:
+        super().__init__(namespace=namespace, node=node, message_id=message_id)
+        # Projections — created eagerly
+        self._text_proj = SyncTextProjection()
+        self._reasoning_proj = SyncTextProjection()
+        self._tool_calls_proj = SyncProjection()
+        # Pull callback (set by bind_pump or set_request_more)
+        self._ensure_started: Callable[[], None] | None = None
+        self._request_more: Callable[[], bool] | None = None
+
+    # -- Pump/pull wiring --------------------------------------------------
+
+    def bind_pump(self, pump_one: Callable[[], bool]) -> None:
+        """Bind a pump for standalone streaming.
+
+        Delegates to `set_request_more`.  Used by
+        `BaseChatModel.stream_events(version="v3")`.
+        """
+        self.set_request_more(pump_one)
+
+    def set_start(self, cb: Callable[[], None] | None) -> None:
+        """Install a lazy-start callback on this stream and its projections."""
+        self._ensure_started = cb
+        self._text_proj.set_start(cb)
+        self._reasoning_proj.set_start(cb)
+        self._tool_calls_proj.set_start(cb)
+
+    def set_request_more(self, cb: Callable[[], bool]) -> None:
+        """Set the pull callback on this stream and all its projections.
+
+        Used by langgraph's `GraphRunStream._wire_request_more` to
+        connect the shared graph pump.
+        """
+        self._request_more = cb
+        self._text_proj.set_request_more(cb)
+        self._reasoning_proj.set_request_more(cb)
+        self._tool_calls_proj.set_request_more(cb)
+
+    # -- Public projections ------------------------------------------------
+
+    @property
+    def text(self) -> SyncTextProjection:
+        """Text content — iterable of `str` deltas, `str()` for full."""
+        return self._text_proj
+
+    @property
+    def reasoning(self) -> SyncTextProjection:
+        """Reasoning content — same interface as :attr:`text`."""
+        return self._reasoning_proj
+
+    @property
+    def tool_calls(self) -> SyncProjection:
+        """Tool calls — iterable of `ToolCallChunk` deltas.
+
+        `.get()` returns finalized `list[ToolCall]`.
+        """
+        return self._tool_calls_proj
+
+    @property
+    def output(self) -> AIMessage:
+        """Assembled `AIMessage` — blocks until the stream finishes."""
+        self._drain()
+        if self._error is not None:
+            raise self._error
+        if self._output_message is None:
+            msg = "Stream finished without producing a message"
+            raise RuntimeError(msg)
+        return self._output_message
+
+    # -- Raw event iteration (replay buffer) -------------------------------
+
+    def __iter__(self) -> Iterator[MessagesData]:
+        """Iterate raw protocol events with replay-buffer semantics."""
+        if self._ensure_started is not None:
+            self._ensure_started()
+        cursor = 0
+        while True:
+            if cursor < len(self._events):
+                yield self._events[cursor]
+                cursor += 1
+            elif self._error is not None:
+                raise self._error
+            elif self._done:
+                return
+            elif self._request_more is not None:
+                while cursor >= len(self._events) and not self._done:
+                    if not self._request_more():
+                        break
+                if cursor >= len(self._events):
+                    if self._error is not None:
+                        raise self._error
+                    return
+            else:
+                return
+
+    # -- Internal helpers --------------------------------------------------
+
+    def _drain(self) -> None:
+        """Pull all remaining events until done."""
+        if self._done:
+            return
+        if self._ensure_started is not None:
+            self._ensure_started()
+        if self._request_more is not None:
+            while not self._done:
+                if not self._request_more():
+                    break

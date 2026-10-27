@@ -1,0 +1,314 @@
+diff --git a/src/commands.py b/src/commands.py
+index 3b03886..24b9195 100644
+--- a/src/commands.py
++++ b/src/commands.py
+@@ -3,6 +3,7 @@
+ 从 main.py 抽取：不依赖终端交互（无 input()/print()），
+ 所有函数「接收 agent/thread_id → 返回文本」，可被 CLI 与 TUI 直接复用。
+ """
++import json
+ import os
+ import re
+ from dataclasses import dataclass
+@@ -221,6 +222,68 @@ def thread_history_text(agent, thread_id: str, max_messages: int = 20) -> list[t
+     return result[-max_messages:]
+ 
+ 
++def _msg_text(content) -> str:
++    """消息 content 归一化为纯文本（deepagents 可能是 list[dict] 多模态块）。"""
++    if isinstance(content, list) and content:
++        first = content[0]
++        content = first.get("text", "") if isinstance(first, dict) else str(first)
++    return content if isinstance(content, str) else ""
++
++
++def thread_history_entries(agent, thread_id: str, max_entries: int = 20) -> list[tuple]:
++    """取指定 thread 的历史条目（含工具调用与思考），供切换会话/撤回后持久上屏。
++
++    返回打标 tuple 列表（从旧到新，从末尾截取至多 max_entries 条）：
++      ("user", text)
++      ("reasoning", text)          # msg.additional_kwargs["reasoning_content"]
++      ("ai", text)
++      ("tool", name, args_json, err, output, depth)
++    工具行在发起它的 AI 消息处展开（按 AIMessage.tool_calls），结果经 tool_call_id
++    匹配后续 ToolMessage；err = status=="error" 或含 execute 失败状态行标记。
++    """
++    try:
++        history = list(agent.get_state_history(config=thread_config(thread_id)))
++    except Exception:
++        return []
++    if not history:
++        return []
++    messages = (history[0].values or {}).get("messages") or []
++
++    tool_results: dict = {}
++    for msg in messages:
++        if getattr(msg, "type", "") == "tool":
++            cid = getattr(msg, "tool_call_id", "") or ""
++            if cid:
++                tool_results[cid] = msg
++
++    result: list[tuple] = []
++    fail_marker = "[Command failed with exit code"
++    for msg in messages:
++        role = getattr(msg, "type", "")
++        if role == "human":
++            text = _msg_text(getattr(msg, "content", "")).strip()
++            if text:
++                result.append(("user", text))
++        elif role == "ai":
++            reasoning = (getattr(msg, "additional_kwargs", None) or {}).get("reasoning_content")
++            if isinstance(reasoning, str) and reasoning.strip():
++                result.append(("reasoning", reasoning.strip()))
++            text = _msg_text(getattr(msg, "content", "")).strip()
++            if text:
++                result.append(("ai", text))
++            for tc in getattr(msg, "tool_calls", None) or []:
++                name = str(tc.get("name") or "?")
++                args_json = json.dumps(tc.get("args", {}), ensure_ascii=False, default=str)
++                res = tool_results.get(str(tc.get("id") or ""))
++                if res is None:
++                    result.append(("tool", name, args_json, False, None, 0))
++                    continue
++                out_text = _msg_text(getattr(res, "content", ""))
++                err = getattr(res, "status", None) == "error" or fail_marker in out_text
++                result.append(("tool", name, args_json, err, out_text or None, 0))
++    return result[-max_entries:]
++
++
+ def last_ai_text(agent, thread_id: str, limit: int = 300) -> str:
+     """取指定 thread 最后一条 AI 回复全文（向后兼容）。"""
+     pairs = thread_history_text(agent, thread_id, max_messages=1)
+diff --git a/src/streaming.py b/src/streaming.py
+index b155d69..f9fb3cb 100644
+--- a/src/streaming.py
++++ b/src/streaming.py
+@@ -42,6 +42,57 @@ def format_agent_error(exc: BaseException) -> str:
+ _SUBAGENT_ACTIVE = frozenset({"started", "running", "start"})
+ _SUBAGENT_DONE = frozenset({"completed", "failed", "done", "error"})
+ 
++def extract_reasoning(item: Any) -> str:
++    """Extract thinking (reasoning) content from a single message in stream_events (tui-ux19).
++
++    Three sources (all getattr/try defensive, not crashing across langchain 1.3/1.4 versions):
++      (1) item.reasoning - langchain-core ChatModelStream's SyncTextProjection
++        (after finalization str()/.get() = full text; incomplete is ""; repr starting with "<" is treated as un-specialized and rejected);
++      (2) item.output.additional_kwargs["reasoning_content"] - common field for OpenAI-compatible gateways;
++      (3) item.output.additional_kwargs["reasoning"]["summary"] - OpenAI reasoning
++        summary (list of parts, dict takes text, joined by newlines).
++    If (2)/(3) hits, return immediately (higher priority than (1)); if all empty, return "".
++    """
++    text = ""
++    proj = getattr(item, "reasoning", None)
++    if proj is not None:
++        get = getattr(proj, "get", None)
++        if callable(get):
++            try:
++                val = get()
++            except Exception:
++                val = None
++            if isinstance(val, str) and val.strip():
++                text = val.strip()
++        if not text:
++            cand = str(proj).strip()
++            if cand and not cand.startswith("<"):
++                text = cand
++    try:
++        out = item.output
++    except Exception:
++        out = None
++    kw = getattr(out, "additional_kwargs", None)
++    if isinstance(kw, dict):
++        rc = kw.get("reasoning_content")
++        if isinstance(rc, str) and rc.strip():
++            return rc.strip()
++        reasoning = kw.get("reasoning")
++        if isinstance(reasoning, dict):
++            parts: list[str] = []
++            for part in reasoning.get("summary") or []:
++                if isinstance(part, dict):
++                    pt = part.get("text")
++                    if isinstance(pt, str) and pt.strip():
++                        parts.append(pt.strip())
++                elif isinstance(part, str) and part.strip():
++                    parts.append(part.strip())
++            if parts:
++                return "\n".join(parts)
++    return text
++
++
++
+ 
+ def iter_text_deltas(chunks) -> list[str]:
+     """从 stream_events message.text 提取字符串 delta，跳过 tool_call blocks。"""
+@@ -325,6 +376,11 @@ def consume_stream_events(
+                 callbacks["on_message_delta"](delta)
+             if draining:
+                 continue
++            # tui-ux19: thinking content goes to screen first (transcription order thinking -> reply), independent of whether the body segment is empty
++            if callbacks.get("on_reasoning_end"):
++                reasoning = extract_reasoning(item)
++                if reasoning:
++                    callbacks["on_reasoning_end"](reasoning)
+             if segment and callbacks.get("on_message_end"):
+                 callbacks["on_message_end"]("".join(segment))
+     return consumed
+diff --git a/src/tui_format.py b/src/tui_format.py
+index ed97926..64efb16 100644
+--- a/src/tui_format.py
++++ b/src/tui_format.py
+@@ -115,18 +115,102 @@ def format_tool_call(
+     error: bool = False,
+     output: str | None = None,
+     indent: int = 0,
++    detail: bool = False,
+ ) -> str:
+-    """格式化工具调用行 + 可选结果预览（Rich markup 字符串）。"""
++    """格式化工具调用行 + 可选结果预览（Rich markup 字符串）。
++
++    detail=True 时末尾追加一行「＋ 详情（点击展开/收起）」标记行
++    （TUI CopyableRichLog 点击该行展开完整参数/输出，对标 codex/opencode）。
++    """
+     prefix = "  " * indent
+     tag = "✗" if error else "✓"
+     # 参数/输出是用户不可信文本：先 escape，避免 [ ' = 序列被 Rich markup
+     # 解析（崩溃.txt：Label/Static/RichLog 把 pandas 式命令渲染炸掉）。
+     header = f"{prefix}[dim]{tag} {escape(name)}({escape(args[:80])})[/dim]"
+-    if not output:
++    result = header
++    if output:
++        preview = truncate_lines(str(output).replace("\r\n", "\n"))
++        indented = "\n".join(f"{prefix}  {escape(line)}" for line in preview.splitlines())
++        result = f"{header}\n{indented}"
++    if detail:
++        result = f"{result}\n{prefix}[dim italic]＋ 详情（点击展开/收起）[/dim italic]"
++    return result
++
++
++TOOL_DETAIL_ARG_CAP = 500
++TOOL_DETAIL_OUT_CAP_LINES = 200
++REASONING_DISPLAY_CAP_LINES = 30
++
++
++def tool_detail_block(
++    name: str,
++    args: str,
++    *,
++    error: bool = False,
++    output: str | None = None,
++    indent: int = 0,
++    arg_cap: int = TOOL_DETAIL_ARG_CAP,
++    out_cap_lines: int = TOOL_DETAIL_OUT_CAP_LINES,
++) -> str:
++    """展开态工具调用详情块：完整参数（超 cap 截断）+ 完整输出（超行数截断）
++    + 末尾「＋ 收起（点击收起）」标记行。供 CopyableRichLog 点击展开时重写。"""
++    prefix = "  " * indent
++    tag = "✗" if error else "✓"
++    lines = [f"{prefix}[dim]{tag} {escape(name)}[/dim]"]
++    full_args = args or ""
++    if len(full_args) > arg_cap:
++        shown = full_args[:arg_cap]
++        lines.append(
++            f"{prefix}[dim]  参数: {escape(shown)}…（截断，共 {len(full_args)} 字符）[/dim]"
++        )
++    else:
++        lines.append(f"{prefix}[dim]  参数: {escape(full_args)}[/dim]")
++    if output:
++        out_text = str(output).replace("\r\n", "\n")
++        preview = truncate_lines(out_text, max_lines=out_cap_lines)
++        indented = "\n".join(f"{prefix}  {escape(line)}" for line in preview.splitlines())
++        lines.append(f"{prefix}[dim]  输出:[/dim]")
++        lines.append(indented if indented else f"{prefix}  [dim]（空）[/dim]")
++    lines.append(f"{prefix}[dim italic]＋ 收起（点击收起）[/dim italic]")
++    return "\n".join(lines)
++
++
++def reasoning_block_markup(text: str, *, cap: int = REASONING_DISPLAY_CAP_LINES) -> str:
++    """Agent 思考（reasoning）内容块：💭 标题 + 两空格缩进淡色斜体正文。
++
++    总是展开（无折叠）；超 cap 行截断并标注总行数。全部文本先 escape。
++    """
++    header = "[dim italic]💭 思考[/dim italic]"
++    body_lines = (text or "").splitlines()
++    if not body_lines:
+         return header
+-    preview = truncate_lines(str(output).replace("\r\n", "\n"))
+-    indented = "\n".join(f"{prefix}  {escape(line)}" for line in preview.splitlines())
+-    return f"{header}\n{indented}"
++    if len(body_lines) > cap:
++        kept = body_lines[:cap]
++        suffix = f"\n  [dim italic]…（共 {len(body_lines)} 行，已截断）[/dim italic]"
++    else:
++        kept = body_lines
++        suffix = ""
++    body = "\n".join(f"  [dim italic]{escape(line)}[/dim italic]" for line in kept)
++    return f"{header}\n{body}{suffix}"
++
++
++def tool_detail_worth_expanding(
++    name: str,
++    args: str,
++    *,
++    error: bool = False,
++    output: str | None = None,
++) -> bool:
++    """判断一次工具调用是否值得显示「＋ 详情（点击展开/收起）」标记行。
++
++    失败调用 / 有非空输出 / 参数较长（>80 字符，预览态截断会丢信息）→ 值得展开；
++    否则折叠为普通单行调用（避免满屏标记噪音，对标 codex/opencode 的克制展示）。
++    """
++    if error:
++        return True
++    if output and str(output).strip():
++        return True
++    return len(args or "") > 80
+ 
+ 
+ def resolve_virtual_path(path: str, *, vault_path: Path | None, workspace_root: Path) -> Path | None:
+diff --git a/src/tui_turn.py b/src/tui_turn.py
+index b8e6f0c..a585f01 100644
+--- a/src/tui_turn.py
++++ b/src/tui_turn.py
+@@ -14,7 +14,7 @@ from textual.widgets import RichLog
+ 
+ from src import commands, streaming
+ from src.plan_mode import current_mode
+-from src.tui_format import AiStreamThrottler, format_tool_call
++from src.tui_format import AiStreamThrottler, format_tool_call, reasoning_block_markup, tool_detail_block, tool_detail_worth_expanding
+ 
+ 
+ class TurnPresenter:
+@@ -109,10 +109,24 @@ class TurnPresenter:
+         self.write_line(f"{prefix}[yellow]▌ [{name}] {status}[/yellow]")
+ 
+     def on_tool_call(self, name: str, args: str, err: bool, output: str | None, depth: int) -> None:
+-        self.write_line(format_tool_call(name, args, error=err, output=output, indent=depth))
++        # tui-ux19: 值得展开（失败/有输出/长参数）→ 注册可点击工具条目（折叠态上屏 + 展开态待命）；
++        # 否则普通单行调用（write_line 已含取消守卫）。
++        detail = tool_detail_worth_expanding(name, args, error=err, output=output)
++        collapsed = format_tool_call(name, args, error=err, output=output, indent=depth, detail=detail)
++        if detail and not self.cancelled():
++            expanded = tool_detail_block(name, args, error=err, output=output, indent=depth)
++            self.app.call_from_thread(self.log.write_tool_entry, collapsed, expanded)
++        else:
++            self.write_line(collapsed)
+         if name == "write_todos" and not self.cancelled():
+             self.app.call_from_thread(self.app._refresh_todos_panel)
+ 
++    def on_reasoning_end(self, text: str) -> None:
++        # tui-ux19: 思考内容上屏（💭 淡色斜体块，对标正文区分；正文之后渲染）
++        if self.cancelled() or not (text or "").strip():
++            return
++        self.write_line(reasoning_block_markup(text.strip()))
++
+     def on_status(self, text: str) -> None:
+         self.write_line(f"[i][dim]… {text}[/dim][/i]")
+ 
+@@ -156,6 +170,7 @@ class TurnPresenter:
+             "on_tool_call": self.on_tool_call,
+             "on_message_delta": self.on_message_delta,
+             "on_message_end": self.on_message_end,
++            "on_reasoning_end": self.on_reasoning_end,
+             "on_status": self.on_status,
+         }
+ 

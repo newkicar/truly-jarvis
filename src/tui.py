@@ -5,7 +5,6 @@ import threading
 from collections import defaultdict
 from functools import partial
 from pathlib import Path
-from rich.markup import escape
 from rich.text import Text
 from time import monotonic
 from typing import ClassVar
@@ -44,6 +43,10 @@ from src.tui_format import (
     render_markdown,
     system_message_markup,
     user_message_markup,
+    format_tool_call,
+    reasoning_block_markup,
+    tool_detail_block,
+    tool_detail_worth_expanding,
 )
 
 
@@ -1203,6 +1206,29 @@ class JarvisApp(App):
         log.write(render_markdown(text))
         log.write("")
 
+    def _render_history_entries(self, log, thread_id: str, max_entries: int | None = 20) -> bool:
+        # tui-ux19：从 checkpointer 重建历史上屏（用户/思考/AI/工具），工具行可点击展开/收起。
+        # 返回是否有上屏条目。undo 用 max_entries=None 全量重建。
+        entries = commands.thread_history_entries(self.agent, thread_id, max_entries=max_entries)
+        for e in entries:
+            kind = e[0]
+            if kind == "user":
+                log.write(user_message_markup(e[1]))
+            elif kind == "reasoning":
+                log.write(reasoning_block_markup(e[1]))
+            elif kind == "ai":
+                self._write_ai(log, e[1])
+            elif kind == "tool":
+                _k, name, args_json, err, output, depth = e
+                worth = tool_detail_worth_expanding(name, args_json, error=err, output=output)
+                if worth:
+                    collapsed = format_tool_call(name, args_json, error=err, output=output, indent=depth, detail=True)
+                    expanded = tool_detail_block(name, args_json, error=err, output=output, indent=depth)
+                    log.write_tool_entry(collapsed, expanded)
+                else:
+                    log.write(format_tool_call(name, args_json, error=err, output=output, indent=depth))
+        return bool(entries)
+
     def _show_ai_stream(self) -> None:
         try:
             self.query_one("#messages", CopyableRichLog).clear_user_selection()
@@ -1611,10 +1637,7 @@ class JarvisApp(App):
         """撤回后重建对话区 transcript + 写结果横幅（工单 07）；成功时把被撤回的用户消息回填输入框。"""
         log = self.query_one("#messages", CopyableRichLog)
         log.clear()
-        rendered = commands.render_session_text(self.agent, self.thread_id)
-        if rendered:
-            log.write(escape(rendered))  # 转义 [user]/[JARVIS] 前缀，防止被 Rich markup 吞掉
-        else:
+        if not self._render_history_entries(log, self.thread_id, max_entries=None):
             log.write("[dim]（会话已清空）[/dim]")
         log.write(system_message_markup(result))
         self._refresh_session_sidebar()
@@ -1744,13 +1767,7 @@ class JarvisApp(App):
         log = self.query_one("#messages", RichLog)
         log.clear()
         self._adopt_thread(thread_id, f"[b]已切换到会话 {thread_id}[/b]")
-        pairs = commands.thread_history_text(self.agent, thread_id)
-        for role, content in pairs:
-            if role == "user":
-                log.write(user_message_markup(content))
-            else:
-                self._write_ai(log, content)
-        if not pairs:
+        if not self._render_history_entries(log, thread_id):
             log.write("[i][dim]（暂无历史）[/dim][/i]")
 
         # tui-ux14 #03: 切回 YOLO 会话时，若回合门已释放则重投队首

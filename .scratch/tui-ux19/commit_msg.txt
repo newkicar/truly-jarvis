@@ -1,0 +1,13 @@
+feat(tui-ux19): 思考上屏 + 工具调用持久显示 + 点击展开详情（对标 codex/opencode）
+
+- (a) 思考上屏（model-gated）：streaming.extract_reasoning 三源（reasoning_content > reasoning.summary join > item.reasoning）
+  → tui_format.reasoning_block_markup 💭 淡色斜体块（30 行 cap）；仅当模型产生 reasoning 时出现
+  （mimo 当前不发 reasoning，probe_reasoning.out 实证 0 chunks）
+- (b) 工具调用记录持久：切会话/undo 后由 commands.thread_history_entries →
+  tui.py JarvisApp._render_history_entries 从 checkpointer 重建上屏；
+  render_session_text/thread_history_text 保留（copy-dialog/摘要）
+- (c) 工具行点击展开/收起（codex "+ Show details" / opencode "Click to expand"）：
+  tui_log.write_tool_entry 双变体预渲染（rich 15 回归修：local.options）+ 点击 splice；
+  _size_known 门控（用户复测"未实现"的主根因：_size_known 被引用但从未赋值 → 条目从未注册，
+  on_show 钩子修复；headless 探针 probe_tool_entry 16/16 PASS）
+- 测试：test_tui_format +4 / test_tui_turn 回调 5→6 / test_tui undo 断言迁移；目标 77 绿，全量 764 绿（预存 test_config×3 除外）

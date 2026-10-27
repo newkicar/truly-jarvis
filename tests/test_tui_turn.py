@@ -25,7 +25,7 @@ def test_presenter_holds_per_turn_state():
     assert not p.cancelled()  # 无 worker 时视为未取消
 
 
-def test_callbacks_dict_has_all_five_keys():
+def test_callbacks_dict_has_all_six_keys():
     class _App:
         permission_state = {}
         thread_id = "stub-t2"
@@ -38,7 +38,7 @@ def test_callbacks_dict_has_all_five_keys():
 
     p = TurnPresenter(_App(), user_input=None, checkpoint_id=None)
     cb = p.callbacks()
-    assert set(cb) == {"on_subagent", "on_tool_call", "on_message_delta", "on_message_end", "on_status"}
+    assert set(cb) == {"on_subagent", "on_tool_call", "on_message_delta", "on_message_end", "on_status", "on_reasoning_end"}
 
 
 async def test_app_stream_agent_delegates_to_presenter(monkeypatch):

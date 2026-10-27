@@ -1,0 +1,9 @@
+Textual 8.2.8 Click dispatch (resolved from site-packages source):
+- App._forward_event (app.py ~L4090-4117): on MouseUp, if get_widget_at(screen_offset).widget is self._mouse_down_widget:
+    chain = +1 if (same screen_offset as last click AND within CLICK_CHAIN_TIME_THRESHOLD) else 1
+    click_event = events.Click.from_event(mouse_down_widget, event, chain=chain)
+    screen._forward_event(click_event)
+- events.Click(MouseEvent, bubble=True): fields widget/x/y (widget-relative), delta_x/y, button, shift/meta/ctrl, chain (1=single)
+- So: single click -> chain=1, event.x/event.y widget-relative, button=1.
+- Drag within same widget STILL posts Click (up widget == down widget) => need on_mouse_down pos guard (movement <=1 cell).
+- on_mouse_down on the widget records (event.x, event.y) for the guard; passive, no selection interference.

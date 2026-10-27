@@ -1,0 +1,362 @@
+total lines: 361
+1 """TUI 日志区：纯文本缓冲 + 鼠标拖选 + 复制（CMD 友好）。"""
+2 from __future__ import annotations
+3 
+4 import os
+5 import sys
+6 import time
+7 from io import StringIO
+8 
+9 from rich.console import Console
+10 from rich.text import Text
+11 from textual import events
+12 from textual.selection import Selection
+13 from rich.segment import Segment
+14 from rich.style import Style
+15 from textual.strip import Strip
+16 from textual.widgets import Button, RichLog
+17 
+18 
+19 def copy_via_win32(text: str, attempts: int = 2) -> bool:
+20     """Win32 写系统剪贴板（OpenClipboard 失败时短暂等待后重试——剪贴板可能瞬时被占用）。"""
+21     if not text or sys.platform != "win32":
+22         return False
+23     try:
+24         import ctypes
+25 
+26         CF_UNICODETEXT = 13
+27         GMEM_MOVEABLE = 0x0002
+28         user32 = ctypes.windll.user32
+29         kernel32 = ctypes.windll.kernel32
+30         for _ in range(max(1, attempts)):
+31             if not user32.OpenClipboard(None):
+32                 time.sleep(0.15)
+33                 continue
+34             try:
+35                 user32.EmptyClipboard()
+36                 payload = text.encode("utf-16-le") + b"\x00\x00"
+37                 handle = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(payload))
+38                 if not handle:
+39                     return False
+40                 locked = kernel32.GlobalLock(handle)
+41                 if not locked:
+42                     kernel32.GlobalFree(handle)
+43                     return False
+44                 ctypes.memmove(locked, payload, len(payload))
+45                 kernel32.GlobalUnlock(handle)
+46                 if not user32.SetClipboardData(CF_UNICODETEXT, handle):
+47                     kernel32.GlobalFree(handle)
+48                     return False
+49                 return True
+50             finally:
+51                 user32.CloseClipboard()
+52     except Exception:  # noqa: BLE001
+53         return False
+54     return False
+55 
+56 
+57 def copy_via_powershell(text: str, timeout: float = 6.0) -> bool:
+58     """PowerShell Set-Clipboard 兜底（Win32 路径不可用时，如 conhost 权限受限）。
+59 
+60     文本写临时 UTF-8 文件、路径经环境变量传给子进程——避开命令行引号/编码陷阱。
+61     """
+62     if not text or sys.platform != "win32":
+63         return False
+64     import subprocess
+65     import tempfile
+66 
+67     tmp = None
+68     try:
+69         fd, tmp = tempfile.mkstemp(prefix="jarvis-clip-", suffix=".txt")
+70         with os.fdopen(fd, "w", encoding="utf-8") as fh:
+71             fh.write(text)
+72         env = {**os.environ, "JARVIS_CLIP_FILE": tmp}
+73         script = (
+74             "$c = [IO.File]::ReadAllText($env:JARVIS_CLIP_FILE, [Text.Encoding]::UTF8); "
+75             "Set-Clipboard -Value $c"
+76         )
+77         result = subprocess.run(  # noqa: S603
+78             ["powershell", "-NoProfile", "-NoLogo", "-Command", script],
+79             capture_output=True,
+80             timeout=timeout,
+81             env=env,
+82             creationflags=subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
+83         )
+84         return result.returncode == 0
+85     except Exception:  # noqa: BLE001
+86         return False
+87     finally:
+88         if tmp:
+89             try:
+90                 os.remove(tmp)
+91             except OSError:
+92                 pass
+93 
+94 
+95 def copy_text_to_system_clipboard(text: str) -> bool:
+96     """写入系统剪贴板（级联：Win32 重试 → PowerShell 兜底）；均失败返回 False。"""
+97     if not text:
+98         return False
+99     if sys.platform != "win32":
+100         return False
+101     if copy_via_win32(text):
+102         return True
+103     return copy_via_powershell(text)
+104 
+105 
+106 def renderable_to_plain(content: object) -> str:
+107     """把 RichLog.write 的内容转为可复制的纯文本（单行或多行）。"""
+108     if content is None:
+109         return ""
+110     if isinstance(content, str):
+111         return Text.from_markup(content).plain if "[" in content and "]" in content else content
+112     buf = StringIO()
+113     Console(file=buf, width=120, legacy_windows=False, highlight=False).print(content)
+114     return buf.getvalue().rstrip("\n")
+115 
+116 
+117 class CopyableRichLog(RichLog):
+118     """RichLog + 纯文本缓冲 + 稳定选区（对标 OpenCode 方案 2）。"""
+119 
+120     ALLOW_SELECT = True
+121     COMPONENT_CLASSES = {"copyable-rich-log--selection"}
+122 
+123     DEFAULT_CSS = """
+124     CopyableRichLog {
+125         & > .copyable-rich-log--selection {
+126             background: $primary 35%;
+127             color: $text;
+128         }
+129     }
+130     """
+131 
+132     def __init__(self, *args, copy_on_select: bool = False, **kwargs):
+133         super().__init__(*args, **kwargs)
+134         self.copy_on_select = copy_on_select
+135         self._plain_lines: list[str] = []
+136         # tui-ux16 sticky scroll: 未确认写入计数 + 跳转提示 Button
+137         # （由 tui.py on_mount 注入；None 表示无 hint）
+138         self._pending_msgs: int = 0
+139         self._stick = True
+140         self._snap_scheduled = False
+141         self.hint: Button | None = None
+142 
+143     def focus_on_click(self) -> bool:
+144         """tui-ux17: 点击日志区即聚焦（对标 opencode 列表点击聚焦模型；Textual 8.2.8
+145         Screen._on_click → get_focusable_widget_at + focus_on_click → set_focus 实证）。
+146         聚焦后 ScrollableContainer 内置键绑定生效：PgUp/PgDn 翻页、Home/End 跳顶/跳底
+147         （action 解析链 widget→screen→app，RichLog 无同名键，天然不冲突）；
+148         watch_scroll_y 的 sticky 状态机对键盘滚动同样联动（上翻自动停跟随、hint 出现）。
+149         拖选走 Screen 级 ALLOW_SELECT 路径，与焦点无关；点回 #input 即回到输入焦点。
+150         旧版 return False 导致点击永远不聚焦 → 翻页键全部失效（本条修复的遗留 bug 根因）。"""
+151         return True
+152 
+153     def render_line(self, y: int) -> Strip:
+154         """渲染叠加：offset meta（选区命中）+ 选区高亮底色（用户 P4：框选可见）。
+155 
+156         Textual 8.2.8 的 RichLog 原生 strip 不带 offset meta，
+157         Compositor.get_widget_and_offset_at 无法把鼠标坐标落到 (行, 列)，
+158         选区会塌缩成「整个 widget 全选」。这里补上字符 offset，
+159         并手动把 selection 组件样式叠在选区行上（RichLog 不走过 Visual 高亮路径）。
+160         """
+161         strip = super().render_line(y)
+162         scroll_x, scroll_y = self.scroll_offset
+163         content_row = scroll_y + y
+164         strip = strip.apply_offsets(scroll_x, content_row)
+165         selection = self.text_selection
+166         if selection is not None:
+167             span = selection.get_span(content_row)
+168             if span is not None:
+169                 sel_style = self.get_component_rich_style(
+170                     "copyable-rich-log--selection", default=None
+171                 )
+172                 if sel_style is not None:
+173                     strip = self._overlay_selection(strip, span[0], span[1], sel_style)
+174         return strip
+175 
+176     @staticmethod
+177     def _overlay_selection(
+178         strip: Strip, x0: int, x1: int, sel_style: Style
+179     ) -> Strip:
+180         """把字符 span [x0, x1) 映射到 cell span 并叠加高亮样式。
+181 
+182         -1 表示行尾；cell 坐标经 cell_len 换算（CJK 双 cell）；
+183         用 Segment.divide 在 cell 切点处切段，中间段叠 sel_style。
+184         """
+185         from rich.cells import cell_len
+186 
+187         segments = strip._segments  # noqa: SLF001
+188         row_text = "".join(seg.text for seg in segments if not seg.control)
+189         total_cells = strip.cell_length
+190         x1_chars = len(row_text) if x1 < 0 else x1
+191         start_cell = cell_len(row_text[:x0])
+192         end_cell = min(cell_len(row_text[:x1_chars]), total_cells)
+193         if end_cell <= start_cell:
+194             return strip
+195         parts = list(Segment.divide(segments, [start_cell, end_cell]))
+196         new_segments: list[Segment] = []
+197         for idx, part in enumerate(parts):
+198             if idx == 1:
+199                 for seg in part:
+200                     text, style, control = seg
+201                     if control:
+202                         new_segments.append(seg)
+203                         continue
+204                     new_style = (style + sel_style) if style else sel_style
+205                     new_segments.append(Segment(text, new_style, control))
+206             else:
+207                 new_segments.extend(part)
+208         return Strip(Segment.simplify(new_segments), total_cells)
+209 
+210     def write(self, content, *args, **kwargs):
+211         # tui-ux16 sticky scroll（codex 交互模型）：贴底自动跟随；
+212         # 上翻后停跳，累计未确认新消息。显式 scroll_end（kwarg，或
+213         # 第 4 个位置参数 = deferred 回放形态）原样尊重。
+214         if "scroll_end" not in kwargs and len(args) < 4:
+215             if self._at_bottom() or self._stick:
+216                 kwargs["scroll_end"] = True
+217             else:
+218                 kwargs["scroll_end"] = False
+219                 if content not in ("", None):
+220                     self._pending_msgs += 1
+221                     self._refresh_hint()
+222         result = super().write(content, *args, **kwargs)
+223         plain = renderable_to_plain(content)
+224         if plain:
+225             for line in plain.splitlines() or [""]:
+226                 self._plain_lines.append(line)
+227         elif plain == "" and content == "":
+228             self._plain_lines.append("")
+229         self._sync_plain_lines_from_strips()
+230         return result
+231 
+232     def clear(self, *args, **kwargs):
+233         self._plain_lines.clear()
+234         # tui-ux16: 日志清空同时复位 sticky scroll 计数 / hint
+235         self._stick = True
+236         self._pending_msgs = 0
+237         self._hide_hint()
+238         return super().clear(*args, **kwargs)
+239 
+240     def _at_bottom(self, tol: int = 2) -> bool:
+241         """垂直方向是否贴底（容差 `tol` 行）。"""
+242         max_y = self.max_scroll_y
+243         if not max_y:
+244             return True
+245         return self.scroll_offset.y >= max(0, max_y - tol)
+246 
+247     def watch_scroll_y(self, old_value: float, new_value: float) -> None:
+248         super().watch_scroll_y(old_value, new_value)
+249         # tui-ux16：滚动变化唯一统一钩子（滚轮/键盘/滚动条/程序化
+250         # scroll_to/end 全走这里）——贴底清 pending、隐藏 hint。
+251         if self._at_bottom():
+252             self._stick = True
+253             self._pending_msgs = 0
+254         else:
+255             self._stick = False
+256         self._refresh_hint()
+257 
+258     def _refresh_hint(self) -> None:
+259         # tui-ux16r2: hint gate = not at bottom (pending count dropped)
+260         if not self._at_bottom():
+261             self._show_hint()
+262         else:
+263             self._hide_hint()
+264 
+265     def _show_hint(self) -> None:
+266         # -visible 是本项目的「hint 可见」态；不可复用 Button 内部类名 -active：
+267         # Textual 8.2.8 Button._on_click 内 `if not self.has_class("-active"): self.press()`
+268         # 会把常驻 -active 的按钮判为「按压中」，真实鼠标点击被吞掉（点击无跳转根因）。
+269         hint = self.hint
+270         if hint is None:
+271             return
+272 
+273         hint.add_class("-visible")
+274         hint.refresh()
+275 
+276     def _hide_hint(self) -> None:
+277         hint = self.hint
+278         if hint is not None:
+279             hint.remove_class("-visible")
+280             hint.refresh()
+281 
+282     def jump_to_end(self) -> None:
+283         """点击 hint / 手动跳底：清 pending、隐 hint、滚到底。"""
+284         self._stick = True
+285         self._pending_msgs = 0
+286         self._hide_hint()
+287         self.scroll_end(animate=False, immediate=True, x_axis=False)
+288 
+289 
+290     def on_resize(self, event: events.Resize) -> None:
+291         # tui-ux16r2: in-flow sibling show/hide (ai_stream) resizes the log;
+292         # when sticking, re-snap to bottom after refresh so real-time
+293         # follow survives viewport resizes (dock/hint layout changes)
+294         super().on_resize(event)
+295         if self._stick and not self._snap_scheduled:
+296             self._snap_scheduled = True
+297             self.call_after_refresh(self._snap_after_resize)
+298 
+299     def _snap_after_resize(self) -> None:
+300         self._snap_scheduled = False
+301         if not self._stick:
+302             return
+303         self._pending_msgs = 0
+304         self.scroll_end(animate=False, immediate=True, x_axis=False)
+305         self._refresh_hint()
+306 
+307     def _sync_plain_lines_from_strips(self) -> None:
+308         """与 RichLog 渲染行对齐（wrap 后每 strip 一行）。"""
+309         if not self.lines:
+310             return
+311         self._plain_lines = [
+312             "".join(text for text, _style, control in strip if not control)
+313             for strip in self.lines
+314         ]
+315 
+316     def plain_text(self) -> str:
+317         self._sync_plain_lines_from_strips()
+318         return "\n".join(self._plain_lines)
+319 
+320     def get_selection(self, selection: Selection) -> tuple[str, str] | None:
+321         text = self.plain_text()
+322         if not text:
+323             return None
+324         return selection.extract(text), "\n"
+325 
+326     def selected_plain_text(self) -> str:
+327         """当前选区对应的纯文本（无选区则空串）。"""
+328         try:
+329             screen = self.screen
+330         except Exception:
+331             return ""
+332         if screen is None:
+333             return ""
+334         selection = screen.selections.get(self)
+335         if selection is None:
+336             return ""
+337         pair = self.get_selection(selection)
+338         if not pair:
+339             return ""
+340         return pair[0]
+341 
+342     def copy_selection_to_clipboard(self) -> tuple[bool, str]:
+343         """复制当前选区；返回 (是否写入系统剪贴板, 文本)。"""
+344         text = self.selected_plain_text().strip()
+345         if not text:
+346             return False, ""
+347         ok = copy_text_to_system_clipboard(text)
+348         if self.app is not None:
+349             self.app.copy_to_clipboard(text)
+350         return ok, text
+351 
+352     def clear_user_selection(self) -> None:
+353         """流式开始时清除选区。"""
+354         if self.app is not None and self.screen is not None:
+355             self.screen.clear_selection()
+356         self.refresh()
+357 
+358     # 拖选松开自动复制不在本 widget 实现：Textual 8.2.8 的 TextSelected 只由
+359     # Screen 在 MouseUp 时 post（bubble=True，路径 Screen→App），widget 级
+360     # handler 收不到事件。行为统一挂在 JarvisApp.on_text_selected（src/tui.py）。
+361 

@@ -143,3 +143,63 @@ def test_format_tool_call_markup_safe_with_unsafe_args():
     console.print(out)  # 修复前：MarkupError
     plain = console.export_text()
     assert unsafe in plain, f"渲染后丢失原文: {plain!r}"
+
+
+from src.tui_format import (
+    REASONING_DISPLAY_CAP_LINES,
+    TOOL_DETAIL_ARG_CAP,
+    TOOL_DETAIL_OUT_CAP_LINES,
+    reasoning_block_markup,
+    tool_detail_block,
+    tool_detail_worth_expanding,
+)
+
+
+# ---------------- tui-ux19: 工具详情展开 / 思考块 纯函数 ----------------
+
+def test_tool_detail_worth_expanding_truth_table():
+    """error / 非空输出 / 长参数 → True；普通短调用无输出 → False。"""
+    assert tool_detail_worth_expanding("execute", "ls", error=True) is True
+    assert tool_detail_worth_expanding("read_file", "path=x", output="abc") is True
+    assert tool_detail_worth_expanding("grep", "q") is False
+    long_args = "q" * 81
+    assert tool_detail_worth_expanding("grep", long_args) is True
+    assert tool_detail_worth_expanding("grep", "q" * 80) is False
+    # 空白输出不算有输出 → 回落到参数长度判断
+    assert tool_detail_worth_expanding("grep", "q", output="   ") is False
+
+
+def test_format_tool_call_detail_marker():
+    line = format_tool_call("execute", "ls", detail=True)
+    assert "＋ 详情（点击展开/收起）" in line
+    plain = format_tool_call("execute", "ls")
+    assert "＋ 详情" not in plain
+
+
+def test_tool_detail_block_markers_and_caps():
+    block = tool_detail_block("read_file", "path=x")
+    assert "参数: path=x" in block
+    assert "＋ 收起（点击收起）" in block
+    # 参数超 cap 截断 + 总字数尾注
+    big = "a" * (TOOL_DETAIL_ARG_CAP + 50)
+    block2 = tool_detail_block("grep", big)
+    assert "截断，共 %d 字符）" % len(big) in block2
+    assert "a" * (TOOL_DETAIL_ARG_CAP + 50) not in block2
+    # 输出超行数截断
+    out = "\n".join(f"l{i}" for i in range(TOOL_DETAIL_OUT_CAP_LINES + 20))
+    block3 = tool_detail_block("execute", "ls", output=out)
+    assert f"l{TOOL_DETAIL_OUT_CAP_LINES - 1}" in block3
+    assert f"l{TOOL_DETAIL_OUT_CAP_LINES + 19}" not in block3
+
+
+def test_reasoning_block_markup_cap_and_truncation_note():
+    short = reasoning_block_markup("line1\nline2")
+    assert "💭 思考" in short
+    assert "line1" in short and "line2" in short
+    lines = [f"t{i}" for i in range(REASONING_DISPLAY_CAP_LINES + 5)]
+    capped = reasoning_block_markup("\n".join(lines))
+    assert f"t{REASONING_DISPLAY_CAP_LINES + 4}" not in capped
+    assert f"共 {REASONING_DISPLAY_CAP_LINES + 5} 行，已截断" in capped
+    # 空文本只有标题
+    assert reasoning_block_markup("") == "[dim italic]💭 思考[/dim italic]"
+    assert reasoning_block_markup(None) == "[dim italic]💭 思考[/dim italic]"

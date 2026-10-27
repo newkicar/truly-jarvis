@@ -1,0 +1,1762 @@
+[
+  {
+    "name": "activity_groups.rs",
+    "path": "codex-rs/tui/src/chatwidget/activity_groups.rs",
+    "sha": "232d6c0f8ea9aa25c04246a175b8f165d837ac71",
+    "size": 2195,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/activity_groups.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/activity_groups.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/232d6c0f8ea9aa25c04246a175b8f165d837ac71",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/activity_groups.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/activity_groups.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/232d6c0f8ea9aa25c04246a175b8f165d837ac71",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/activity_groups.rs"
+    }
+  },
+  {
+    "name": "activity_presentation.rs",
+    "path": "codex-rs/tui/src/chatwidget/activity_presentation.rs",
+    "sha": "573a4770f6265fe88acca9e69d56394229a34fa7",
+    "size": 2484,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/activity_presentation.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/activity_presentation.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/573a4770f6265fe88acca9e69d56394229a34fa7",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/activity_presentation.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/activity_presentation.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/573a4770f6265fe88acca9e69d56394229a34fa7",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/activity_presentation.rs"
+    }
+  },
+  {
+    "name": "backend_banners.rs",
+    "path": "codex-rs/tui/src/chatwidget/backend_banners.rs",
+    "sha": "e769319de7d8bb2e1dc4ab6cc9d71675c739bc48",
+    "size": 23225,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/backend_banners.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/backend_banners.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/e769319de7d8bb2e1dc4ab6cc9d71675c739bc48",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/backend_banners.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/backend_banners.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/e769319de7d8bb2e1dc4ab6cc9d71675c739bc48",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/backend_banners.rs"
+    }
+  },
+  {
+    "name": "clipboard.rs",
+    "path": "codex-rs/tui/src/chatwidget/clipboard.rs",
+    "sha": "3d8bfa69d7fa82a7583e3f0b5d8f067d7c679905",
+    "size": 2252,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/clipboard.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/clipboard.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/3d8bfa69d7fa82a7583e3f0b5d8f067d7c679905",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/clipboard.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/clipboard.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/3d8bfa69d7fa82a7583e3f0b5d8f067d7c679905",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/clipboard.rs"
+    }
+  },
+  {
+    "name": "command_lifecycle.rs",
+    "path": "codex-rs/tui/src/chatwidget/command_lifecycle.rs",
+    "sha": "c65cae1fec1092dc652912db3c74ab8b2daf51c3",
+    "size": 18845,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/command_lifecycle.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/command_lifecycle.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/c65cae1fec1092dc652912db3c74ab8b2daf51c3",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/command_lifecycle.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/command_lifecycle.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/c65cae1fec1092dc652912db3c74ab8b2daf51c3",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/command_lifecycle.rs"
+    }
+  },
+  {
+    "name": "compaction.rs",
+    "path": "codex-rs/tui/src/chatwidget/compaction.rs",
+    "sha": "e05180a9eebfbe2c34e0a8a4deacf63be4f4a7f6",
+    "size": 2088,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/compaction.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/compaction.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/e05180a9eebfbe2c34e0a8a4deacf63be4f4a7f6",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/compaction.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/compaction.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/e05180a9eebfbe2c34e0a8a4deacf63be4f4a7f6",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/compaction.rs"
+    }
+  },
+  {
+    "name": "completion.rs",
+    "path": "codex-rs/tui/src/chatwidget/completion.rs",
+    "sha": "3b59e3066e535f9c536cec9a1df708a09bcecaec",
+    "size": 1863,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/completion.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/completion.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/3b59e3066e535f9c536cec9a1df708a09bcecaec",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/completion.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/completion.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/3b59e3066e535f9c536cec9a1df708a09bcecaec",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/completion.rs"
+    }
+  },
+  {
+    "name": "config_panel.rs",
+    "path": "codex-rs/tui/src/chatwidget/config_panel.rs",
+    "sha": "444b2a7106533af93ec2f901ab273754a5482e22",
+    "size": 9035,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/config_panel.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/config_panel.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/444b2a7106533af93ec2f901ab273754a5482e22",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/config_panel.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/config_panel.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/444b2a7106533af93ec2f901ab273754a5482e22",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/config_panel.rs"
+    }
+  },
+  {
+    "name": "connector_mentions.rs",
+    "path": "codex-rs/tui/src/chatwidget/connector_mentions.rs",
+    "sha": "7a80c60d511a89d8b2bad857bfa04f04c4d884a3",
+    "size": 2446,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/connector_mentions.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/connector_mentions.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/7a80c60d511a89d8b2bad857bfa04f04c4d884a3",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/connector_mentions.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/connector_mentions.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/7a80c60d511a89d8b2bad857bfa04f04c4d884a3",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/connector_mentions.rs"
+    }
+  },
+  {
+    "name": "connectors.rs",
+    "path": "codex-rs/tui/src/chatwidget/connectors.rs",
+    "sha": "eaa2c26a3a59a32c51e1b9f1ca7399dc0f097d14",
+    "size": 21072,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/connectors.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/connectors.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/eaa2c26a3a59a32c51e1b9f1ca7399dc0f097d14",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/connectors.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/connectors.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/eaa2c26a3a59a32c51e1b9f1ca7399dc0f097d14",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/connectors.rs"
+    }
+  },
+  {
+    "name": "constructor.rs",
+    "path": "codex-rs/tui/src/chatwidget/constructor.rs",
+    "sha": "7b2d08c691ff0a798169ec230aaab16f03da1586",
+    "size": 15314,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/constructor.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/constructor.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/7b2d08c691ff0a798169ec230aaab16f03da1586",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/constructor.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/constructor.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/7b2d08c691ff0a798169ec230aaab16f03da1586",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/constructor.rs"
+    }
+  },
+  {
+    "name": "copy_picker.rs",
+    "path": "codex-rs/tui/src/chatwidget/copy_picker.rs",
+    "sha": "a8119ddd5591a5b39cdaa0ea41d70cd96881dedb",
+    "size": 4501,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/copy_picker.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/copy_picker.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/a8119ddd5591a5b39cdaa0ea41d70cd96881dedb",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/copy_picker.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/copy_picker.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/a8119ddd5591a5b39cdaa0ea41d70cd96881dedb",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/copy_picker.rs"
+    }
+  },
+  {
+    "name": "dynamic_activity.rs",
+    "path": "codex-rs/tui/src/chatwidget/dynamic_activity.rs",
+    "sha": "ec2551258ab0928f7c6b92fcb9d2d88fb2a0168c",
+    "size": 1819,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/dynamic_activity.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/dynamic_activity.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/ec2551258ab0928f7c6b92fcb9d2d88fb2a0168c",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/dynamic_activity.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/dynamic_activity.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/ec2551258ab0928f7c6b92fcb9d2d88fb2a0168c",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/dynamic_activity.rs"
+    }
+  },
+  {
+    "name": "empty_state_policy.rs",
+    "path": "codex-rs/tui/src/chatwidget/empty_state_policy.rs",
+    "sha": "017c9fb0665fbb166c75f9aa3cf93b5fbc391eaf",
+    "size": 1365,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/empty_state_policy.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/empty_state_policy.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/017c9fb0665fbb166c75f9aa3cf93b5fbc391eaf",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/empty_state_policy.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/empty_state_policy.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/017c9fb0665fbb166c75f9aa3cf93b5fbc391eaf",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/empty_state_policy.rs"
+    }
+  },
+  {
+    "name": "exec_state.rs",
+    "path": "codex-rs/tui/src/chatwidget/exec_state.rs",
+    "sha": "c8bb698cef977d12c8c5427af5c45398dbccb698",
+    "size": 2403,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/exec_state.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/exec_state.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/c8bb698cef977d12c8c5427af5c45398dbccb698",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/exec_state.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/exec_state.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/c8bb698cef977d12c8c5427af5c45398dbccb698",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/exec_state.rs"
+    }
+  },
+  {
+    "name": "goal_menu.rs",
+    "path": "codex-rs/tui/src/chatwidget/goal_menu.rs",
+    "sha": "e8bfa62b23241230c931fce4dde3462d4515f7e4",
+    "size": 5265,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/goal_menu.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/goal_menu.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/e8bfa62b23241230c931fce4dde3462d4515f7e4",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/goal_menu.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/goal_menu.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/e8bfa62b23241230c931fce4dde3462d4515f7e4",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/goal_menu.rs"
+    }
+  },
+  {
+    "name": "goal_status.rs",
+    "path": "codex-rs/tui/src/chatwidget/goal_status.rs",
+    "sha": "e64c5be376745dae998939b26ccc95cfe3f02c39",
+    "size": 7168,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/goal_status.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/goal_status.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/e64c5be376745dae998939b26ccc95cfe3f02c39",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/goal_status.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/goal_status.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/e64c5be376745dae998939b26ccc95cfe3f02c39",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/goal_status.rs"
+    }
+  },
+  {
+    "name": "hook_lifecycle.rs",
+    "path": "codex-rs/tui/src/chatwidget/hook_lifecycle.rs",
+    "sha": "b2bb0d964f88dec86ffb7a7b2ed9269552d7c1bb",
+    "size": 5119,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/hook_lifecycle.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/hook_lifecycle.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/b2bb0d964f88dec86ffb7a7b2ed9269552d7c1bb",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/hook_lifecycle.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/hook_lifecycle.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/b2bb0d964f88dec86ffb7a7b2ed9269552d7c1bb",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/hook_lifecycle.rs"
+    }
+  },
+  {
+    "name": "hooks.rs",
+    "path": "codex-rs/tui/src/chatwidget/hooks.rs",
+    "sha": "5d2b24f39b3eba986984aa0b125a7241a7b676bf",
+    "size": 1321,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/hooks.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/hooks.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/5d2b24f39b3eba986984aa0b125a7241a7b676bf",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/hooks.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/hooks.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/5d2b24f39b3eba986984aa0b125a7241a7b676bf",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/hooks.rs"
+    }
+  },
+  {
+    "name": "ide_context.rs",
+    "path": "codex-rs/tui/src/chatwidget/ide_context.rs",
+    "sha": "a23858dddbeb2cb22795d3e99afc6fd23115d16a",
+    "size": 4509,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/ide_context.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/ide_context.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/a23858dddbeb2cb22795d3e99afc6fd23115d16a",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/ide_context.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/ide_context.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/a23858dddbeb2cb22795d3e99afc6fd23115d16a",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/ide_context.rs"
+    }
+  },
+  {
+    "name": "image_submission.rs",
+    "path": "codex-rs/tui/src/chatwidget/image_submission.rs",
+    "sha": "832104c555edb00889bb74ef69754a41b6a350e5",
+    "size": 6608,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/image_submission.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/image_submission.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/832104c555edb00889bb74ef69754a41b6a350e5",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/image_submission.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/image_submission.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/832104c555edb00889bb74ef69754a41b6a350e5",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/image_submission.rs"
+    }
+  },
+  {
+    "name": "input_flow.rs",
+    "path": "codex-rs/tui/src/chatwidget/input_flow.rs",
+    "sha": "fd7fb8f86c37c4d995eb5ba905ec22ffa0e084b4",
+    "size": 18226,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/input_flow.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/input_flow.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/fd7fb8f86c37c4d995eb5ba905ec22ffa0e084b4",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/input_flow.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/input_flow.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/fd7fb8f86c37c4d995eb5ba905ec22ffa0e084b4",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/input_flow.rs"
+    }
+  },
+  {
+    "name": "input_queue.rs",
+    "path": "codex-rs/tui/src/chatwidget/input_queue.rs",
+    "sha": "bdaedab6ca43f20a16e1ba5efee0a986acca26b4",
+    "size": 7282,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/input_queue.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/input_queue.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/bdaedab6ca43f20a16e1ba5efee0a986acca26b4",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/input_queue.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/input_queue.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/bdaedab6ca43f20a16e1ba5efee0a986acca26b4",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/input_queue.rs"
+    }
+  },
+  {
+    "name": "input_restore.rs",
+    "path": "codex-rs/tui/src/chatwidget/input_restore.rs",
+    "sha": "bc4a9c1be3bf4eaf13c673ddd02e3f6642032a38",
+    "size": 33788,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/input_restore.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/input_restore.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/bc4a9c1be3bf4eaf13c673ddd02e3f6642032a38",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/input_restore.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/input_restore.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/bc4a9c1be3bf4eaf13c673ddd02e3f6642032a38",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/input_restore.rs"
+    }
+  },
+  {
+    "name": "input_submission.rs",
+    "path": "codex-rs/tui/src/chatwidget/input_submission.rs",
+    "sha": "7d0c7403b50611b9b1a15fb4eb8a695bb3f3a3be",
+    "size": 24386,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/input_submission.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/input_submission.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/7d0c7403b50611b9b1a15fb4eb8a695bb3f3a3be",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/input_submission.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/input_submission.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/7d0c7403b50611b9b1a15fb4eb8a695bb3f3a3be",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/input_submission.rs"
+    }
+  },
+  {
+    "name": "interaction.rs",
+    "path": "codex-rs/tui/src/chatwidget/interaction.rs",
+    "sha": "5e5d8a9346ce23b95419b44172ab2e038b391b8e",
+    "size": 28128,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/interaction.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/interaction.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/5e5d8a9346ce23b95419b44172ab2e038b391b8e",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/interaction.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/interaction.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/5e5d8a9346ce23b95419b44172ab2e038b391b8e",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/interaction.rs"
+    }
+  },
+  {
+    "name": "interrupts.rs",
+    "path": "codex-rs/tui/src/chatwidget/interrupts.rs",
+    "sha": "7b1d1b6802e88ff096c0436fb96f748fb2fae1e4",
+    "size": 11155,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/interrupts.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/interrupts.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/7b1d1b6802e88ff096c0436fb96f748fb2fae1e4",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/interrupts.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/interrupts.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/7b1d1b6802e88ff096c0436fb96f748fb2fae1e4",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/interrupts.rs"
+    }
+  },
+  {
+    "name": "keymap_picker.rs",
+    "path": "codex-rs/tui/src/chatwidget/keymap_picker.rs",
+    "sha": "80c62f7e8fcceec0cbc13bd29aa41e2c220a2d60",
+    "size": 7682,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/keymap_picker.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/keymap_picker.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/80c62f7e8fcceec0cbc13bd29aa41e2c220a2d60",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/keymap_picker.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/keymap_picker.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/80c62f7e8fcceec0cbc13bd29aa41e2c220a2d60",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/keymap_picker.rs"
+    }
+  },
+  {
+    "name": "luna_reserve_model.rs",
+    "path": "codex-rs/tui/src/chatwidget/luna_reserve_model.rs",
+    "sha": "e1c98e36a28610a81f9dc8afb7faf518123a24ac",
+    "size": 2784,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/luna_reserve_model.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/luna_reserve_model.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/e1c98e36a28610a81f9dc8afb7faf518123a24ac",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/luna_reserve_model.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/luna_reserve_model.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/e1c98e36a28610a81f9dc8afb7faf518123a24ac",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/luna_reserve_model.rs"
+    }
+  },
+  {
+    "name": "luna_reserve_return.rs",
+    "path": "codex-rs/tui/src/chatwidget/luna_reserve_return.rs",
+    "sha": "36a7da02a33c9093d7d0da6b67157a14d2a9413f",
+    "size": 1828,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/luna_reserve_return.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/luna_reserve_return.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/36a7da02a33c9093d7d0da6b67157a14d2a9413f",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/luna_reserve_return.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/luna_reserve_return.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/36a7da02a33c9093d7d0da6b67157a14d2a9413f",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/luna_reserve_return.rs"
+    }
+  },
+  {
+    "name": "mcp_startup.rs",
+    "path": "codex-rs/tui/src/chatwidget/mcp_startup.rs",
+    "sha": "b90d414b4e30ffa0aa424986c1c463ce26260d63",
+    "size": 13123,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/mcp_startup.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/mcp_startup.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/b90d414b4e30ffa0aa424986c1c463ce26260d63",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/mcp_startup.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/mcp_startup.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/b90d414b4e30ffa0aa424986c1c463ce26260d63",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/mcp_startup.rs"
+    }
+  },
+  {
+    "name": "misalignment_policy.rs",
+    "path": "codex-rs/tui/src/chatwidget/misalignment_policy.rs",
+    "sha": "d42f37c82d1464908b8a824a5bd42ab17261225c",
+    "size": 9556,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/misalignment_policy.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/misalignment_policy.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/d42f37c82d1464908b8a824a5bd42ab17261225c",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/misalignment_policy.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/misalignment_policy.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/d42f37c82d1464908b8a824a5bd42ab17261225c",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/misalignment_policy.rs"
+    }
+  },
+  {
+    "name": "model_command.rs",
+    "path": "codex-rs/tui/src/chatwidget/model_command.rs",
+    "sha": "bde9ce72eec9ffc5dcc71e8f883f1bf89698a7c2",
+    "size": 5923,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/model_command.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/model_command.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/bde9ce72eec9ffc5dcc71e8f883f1bf89698a7c2",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/model_command.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/model_command.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/bde9ce72eec9ffc5dcc71e8f883f1bf89698a7c2",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/model_command.rs"
+    }
+  },
+  {
+    "name": "model_popup_state.rs",
+    "path": "codex-rs/tui/src/chatwidget/model_popup_state.rs",
+    "sha": "15f99f85bbe4d903ebed8560ce733a0ecadb41d4",
+    "size": 3478,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/model_popup_state.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/model_popup_state.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/15f99f85bbe4d903ebed8560ce733a0ecadb41d4",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/model_popup_state.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/model_popup_state.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/15f99f85bbe4d903ebed8560ce733a0ecadb41d4",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/model_popup_state.rs"
+    }
+  },
+  {
+    "name": "model_popups.rs",
+    "path": "codex-rs/tui/src/chatwidget/model_popups.rs",
+    "sha": "62af5d124d8080ab84d391ab4b66d444eda0fc94",
+    "size": 31144,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/model_popups.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/model_popups.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/62af5d124d8080ab84d391ab4b66d444eda0fc94",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/model_popups.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/model_popups.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/62af5d124d8080ab84d391ab4b66d444eda0fc94",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/model_popups.rs"
+    }
+  },
+  {
+    "name": "notifications.rs",
+    "path": "codex-rs/tui/src/chatwidget/notifications.rs",
+    "sha": "92ef60bada2767a6678d19f8b2f6588889c10d55",
+    "size": 4715,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/notifications.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/notifications.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/92ef60bada2767a6678d19f8b2f6588889c10d55",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/notifications.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/notifications.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/92ef60bada2767a6678d19f8b2f6588889c10d55",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/notifications.rs"
+    }
+  },
+  {
+    "name": "permission_discovery.rs",
+    "path": "codex-rs/tui/src/chatwidget/permission_discovery.rs",
+    "sha": "9ad6179e178a4b828a3a997f67c11b8e9d863827",
+    "size": 9296,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/permission_discovery.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/permission_discovery.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/9ad6179e178a4b828a3a997f67c11b8e9d863827",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/permission_discovery.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/permission_discovery.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/9ad6179e178a4b828a3a997f67c11b8e9d863827",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/permission_discovery.rs"
+    }
+  },
+  {
+    "name": "permission_popups.rs",
+    "path": "codex-rs/tui/src/chatwidget/permission_popups.rs",
+    "sha": "a91e85ce9ff848e6e930656b2af7d3d6e7bfff67",
+    "size": 21613,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/permission_popups.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/permission_popups.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/a91e85ce9ff848e6e930656b2af7d3d6e7bfff67",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/permission_popups.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/permission_popups.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/a91e85ce9ff848e6e930656b2af7d3d6e7bfff67",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/permission_popups.rs"
+    }
+  },
+  {
+    "name": "permission_shortcuts.rs",
+    "path": "codex-rs/tui/src/chatwidget/permission_shortcuts.rs",
+    "sha": "444a11d8bb049a6cfde9d4267ca032c4052c6a3b",
+    "size": 6071,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/permission_shortcuts.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/permission_shortcuts.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/444a11d8bb049a6cfde9d4267ca032c4052c6a3b",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/permission_shortcuts.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/permission_shortcuts.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/444a11d8bb049a6cfde9d4267ca032c4052c6a3b",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/permission_shortcuts.rs"
+    }
+  },
+  {
+    "name": "permissions_menu.rs",
+    "path": "codex-rs/tui/src/chatwidget/permissions_menu.rs",
+    "sha": "b6614dc81e0a59ca7a322f547bcf8fec0cf83a6f",
+    "size": 12885,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/permissions_menu.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/permissions_menu.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/b6614dc81e0a59ca7a322f547bcf8fec0cf83a6f",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/permissions_menu.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/permissions_menu.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/b6614dc81e0a59ca7a322f547bcf8fec0cf83a6f",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/permissions_menu.rs"
+    }
+  },
+  {
+    "name": "pets.rs",
+    "path": "codex-rs/tui/src/chatwidget/pets.rs",
+    "sha": "aec83e79e938c539954f9b33199897761dc2c534",
+    "size": 14534,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/pets.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/pets.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/aec83e79e938c539954f9b33199897761dc2c534",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/pets.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/pets.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/aec83e79e938c539954f9b33199897761dc2c534",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/pets.rs"
+    }
+  },
+  {
+    "name": "pets_tests.rs",
+    "path": "codex-rs/tui/src/chatwidget/pets_tests.rs",
+    "sha": "61ac065692a3835dbed0ccbb7b095ed1abd2d92b",
+    "size": 5381,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/pets_tests.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/pets_tests.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/61ac065692a3835dbed0ccbb7b095ed1abd2d92b",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/pets_tests.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/pets_tests.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/61ac065692a3835dbed0ccbb7b095ed1abd2d92b",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/pets_tests.rs"
+    }
+  },
+  {
+    "name": "plan_implementation.rs",
+    "path": "codex-rs/tui/src/chatwidget/plan_implementation.rs",
+    "sha": "9e273d8883dfd7b45d8bb9959fde8973bf12a9fe",
+    "size": 4927,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/plan_implementation.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/plan_implementation.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/9e273d8883dfd7b45d8bb9959fde8973bf12a9fe",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/plan_implementation.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/plan_implementation.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/9e273d8883dfd7b45d8bb9959fde8973bf12a9fe",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/plan_implementation.rs"
+    }
+  },
+  {
+    "name": "plugin_catalog.rs",
+    "path": "codex-rs/tui/src/chatwidget/plugin_catalog.rs",
+    "sha": "79cec717e72fef6e52b8ffed086019b88fccdab5",
+    "size": 78119,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/plugin_catalog.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/plugin_catalog.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/79cec717e72fef6e52b8ffed086019b88fccdab5",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/plugin_catalog.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/plugin_catalog.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/79cec717e72fef6e52b8ffed086019b88fccdab5",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/plugin_catalog.rs"
+    }
+  },
+  {
+    "name": "plugins.rs",
+    "path": "codex-rs/tui/src/chatwidget/plugins.rs",
+    "sha": "5888185873051854a9ffd0c52b3da2190ecc5d52",
+    "size": 39552,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/plugins.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/plugins.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/5888185873051854a9ffd0c52b3da2190ecc5d52",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/plugins.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/plugins.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/5888185873051854a9ffd0c52b3da2190ecc5d52",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/plugins.rs"
+    }
+  },
+  {
+    "name": "protocol.rs",
+    "path": "codex-rs/tui/src/chatwidget/protocol.rs",
+    "sha": "be7da50c038199528746c0b2287fd225198cd1c0",
+    "size": 33170,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/protocol.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/protocol.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/be7da50c038199528746c0b2287fd225198cd1c0",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/protocol.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/protocol.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/be7da50c038199528746c0b2287fd225198cd1c0",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/protocol.rs"
+    }
+  },
+  {
+    "name": "protocol_requests.rs",
+    "path": "codex-rs/tui/src/chatwidget/protocol_requests.rs",
+    "sha": "e76b50b6ee093df883a7dec48e6cba56b583f02e",
+    "size": 7497,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/protocol_requests.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/protocol_requests.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/e76b50b6ee093df883a7dec48e6cba56b583f02e",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/protocol_requests.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/protocol_requests.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/e76b50b6ee093df883a7dec48e6cba56b583f02e",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/protocol_requests.rs"
+    }
+  },
+  {
+    "name": "questions.rs",
+    "path": "codex-rs/tui/src/chatwidget/questions.rs",
+    "sha": "c65a10c2165ff56861fecf1812da4653cd55e6bc",
+    "size": 7781,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/questions.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/questions.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/c65a10c2165ff56861fecf1812da4653cd55e6bc",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/questions.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/questions.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/c65a10c2165ff56861fecf1812da4653cd55e6bc",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/questions.rs"
+    }
+  },
+  {
+    "name": "quick_dials.rs",
+    "path": "codex-rs/tui/src/chatwidget/quick_dials.rs",
+    "sha": "cf702a39d20106fa09ec9bb03d786a788543519a",
+    "size": 23045,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/quick_dials.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/quick_dials.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/cf702a39d20106fa09ec9bb03d786a788543519a",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/quick_dials.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/quick_dials.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/cf702a39d20106fa09ec9bb03d786a788543519a",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/quick_dials.rs"
+    }
+  },
+  {
+    "name": "rate_limits.rs",
+    "path": "codex-rs/tui/src/chatwidget/rate_limits.rs",
+    "sha": "0e4852767de14ad0b2f5e0d35f68ed7730fdb3a7",
+    "size": 25381,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/rate_limits.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/rate_limits.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/0e4852767de14ad0b2f5e0d35f68ed7730fdb3a7",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/rate_limits.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/rate_limits.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/0e4852767de14ad0b2f5e0d35f68ed7730fdb3a7",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/rate_limits.rs"
+    }
+  },
+  {
+    "name": "realtime.rs",
+    "path": "codex-rs/tui/src/chatwidget/realtime.rs",
+    "sha": "fc794186a3533a3f4479009e74020cccfdcfef9b",
+    "size": 76941,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/realtime.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/realtime.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/fc794186a3533a3f4479009e74020cccfdcfef9b",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/realtime.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/realtime.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/fc794186a3533a3f4479009e74020cccfdcfef9b",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/realtime.rs"
+    }
+  },
+  {
+    "name": "realtime",
+    "path": "codex-rs/tui/src/chatwidget/realtime",
+    "sha": "05141b23afa690e8ef66180ccfd0d9b6fb498e06",
+    "size": 0,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/realtime?ref=main",
+    "html_url": "https://github.com/openai/codex/tree/main/codex-rs/tui/src/chatwidget/realtime",
+    "git_url": "https://api.github.com/repos/openai/codex/git/trees/05141b23afa690e8ef66180ccfd0d9b6fb498e06",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/realtime?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/trees/05141b23afa690e8ef66180ccfd0d9b6fb498e06",
+      "html": "https://github.com/openai/codex/tree/main/codex-rs/tui/src/chatwidget/realtime"
+    }
+  },
+  {
+    "name": "realtime_navigation.rs",
+    "path": "codex-rs/tui/src/chatwidget/realtime_navigation.rs",
+    "sha": "6dbaaa137b53437f1f5e2ae1c7fde1839b64cc67",
+    "size": 2190,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/realtime_navigation.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/realtime_navigation.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/6dbaaa137b53437f1f5e2ae1c7fde1839b64cc67",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/realtime_navigation.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/realtime_navigation.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/6dbaaa137b53437f1f5e2ae1c7fde1839b64cc67",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/realtime_navigation.rs"
+    }
+  },
+  {
+    "name": "realtime_settings.rs",
+    "path": "codex-rs/tui/src/chatwidget/realtime_settings.rs",
+    "sha": "3b5f6611d3007eacee15b72ebe7fde6b69b5a303",
+    "size": 11189,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/realtime_settings.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/realtime_settings.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/3b5f6611d3007eacee15b72ebe7fde6b69b5a303",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/realtime_settings.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/realtime_settings.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/3b5f6611d3007eacee15b72ebe7fde6b69b5a303",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/realtime_settings.rs"
+    }
+  },
+  {
+    "name": "realtime_settings_tests.rs",
+    "path": "codex-rs/tui/src/chatwidget/realtime_settings_tests.rs",
+    "sha": "e9bcc6d5e6abd61e9a295310255dfaeff203d379",
+    "size": 12847,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/realtime_settings_tests.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/realtime_settings_tests.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/e9bcc6d5e6abd61e9a295310255dfaeff203d379",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/realtime_settings_tests.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/realtime_settings_tests.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/e9bcc6d5e6abd61e9a295310255dfaeff203d379",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/realtime_settings_tests.rs"
+    }
+  },
+  {
+    "name": "realtime_split_flap.rs",
+    "path": "codex-rs/tui/src/chatwidget/realtime_split_flap.rs",
+    "sha": "50f0b8c57eb4165f7f78caedd3ab011ce9c56bad",
+    "size": 12133,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/realtime_split_flap.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/realtime_split_flap.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/50f0b8c57eb4165f7f78caedd3ab011ce9c56bad",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/realtime_split_flap.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/realtime_split_flap.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/50f0b8c57eb4165f7f78caedd3ab011ce9c56bad",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/realtime_split_flap.rs"
+    }
+  },
+  {
+    "name": "realtime_split_flap_tests.rs",
+    "path": "codex-rs/tui/src/chatwidget/realtime_split_flap_tests.rs",
+    "sha": "5007f5382fc17fc10c4a8d8e9c2511916c31c893",
+    "size": 11809,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/realtime_split_flap_tests.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/realtime_split_flap_tests.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/5007f5382fc17fc10c4a8d8e9c2511916c31c893",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/realtime_split_flap_tests.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/realtime_split_flap_tests.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/5007f5382fc17fc10c4a8d8e9c2511916c31c893",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/realtime_split_flap_tests.rs"
+    }
+  },
+  {
+    "name": "realtime_tests.rs",
+    "path": "codex-rs/tui/src/chatwidget/realtime_tests.rs",
+    "sha": "b77f114f0d2e5754538c9b97f1ed88442fd260da",
+    "size": 5394,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/realtime_tests.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/realtime_tests.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/b77f114f0d2e5754538c9b97f1ed88442fd260da",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/realtime_tests.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/realtime_tests.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/b77f114f0d2e5754538c9b97f1ed88442fd260da",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/realtime_tests.rs"
+    }
+  },
+  {
+    "name": "realtime_tests",
+    "path": "codex-rs/tui/src/chatwidget/realtime_tests",
+    "sha": "f5ef490f9e9ddf09838bb24b404b764dc60f8dc0",
+    "size": 0,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/realtime_tests?ref=main",
+    "html_url": "https://github.com/openai/codex/tree/main/codex-rs/tui/src/chatwidget/realtime_tests",
+    "git_url": "https://api.github.com/repos/openai/codex/git/trees/f5ef490f9e9ddf09838bb24b404b764dc60f8dc0",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/realtime_tests?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/trees/f5ef490f9e9ddf09838bb24b404b764dc60f8dc0",
+      "html": "https://github.com/openai/codex/tree/main/codex-rs/tui/src/chatwidget/realtime_tests"
+    }
+  },
+  {
+    "name": "reasoning_shortcuts.rs",
+    "path": "codex-rs/tui/src/chatwidget/reasoning_shortcuts.rs",
+    "sha": "c55eb1fc23f4038cf5d812e7d6f0655bb2dc1228",
+    "size": 11360,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/reasoning_shortcuts.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/reasoning_shortcuts.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/c55eb1fc23f4038cf5d812e7d6f0655bb2dc1228",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/reasoning_shortcuts.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/reasoning_shortcuts.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/c55eb1fc23f4038cf5d812e7d6f0655bb2dc1228",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/reasoning_shortcuts.rs"
+    }
+  },
+  {
+    "name": "recap.rs",
+    "path": "codex-rs/tui/src/chatwidget/recap.rs",
+    "sha": "6a448397245eaef70b01d20c40592beffeb2b46b",
+    "size": 890,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/recap.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/recap.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/6a448397245eaef70b01d20c40592beffeb2b46b",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/recap.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/recap.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/6a448397245eaef70b01d20c40592beffeb2b46b",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/recap.rs"
+    }
+  },
+  {
+    "name": "reconnect.rs",
+    "path": "codex-rs/tui/src/chatwidget/reconnect.rs",
+    "sha": "d2608b122673b5af2ff40cf9bb7ccbfb7e23deb0",
+    "size": 11575,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/reconnect.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/reconnect.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/d2608b122673b5af2ff40cf9bb7ccbfb7e23deb0",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/reconnect.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/reconnect.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/d2608b122673b5af2ff40cf9bb7ccbfb7e23deb0",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/reconnect.rs"
+    }
+  },
+  {
+    "name": "rendering.rs",
+    "path": "codex-rs/tui/src/chatwidget/rendering.rs",
+    "sha": "4f31674e5b3eafbb303a3efd4e0ee6b0ba4f53c2",
+    "size": 16911,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/rendering.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/rendering.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/4f31674e5b3eafbb303a3efd4e0ee6b0ba4f53c2",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/rendering.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/rendering.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/4f31674e5b3eafbb303a3efd4e0ee6b0ba4f53c2",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/rendering.rs"
+    }
+  },
+  {
+    "name": "rendering_tests.rs",
+    "path": "codex-rs/tui/src/chatwidget/rendering_tests.rs",
+    "sha": "317a17d5cb881bb4b5a8cb4836ef7e25b1273597",
+    "size": 19987,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/rendering_tests.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/rendering_tests.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/317a17d5cb881bb4b5a8cb4836ef7e25b1273597",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/rendering_tests.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/rendering_tests.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/317a17d5cb881bb4b5a8cb4836ef7e25b1273597",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/rendering_tests.rs"
+    }
+  },
+  {
+    "name": "replay.rs",
+    "path": "codex-rs/tui/src/chatwidget/replay.rs",
+    "sha": "fbe40068bcf39c0677f5161f02fcc1350fe94d74",
+    "size": 21464,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/replay.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/replay.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/fbe40068bcf39c0677f5161f02fcc1350fe94d74",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/replay.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/replay.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/fbe40068bcf39c0677f5161f02fcc1350fe94d74",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/replay.rs"
+    }
+  },
+  {
+    "name": "reset_credits.rs",
+    "path": "codex-rs/tui/src/chatwidget/reset_credits.rs",
+    "sha": "8128d543075e0140c4488971b5ec5467414775f9",
+    "size": 2842,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/reset_credits.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/reset_credits.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/8128d543075e0140c4488971b5ec5467414775f9",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/reset_credits.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/reset_credits.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/8128d543075e0140c4488971b5ec5467414775f9",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/reset_credits.rs"
+    }
+  },
+  {
+    "name": "review.rs",
+    "path": "codex-rs/tui/src/chatwidget/review.rs",
+    "sha": "d2b9461e71640a5e10a0974506db62de61b11be5",
+    "size": 515,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/review.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/review.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/d2b9461e71640a5e10a0974506db62de61b11be5",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/review.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/review.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/d2b9461e71640a5e10a0974506db62de61b11be5",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/review.rs"
+    }
+  },
+  {
+    "name": "review_popups.rs",
+    "path": "codex-rs/tui/src/chatwidget/review_popups.rs",
+    "sha": "8adc58ae13e9ba1f5c95d1fce8577d39de5d012f",
+    "size": 5795,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/review_popups.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/review_popups.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/8adc58ae13e9ba1f5c95d1fce8577d39de5d012f",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/review_popups.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/review_popups.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/8adc58ae13e9ba1f5c95d1fce8577d39de5d012f",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/review_popups.rs"
+    }
+  },
+  {
+    "name": "safety_buffering.rs",
+    "path": "codex-rs/tui/src/chatwidget/safety_buffering.rs",
+    "sha": "4b7d512f4954853f42f610a0dac44989d1b85edf",
+    "size": 11239,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/safety_buffering.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/safety_buffering.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/4b7d512f4954853f42f610a0dac44989d1b85edf",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/safety_buffering.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/safety_buffering.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/4b7d512f4954853f42f610a0dac44989d1b85edf",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/safety_buffering.rs"
+    }
+  },
+  {
+    "name": "safety_recourse.rs",
+    "path": "codex-rs/tui/src/chatwidget/safety_recourse.rs",
+    "sha": "602ddf46e51d4d739b9cada4cc185e23da20d423",
+    "size": 5118,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/safety_recourse.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/safety_recourse.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/602ddf46e51d4d739b9cada4cc185e23da20d423",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/safety_recourse.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/safety_recourse.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/602ddf46e51d4d739b9cada4cc185e23da20d423",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/safety_recourse.rs"
+    }
+  },
+  {
+    "name": "safety_recourse",
+    "path": "codex-rs/tui/src/chatwidget/safety_recourse",
+    "sha": "3f6cc88180f0c16994762c9a987bb58db95fd27d",
+    "size": 0,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/safety_recourse?ref=main",
+    "html_url": "https://github.com/openai/codex/tree/main/codex-rs/tui/src/chatwidget/safety_recourse",
+    "git_url": "https://api.github.com/repos/openai/codex/git/trees/3f6cc88180f0c16994762c9a987bb58db95fd27d",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/safety_recourse?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/trees/3f6cc88180f0c16994762c9a987bb58db95fd27d",
+      "html": "https://github.com/openai/codex/tree/main/codex-rs/tui/src/chatwidget/safety_recourse"
+    }
+  },
+  {
+    "name": "security_setup.rs",
+    "path": "codex-rs/tui/src/chatwidget/security_setup.rs",
+    "sha": "e001f07e1b06a7e0a52f043a26b9b9b3f6a4a61e",
+    "size": 3589,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/security_setup.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/security_setup.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/e001f07e1b06a7e0a52f043a26b9b9b3f6a4a61e",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/security_setup.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/security_setup.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/e001f07e1b06a7e0a52f043a26b9b9b3f6a4a61e",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/security_setup.rs"
+    }
+  },
+  {
+    "name": "service_tiers.rs",
+    "path": "codex-rs/tui/src/chatwidget/service_tiers.rs",
+    "sha": "6ff278651020d668d6cd6745d0073a8de0e9878a",
+    "size": 5026,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/service_tiers.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/service_tiers.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/6ff278651020d668d6cd6745d0073a8de0e9878a",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/service_tiers.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/service_tiers.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/6ff278651020d668d6cd6745d0073a8de0e9878a",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/service_tiers.rs"
+    }
+  },
+  {
+    "name": "session_flow.rs",
+    "path": "codex-rs/tui/src/chatwidget/session_flow.rs",
+    "sha": "a1ff412d4d50995912ed5b96cf02fcf1bee24ff5",
+    "size": 18217,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/session_flow.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/session_flow.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/a1ff412d4d50995912ed5b96cf02fcf1bee24ff5",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/session_flow.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/session_flow.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/a1ff412d4d50995912ed5b96cf02fcf1bee24ff5",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/session_flow.rs"
+    }
+  },
+  {
+    "name": "session_header.rs",
+    "path": "codex-rs/tui/src/chatwidget/session_header.rs",
+    "sha": "32e31b6682e55bb3998beda19502a0d66b6974e2",
+    "size": 344,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/session_header.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/session_header.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/32e31b6682e55bb3998beda19502a0d66b6974e2",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/session_header.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/session_header.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/32e31b6682e55bb3998beda19502a0d66b6974e2",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/session_header.rs"
+    }
+  },
+  {
+    "name": "session_model_selection.rs",
+    "path": "codex-rs/tui/src/chatwidget/session_model_selection.rs",
+    "sha": "0e896a8b0e4892d07041929f4a0005384cdfd806",
+    "size": 3712,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/session_model_selection.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/session_model_selection.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/0e896a8b0e4892d07041929f4a0005384cdfd806",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/session_model_selection.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/session_model_selection.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/0e896a8b0e4892d07041929f4a0005384cdfd806",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/session_model_selection.rs"
+    }
+  },
+  {
+    "name": "settings.rs",
+    "path": "codex-rs/tui/src/chatwidget/settings.rs",
+    "sha": "432fa653e8213ad598a103665f645d9e58af0a9d",
+    "size": 30740,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/settings.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/settings.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/432fa653e8213ad598a103665f645d9e58af0a9d",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/settings.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/settings.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/432fa653e8213ad598a103665f645d9e58af0a9d",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/settings.rs"
+    }
+  },
+  {
+    "name": "settings_popups.rs",
+    "path": "codex-rs/tui/src/chatwidget/settings_popups.rs",
+    "sha": "3e6132652d01d95541d575f3ab8dfb7823b7d12f",
+    "size": 1414,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/settings_popups.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/settings_popups.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/3e6132652d01d95541d575f3ab8dfb7823b7d12f",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/settings_popups.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/settings_popups.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/3e6132652d01d95541d575f3ab8dfb7823b7d12f",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/settings_popups.rs"
+    }
+  },
+  {
+    "name": "side.rs",
+    "path": "codex-rs/tui/src/chatwidget/side.rs",
+    "sha": "7e0726430d1e9493331d1e7ccccbf44d658f5a34",
+    "size": 1366,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/side.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/side.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/7e0726430d1e9493331d1e7ccccbf44d658f5a34",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/side.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/side.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/7e0726430d1e9493331d1e7ccccbf44d658f5a34",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/side.rs"
+    }
+  },
+  {
+    "name": "skills.rs",
+    "path": "codex-rs/tui/src/chatwidget/skills.rs",
+    "sha": "bc04a38fff3dbb45c1ccb2d61bae12ce4d988f0f",
+    "size": 15544,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/skills.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/skills.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/bc04a38fff3dbb45c1ccb2d61bae12ce4d988f0f",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/skills.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/skills.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/bc04a38fff3dbb45c1ccb2d61bae12ce4d988f0f",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/skills.rs"
+    }
+  },
+  {
+    "name": "slash_command_args.rs",
+    "path": "codex-rs/tui/src/chatwidget/slash_command_args.rs",
+    "sha": "e73048d92c41239320afc8e1738576dc83f2f128",
+    "size": 5283,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/slash_command_args.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/slash_command_args.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/e73048d92c41239320afc8e1738576dc83f2f128",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/slash_command_args.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/slash_command_args.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/e73048d92c41239320afc8e1738576dc83f2f128",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/slash_command_args.rs"
+    }
+  },
+  {
+    "name": "slash_command_args_tests.rs",
+    "path": "codex-rs/tui/src/chatwidget/slash_command_args_tests.rs",
+    "sha": "f856d5b83a014219d93482f4e2d37f6ba1b45924",
+    "size": 2238,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/slash_command_args_tests.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/slash_command_args_tests.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/f856d5b83a014219d93482f4e2d37f6ba1b45924",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/slash_command_args_tests.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/slash_command_args_tests.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/f856d5b83a014219d93482f4e2d37f6ba1b45924",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/slash_command_args_tests.rs"
+    }
+  },
+  {
+    "name": "slash_dispatch.rs",
+    "path": "codex-rs/tui/src/chatwidget/slash_dispatch.rs",
+    "sha": "79a90185372e2941a374eb00703bcb0fae7e0ad5",
+    "size": 58907,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/slash_dispatch.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/slash_dispatch.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/79a90185372e2941a374eb00703bcb0fae7e0ad5",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/slash_dispatch.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/slash_dispatch.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/79a90185372e2941a374eb00703bcb0fae7e0ad5",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/slash_dispatch.rs"
+    }
+  },
+  {
+    "name": "snapshots",
+    "path": "codex-rs/tui/src/chatwidget/snapshots",
+    "sha": "b5612cd928245c91eaa6da9436f59cad91c0edd3",
+    "size": 0,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/snapshots?ref=main",
+    "html_url": "https://github.com/openai/codex/tree/main/codex-rs/tui/src/chatwidget/snapshots",
+    "git_url": "https://api.github.com/repos/openai/codex/git/trees/b5612cd928245c91eaa6da9436f59cad91c0edd3",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/snapshots?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/trees/b5612cd928245c91eaa6da9436f59cad91c0edd3",
+      "html": "https://github.com/openai/codex/tree/main/codex-rs/tui/src/chatwidget/snapshots"
+    }
+  },
+  {
+    "name": "startup_submission.rs",
+    "path": "codex-rs/tui/src/chatwidget/startup_submission.rs",
+    "sha": "a04d131478d12170b59b48acca95165d6fb93cea",
+    "size": 5068,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/startup_submission.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/startup_submission.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/a04d131478d12170b59b48acca95165d6fb93cea",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/startup_submission.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/startup_submission.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/a04d131478d12170b59b48acca95165d6fb93cea",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/startup_submission.rs"
+    }
+  },
+  {
+    "name": "status_controls.rs",
+    "path": "codex-rs/tui/src/chatwidget/status_controls.rs",
+    "sha": "046c55bc19b6ad1b256a33f408fa8876e3e0e488",
+    "size": 18764,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/status_controls.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/status_controls.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/046c55bc19b6ad1b256a33f408fa8876e3e0e488",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/status_controls.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/status_controls.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/046c55bc19b6ad1b256a33f408fa8876e3e0e488",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/status_controls.rs"
+    }
+  },
+  {
+    "name": "status_state.rs",
+    "path": "codex-rs/tui/src/chatwidget/status_state.rs",
+    "sha": "fa686f10edb67d7b64f139667fb21c5552ba7de2",
+    "size": 6914,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/status_state.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/status_state.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/fa686f10edb67d7b64f139667fb21c5552ba7de2",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/status_state.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/status_state.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/fa686f10edb67d7b64f139667fb21c5552ba7de2",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/status_state.rs"
+    }
+  },
+  {
+    "name": "status_surface_commands.rs",
+    "path": "codex-rs/tui/src/chatwidget/status_surface_commands.rs",
+    "sha": "caf0ab1cb2b213fc0db097a8ed3291229ce10269",
+    "size": 5767,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/status_surface_commands.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/status_surface_commands.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/caf0ab1cb2b213fc0db097a8ed3291229ce10269",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/status_surface_commands.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/status_surface_commands.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/caf0ab1cb2b213fc0db097a8ed3291229ce10269",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/status_surface_commands.rs"
+    }
+  },
+  {
+    "name": "status_surfaces.rs",
+    "path": "codex-rs/tui/src/chatwidget/status_surfaces.rs",
+    "sha": "86c54919feef39ec99a9fa3cac740791f86d013f",
+    "size": 53693,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/status_surfaces.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/status_surfaces.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/86c54919feef39ec99a9fa3cac740791f86d013f",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/status_surfaces.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/status_surfaces.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/86c54919feef39ec99a9fa3cac740791f86d013f",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/status_surfaces.rs"
+    }
+  },
+  {
+    "name": "streaming.rs",
+    "path": "codex-rs/tui/src/chatwidget/streaming.rs",
+    "sha": "6229fd735a415ec0a0dfd1763740d0bee7075392",
+    "size": 30220,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/streaming.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/streaming.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/6229fd735a415ec0a0dfd1763740d0bee7075392",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/streaming.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/streaming.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/6229fd735a415ec0a0dfd1763740d0bee7075392",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/streaming.rs"
+    }
+  },
+  {
+    "name": "tests.rs",
+    "path": "codex-rs/tui/src/chatwidget/tests.rs",
+    "sha": "42f292b52b0af893e7b1621b7e164b2db1b4fbbe",
+    "size": 16682,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/tests.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/tests.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/42f292b52b0af893e7b1621b7e164b2db1b4fbbe",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/tests.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/tests.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/42f292b52b0af893e7b1621b7e164b2db1b4fbbe",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/tests.rs"
+    }
+  },
+  {
+    "name": "tests",
+    "path": "codex-rs/tui/src/chatwidget/tests",
+    "sha": "84d689245c8f77e22ac827c17997bdbad8c4f550",
+    "size": 0,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/tests?ref=main",
+    "html_url": "https://github.com/openai/codex/tree/main/codex-rs/tui/src/chatwidget/tests",
+    "git_url": "https://api.github.com/repos/openai/codex/git/trees/84d689245c8f77e22ac827c17997bdbad8c4f550",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/tests?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/trees/84d689245c8f77e22ac827c17997bdbad8c4f550",
+      "html": "https://github.com/openai/codex/tree/main/codex-rs/tui/src/chatwidget/tests"
+    }
+  },
+  {
+    "name": "thread_usage.rs",
+    "path": "codex-rs/tui/src/chatwidget/thread_usage.rs",
+    "sha": "19ba15a93c00f2adce2a58c362f3a9bc1ac0a373",
+    "size": 16792,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/thread_usage.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/thread_usage.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/19ba15a93c00f2adce2a58c362f3a9bc1ac0a373",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/thread_usage.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/thread_usage.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/19ba15a93c00f2adce2a58c362f3a9bc1ac0a373",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/thread_usage.rs"
+    }
+  },
+  {
+    "name": "thread_usage_tests.rs",
+    "path": "codex-rs/tui/src/chatwidget/thread_usage_tests.rs",
+    "sha": "f0b525de102e43c8d73326d5536dc35cbd1c9e53",
+    "size": 41777,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/thread_usage_tests.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/thread_usage_tests.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/f0b525de102e43c8d73326d5536dc35cbd1c9e53",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/thread_usage_tests.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/thread_usage_tests.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/f0b525de102e43c8d73326d5536dc35cbd1c9e53",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/thread_usage_tests.rs"
+    }
+  },
+  {
+    "name": "tool_lifecycle.rs",
+    "path": "codex-rs/tui/src/chatwidget/tool_lifecycle.rs",
+    "sha": "9f13cc572bec0cfdbacc367ec21df66517addeb7",
+    "size": 11799,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/tool_lifecycle.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/tool_lifecycle.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/9f13cc572bec0cfdbacc367ec21df66517addeb7",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/tool_lifecycle.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/tool_lifecycle.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/9f13cc572bec0cfdbacc367ec21df66517addeb7",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/tool_lifecycle.rs"
+    }
+  },
+  {
+    "name": "tool_requests.rs",
+    "path": "codex-rs/tui/src/chatwidget/tool_requests.rs",
+    "sha": "1131064e2a6f86d0010779e5e36ef8abe8a9ab32",
+    "size": 19987,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/tool_requests.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/tool_requests.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/1131064e2a6f86d0010779e5e36ef8abe8a9ab32",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/tool_requests.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/tool_requests.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/1131064e2a6f86d0010779e5e36ef8abe8a9ab32",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/tool_requests.rs"
+    }
+  },
+  {
+    "name": "transcript.rs",
+    "path": "codex-rs/tui/src/chatwidget/transcript.rs",
+    "sha": "ef2aba3bd04dae249dfcea5be67ea1afcd75531f",
+    "size": 5718,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/transcript.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/transcript.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/ef2aba3bd04dae249dfcea5be67ea1afcd75531f",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/transcript.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/transcript.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/ef2aba3bd04dae249dfcea5be67ea1afcd75531f",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/transcript.rs"
+    }
+  },
+  {
+    "name": "transcript_export.rs",
+    "path": "codex-rs/tui/src/chatwidget/transcript_export.rs",
+    "sha": "8c58c46c07fbcc698204781638f9074b072efce0",
+    "size": 2735,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/transcript_export.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/transcript_export.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/8c58c46c07fbcc698204781638f9074b072efce0",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/transcript_export.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/transcript_export.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/8c58c46c07fbcc698204781638f9074b072efce0",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/transcript_export.rs"
+    }
+  },
+  {
+    "name": "tui_mode_picker.rs",
+    "path": "codex-rs/tui/src/chatwidget/tui_mode_picker.rs",
+    "sha": "dba9405fcb569e21f0234201cfbc3679d33a2030",
+    "size": 1646,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/tui_mode_picker.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/tui_mode_picker.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/dba9405fcb569e21f0234201cfbc3679d33a2030",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/tui_mode_picker.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/tui_mode_picker.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/dba9405fcb569e21f0234201cfbc3679d33a2030",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/tui_mode_picker.rs"
+    }
+  },
+  {
+    "name": "turn_lifecycle.rs",
+    "path": "codex-rs/tui/src/chatwidget/turn_lifecycle.rs",
+    "sha": "67ced849ad13ce57939b7b564a729fd102790b41",
+    "size": 3438,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/turn_lifecycle.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/turn_lifecycle.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/67ced849ad13ce57939b7b564a729fd102790b41",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/turn_lifecycle.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/turn_lifecycle.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/67ced849ad13ce57939b7b564a729fd102790b41",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/turn_lifecycle.rs"
+    }
+  },
+  {
+    "name": "turn_runtime.rs",
+    "path": "codex-rs/tui/src/chatwidget/turn_runtime.rs",
+    "sha": "ef5954a853e340b35fc1bf3470c495af1091cf06",
+    "size": 25742,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/turn_runtime.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/turn_runtime.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/ef5954a853e340b35fc1bf3470c495af1091cf06",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/turn_runtime.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/turn_runtime.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/ef5954a853e340b35fc1bf3470c495af1091cf06",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/turn_runtime.rs"
+    }
+  },
+  {
+    "name": "usage.rs",
+    "path": "codex-rs/tui/src/chatwidget/usage.rs",
+    "sha": "7d1f4201ee4508767d8de1e9f6b4111c1b2cfc6c",
+    "size": 24172,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/usage.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/usage.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/7d1f4201ee4508767d8de1e9f6b4111c1b2cfc6c",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/usage.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/usage.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/7d1f4201ee4508767d8de1e9f6b4111c1b2cfc6c",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/usage.rs"
+    }
+  },
+  {
+    "name": "usage_history.rs",
+    "path": "codex-rs/tui/src/chatwidget/usage_history.rs",
+    "sha": "882211f4eed988058515695a664b776caef20a25",
+    "size": 2340,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/usage_history.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/usage_history.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/882211f4eed988058515695a664b776caef20a25",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/usage_history.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/usage_history.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/882211f4eed988058515695a664b776caef20a25",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/usage_history.rs"
+    }
+  },
+  {
+    "name": "usage_notice.rs",
+    "path": "codex-rs/tui/src/chatwidget/usage_notice.rs",
+    "sha": "d5d575f09966a37ed7736083cec971ab97237951",
+    "size": 7169,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/usage_notice.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/usage_notice.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/d5d575f09966a37ed7736083cec971ab97237951",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/usage_notice.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/usage_notice.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/d5d575f09966a37ed7736083cec971ab97237951",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/usage_notice.rs"
+    }
+  },
+  {
+    "name": "usage_notice_tests.rs",
+    "path": "codex-rs/tui/src/chatwidget/usage_notice_tests.rs",
+    "sha": "625bd6e346a7d20940981ed1fc25e6deef2d7f1f",
+    "size": 15081,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/usage_notice_tests.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/usage_notice_tests.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/625bd6e346a7d20940981ed1fc25e6deef2d7f1f",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/usage_notice_tests.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/usage_notice_tests.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/625bd6e346a7d20940981ed1fc25e6deef2d7f1f",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/usage_notice_tests.rs"
+    }
+  },
+  {
+    "name": "user_messages.rs",
+    "path": "codex-rs/tui/src/chatwidget/user_messages.rs",
+    "sha": "2cc333138241a0e064eac7ca92a857a0a4571103",
+    "size": 30346,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/user_messages.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/user_messages.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/2cc333138241a0e064eac7ca92a857a0a4571103",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/user_messages.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/user_messages.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/2cc333138241a0e064eac7ca92a857a0a4571103",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/user_messages.rs"
+    }
+  },
+  {
+    "name": "warnings.rs",
+    "path": "codex-rs/tui/src/chatwidget/warnings.rs",
+    "sha": "51ceab801f76cfba9c5bf1a59ad4612ed1595ebc",
+    "size": 6121,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/warnings.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/warnings.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/51ceab801f76cfba9c5bf1a59ad4612ed1595ebc",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/warnings.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/warnings.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/51ceab801f76cfba9c5bf1a59ad4612ed1595ebc",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/warnings.rs"
+    }
+  },
+  {
+    "name": "windows_sandbox_prompts.rs",
+    "path": "codex-rs/tui/src/chatwidget/windows_sandbox_prompts.rs",
+    "sha": "39bbb795f3bb4421b2283001ab99bb41fdbb192d",
+    "size": 12860,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/windows_sandbox_prompts.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/windows_sandbox_prompts.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/39bbb795f3bb4421b2283001ab99bb41fdbb192d",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/windows_sandbox_prompts.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/windows_sandbox_prompts.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/39bbb795f3bb4421b2283001ab99bb41fdbb192d",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/windows_sandbox_prompts.rs"
+    }
+  },
+  {
+    "name": "working_directory.rs",
+    "path": "codex-rs/tui/src/chatwidget/working_directory.rs",
+    "sha": "27e5322184c0e9e455da4ac876aa05f52309febc",
+    "size": 1734,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/working_directory.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/working_directory.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/27e5322184c0e9e455da4ac876aa05f52309febc",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/working_directory.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/working_directory.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/27e5322184c0e9e455da4ac876aa05f52309febc",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/working_directory.rs"
+    }
+  },
+  {
+    "name": "worktree_picker.rs",
+    "path": "codex-rs/tui/src/chatwidget/worktree_picker.rs",
+    "sha": "d40d2a840631fcbb123c8bdd8275bb5387ea0107",
+    "size": 15573,
+    "url": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/worktree_picker.rs?ref=main",
+    "html_url": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/worktree_picker.rs",
+    "git_url": "https://api.github.com/repos/openai/codex/git/blobs/d40d2a840631fcbb123c8bdd8275bb5387ea0107",
+    "download_url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/tui/src/chatwidget/worktree_picker.rs",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/openai/codex/contents/codex-rs/tui/src/chatwidget/worktree_picker.rs?ref=main",
+      "git": "https://api.github.com/repos/openai/codex/git/blobs/d40d2a840631fcbb123c8bdd8275bb5387ea0107",
+      "html": "https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/worktree_picker.rs"
+    }
+  }
+]

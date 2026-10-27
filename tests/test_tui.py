@@ -680,7 +680,8 @@ async def test_slash_undo_command_rolls_back_and_rebuilds_transcript():
         assert as_node == "model"  # live head 外科式删除（fork 先例；不依赖历史输入点）
         assert {rm.id for rm in values["messages"]} == {"m3", "m4"}
         assert cfg["configurable"].get("checkpoint_id") is None  # thread_config 唯一出处
-        assert "[user] 问题 1" in joined  # transcript 已按回退后状态重建
+        assert "▌ 你" in joined and "问题 1" in joined  # tui-ux19: transcript 已按回退后状态以新渲染格式重建
+        assert "回答 1" in joined
         assert "问题 2" not in joined
 
 
