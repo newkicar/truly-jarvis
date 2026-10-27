@@ -12,6 +12,9 @@ Bug 背景（历史中两类 400 触发源，都需成对清洗）：
 2. **空 tool_call / 孤儿结果**（流式聚合产出脏数据，实际事故）：
    - ``AIMessage.tool_calls`` 里混入 ``name=""``+``id=""`` 的空工具调用（在*合法*
      列表里，不在 invalid_tool_calls，旧实现看不见）；
+   - ``id`` 不是字符串（int/None 型）同样被网关拒收："Expected 'id' to be a
+     string."——``additional_kwargs["tool_calls"]``（流式中断残留，``.tool_calls``
+     为空时被 langchain_openai 原样透传）里的脏 id 也归此类；
    - ToolNode 对空名调用执行出错，产出 ``tool_call_id=""`` 的 error ToolMessage
      （孤儿）；下一轮网关（Rust 严格 serde）拒收整条请求 → 400 "missing field
      tool_call_id"。``tool_call_id`` 为 None 或悬空引用同样触发 400。
@@ -38,19 +41,54 @@ from langgraph.runtime import Runtime
 
 
 def _bad_call(tc: Any) -> bool:
-    """脏调用：非 dict，或 id/name 为空（网关序列化后拒收）。"""
+    """脏调用：非 dict，或 id/name 不是非空字符串（网关 serde 严格校验拒收）。
+
+    ``id`` 必须是字符串：网关报 "Expected 'id' to be a string."（Rust serde 严格
+    类型）——历史里混入 int/None 型 id 时整条请求 400。
+    """
     if not isinstance(tc, dict):
         return True
-    return not tc.get("id") or not tc.get("name")
+    if not isinstance(tc.get("id"), str) or not tc["id"]:
+        return True
+    if not isinstance(tc.get("name"), str) or not tc["name"]:
+        return True
+    return False
+
+
+def _bad_raw_call(tc: Any) -> bool:
+    """``additional_kwargs["tool_calls"]`` 里的原始 OpenAI 调用是否脏。
+
+    langchain_openai 的 ``_convert_message_to_dict`` 在 ``.tool_calls`` 为空时
+    把 ``additional_kwargs["tool_calls"]`` **原样透传**（只裁剪键名，不做类型
+    校验）——流式中断残留的 ``id: None`` / int 型 id 在这里躲过 ``_bad_call``，
+    下一轮请求被网关拒收（"Expected 'id' to be a string."）。
+    """
+    if not isinstance(tc, dict):
+        return True
+    if not isinstance(tc.get("id"), str) or not tc["id"]:
+        return True
+    fn = tc.get("function")
+    if not isinstance(fn, dict):
+        return True
+    return not isinstance(fn.get("name"), str) or not fn["name"]
+
+
+def _raw_calls_dirty(msg: AIMessage) -> bool:
+    raw = msg.additional_kwargs.get("tool_calls")
+    if raw is None:
+        return False
+    if not isinstance(raw, list):
+        return True
+    return any(_bad_raw_call(tc) for tc in raw)
 
 
 def _valid_call_ids(messages):
-    """全历史 AI 消息中*合法* tool_call 的 id 集合（id、name 均非空）。"""
+    """全历史 AI 消息中*合法* tool_call 的 id 集合（id、name 均为非空字符串）。"""
     ids = set()
     for msg in messages:
         if isinstance(msg, AIMessage):
             for tc in msg.tool_calls:
-                if isinstance(tc, dict) and tc.get("id") and tc.get("name"):
+                if not _bad_call(tc):
                     ids.add(tc["id"])
     return ids
 
@@ -88,7 +126,11 @@ def sanitize_messages(messages):
     changed = False
     for msg in messages:
         if isinstance(msg, AIMessage):
-            dirty = bool(msg.invalid_tool_calls) or any(_bad_call(tc) for tc in msg.tool_calls)
+            dirty = (
+                bool(msg.invalid_tool_calls)
+                or any(_bad_call(tc) for tc in msg.tool_calls)
+                or _raw_calls_dirty(msg)
+            )
             if dirty:
                 kept.append(_rebuild_ai(msg, [tc for tc in msg.tool_calls if not _bad_call(tc)]))
                 changed = True
