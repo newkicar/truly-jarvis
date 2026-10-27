@@ -345,6 +345,28 @@ class GuiPresenter:
         finally:
             b.refresh_sessions.emit()
 
+    # ---- 分支（工单 09：fork 出新 thread，主线程切换）
+    def run_fork(self, tid: str, checkpoint_id: str) -> None:
+        th = Thread(
+            target=self._fork_worker, args=(tid, checkpoint_id),
+            daemon=True, name=f"jarvis-gui-fork-{tid[:10]}",
+        )
+        th.start()
+
+    def _fork_worker(self, tid: str, checkpoint_id: str) -> None:
+        rt = self.runtime
+        b = self.bridge
+        try:
+            note, new_tid = commands.fork(rt.agent, tid, checkpoint_id)
+            if new_tid:
+                b.switch_session.emit(new_tid, note)
+            else:
+                b.notify.emit(note or "分叉失败")
+        except Exception as exc:  # noqa: BLE001
+            b.notify.emit(f"分叉失败: {exc}")
+        finally:
+            b.refresh_sessions.emit()
+
     # ---- 命令 worker（undo/compact/snapshot 等消息层操作，ticket 08/09）
     def run_command(self, fn: Callable[[], str], tid: str) -> None:
         th = Thread(target=self._command_worker, args=(fn, tid), daemon=True)

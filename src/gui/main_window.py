@@ -69,6 +69,16 @@ class MainWindow(QMainWindow):
         undo_action.triggered.connect(self._on_undo)
         self._advanced_menu = adv
 
+        # ---- 工单 09：时间旅行菜单（渲染入口，逻辑全在 commands/presenter）
+        tt = self.menuBar().addMenu("时间旅行")
+        tt_snapshot = tt.addAction("手动快照")
+        tt_snapshot.triggered.connect(self._on_snapshot)
+        tt_snapshots = tt.addAction("快照列表")
+        tt_snapshots.triggered.connect(self._on_snapshots_list)
+        tt_replay = tt.addAction("回放点…（回放 / 开分支 / 压缩）")
+        tt_replay.triggered.connect(self._on_time_travel_dialog)
+        self._tt_menu = tt
+
         left = QFrame()
         left.setFixedWidth(230)
         ll = QVBoxLayout(left)
@@ -164,6 +174,41 @@ class MainWindow(QMainWindow):
             p.rebuild_from_records(replay.thread_record(self.presenter.runtime.agent, tid))
         except Exception:  # noqa: BLE001 — 重建失败保留原 pane，不崩 app
             pass
+
+    # ---- 工单 09：时间旅行（渲染入口）
+    def _on_snapshot(self) -> None:
+        tid = self.active_tid
+        if not tid:
+            return
+        agent = self.presenter.runtime.agent
+
+        def _run() -> str:
+            return commands.snapshot(agent, tid)
+
+        self.presenter.run_command(_run, tid)
+
+    def _on_snapshots_list(self) -> None:
+        self._show_text("文件快照", commands.list_snapshots())
+
+    def _on_time_travel_dialog(self) -> None:
+        if not self.active_tid:
+            return
+        from src.gui.time_travel_dialog import TimeTravelDialog
+
+        dlg = TimeTravelDialog(self.presenter, self.active_tid, self)
+        dlg.exec()
+
+    def _on_switch_session(self, new_tid: str, note: str) -> None:
+        self._switch_to(new_tid)
+        self.status_label.setText(note or f"已切换到 {new_tid}")
+
+    def _show_text(self, title: str, text: str) -> None:
+        from PySide6.QtWidgets import QMessageBox
+
+        box = QMessageBox(self)
+        box.setWindowTitle(title)
+        box.setText(text)
+        box.exec()
 
     def _refresh_mode_badges(self) -> None:
         from src import permissions, plan_mode
@@ -315,6 +360,7 @@ class MainWindow(QMainWindow):
         b.create_card.connect(self._on_create_card)
         b.focus_input.connect(self._on_focus_input)
         b.rebuild_pane.connect(self._rebuild_pane)
+        b.switch_session.connect(self._on_switch_session)
 
     def _on_create_card(self, tid: str, payload, card_id: str) -> None:
         from src.gui.cards import card_widget_from_payload

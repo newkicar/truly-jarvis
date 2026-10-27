@@ -38,3 +38,5 @@ class UiBridge(QObject):
     focus_input = Signal()
     # undo 等消息层操作后 → 主线程重建该 thread 的 pane 记录（工单 08）
     rebuild_pane = Signal(str)
+    # 分支（fork）出新会话 → 主线程切换（工单 09）：new_tid, note
+    switch_session = Signal(str, str)
