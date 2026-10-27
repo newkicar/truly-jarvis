@@ -36,3 +36,5 @@ class UiBridge(QObject):
     notify = Signal(str)
     # 审批决策完成 → 焦点回输入框（工单 04）
     focus_input = Signal()
+    # undo 等消息层操作后 → 主线程重建该 thread 的 pane 记录（工单 08）
+    rebuild_pane = Signal(str)

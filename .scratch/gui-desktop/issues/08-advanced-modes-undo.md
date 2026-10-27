@@ -4,7 +4,7 @@
 
 **Blocked by:** 04（HITL 审批卡片）、05（会话侧栏与命名）
 
-**Status:** ready-for-agent
+**Status:** done（2026-10-26）
 
 - [ ] Plan 模式：写/改工具被拦并提示先规划；切回 Act 恢复（零 agent 重建）
 - [ ] YOLO on：该 thread 审批卡不再弹（放行/拒绝都免），off 恢复原规则；[YOLO] 状态位可见

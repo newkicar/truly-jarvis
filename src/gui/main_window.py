@@ -54,6 +54,21 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
+        # ---- 工单 08：高级菜单（Plan/Act · YOLO · 撤回，默认收起不占主界面）
+        self.mode_badge = QLabel("")
+        self.mode_badge.setStyleSheet("color:#8a99a8; font-size:11px;")
+        adv = self.menuBar().addMenu("高级")
+        self.plan_action = adv.addAction("规划模式（Plan：写工具被拦，先规划）")
+        self.plan_action.setCheckable(True)
+        self.plan_action.toggled.connect(self._on_plan_toggled)
+        self.yolo_action = adv.addAction("YOLO（本会话免审批）")
+        self.yolo_action.setCheckable(True)
+        self.yolo_action.toggled.connect(self._on_yolo_toggled)
+        adv.addSeparator()
+        undo_action = adv.addAction("撤回上一轮（消息层）")
+        undo_action.triggered.connect(self._on_undo)
+        self._advanced_menu = adv
+
         left = QFrame()
         left.setFixedWidth(230)
         ll = QVBoxLayout(left)
@@ -71,6 +86,7 @@ class MainWindow(QMainWindow):
         self.running_badge = QLabel("")
         self.running_badge.setStyleSheet("color:#ffd75e; font-size:11px;")
         ll.addWidget(self.running_badge)
+        ll.addWidget(self.mode_badge)
         root.addWidget(left)
 
         mid = QWidget()
@@ -103,6 +119,68 @@ class MainWindow(QMainWindow):
         self._render_timer.timeout.connect(self._flush_all_dirty)
         self._render_timer.start()
 
+    # ---- 工单 08：高级模式（Plan/Act 全局 · YOLO 线程级 · 撤回消息层）
+    def _on_plan_toggled(self, on: bool) -> None:
+        from src import plan_mode
+
+        plan_mode.set_mode(self.presenter.runtime.permission_state, "plan" if on else "act")
+        self._refresh_mode_badges()
+
+    def _on_yolo_toggled(self, on: bool) -> None:
+        from src import permissions
+
+        state = self.presenter.runtime.permission_state
+        tid = self.active_tid or ""
+        if on:
+            permissions.yolo_on(state, tid)
+        else:
+            permissions.yolo_off(state, tid)
+        self.status_label.setText(
+            f"YOLO 已开启（{tid} 免审批；其他会话不受影响）" if on else "YOLO 已关闭"
+        )
+        self._refresh_mode_badges()
+
+    def _on_undo(self) -> None:
+        tid = self.active_tid
+        if not tid:
+            return
+        b = self.presenter.bridge
+        agent = self.presenter.runtime.agent
+
+        def _run() -> str:
+            msg = commands.undo(agent, tid)
+            b.rebuild_pane.emit(tid)  # 主线程重建 pane 记录（worker 不碰 widget）
+            return msg
+
+        self.presenter.run_command(_run, tid)
+
+    def _rebuild_pane(self, tid: str) -> None:
+        p = self.panes.get(tid)
+        if p is None:
+            return
+        from src.gui import replay
+
+        try:
+            p.rebuild_from_records(replay.thread_record(self.presenter.runtime.agent, tid))
+        except Exception:  # noqa: BLE001 — 重建失败保留原 pane，不崩 app
+            pass
+
+    def _refresh_mode_badges(self) -> None:
+        from src import permissions, plan_mode
+
+        state = self.presenter.runtime.permission_state
+        mode = plan_mode.current_mode(state)
+        yolo = permissions.yolo_active(state, self.active_tid or "")
+        bits = []
+        bits.append("[Plan]" if mode == "plan" else "[Act]")
+        if yolo:
+            bits.append("[YOLO]")
+        self.mode_badge.setText(" ".join(bits))
+        # 菜单勾选态与真实状态同步（切会话后 YOLO 态随会话变）
+        self.yolo_action.blockSignals(True)
+        self.yolo_action.setChecked(yolo)
+        self.yolo_action.blockSignals(False)
+
     # ---- 会话栈
     def _ensure_pane(self, tid: str) -> ChatPane:
         if tid in self.panes:
@@ -129,6 +207,7 @@ class MainWindow(QMainWindow):
         self.input_bar.edit.setFocus()
         note = "（回合进行中，切走不影响执行）" if self.presenter.gate.is_running(tid) else ""
         self.status_label.setText(f"会话 {tid}{note}")
+        self._refresh_mode_badges()
 
     def _on_session_clicked(self) -> None:
         it = self.session_list.currentItem()
@@ -235,6 +314,7 @@ class MainWindow(QMainWindow):
         b.notify.connect(self._on_notify)
         b.create_card.connect(self._on_create_card)
         b.focus_input.connect(self._on_focus_input)
+        b.rebuild_pane.connect(self._rebuild_pane)
 
     def _on_create_card(self, tid: str, payload, card_id: str) -> None:
         from src.gui.cards import card_widget_from_payload
