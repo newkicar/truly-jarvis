@@ -33,7 +33,7 @@ def _fake_runtime():
         execution_max_steps=200,
         model_image_input="auto",
     )
-    rt = SimpleNamespace(agent=None, config=cfg, permission_state={})
+    rt = SimpleNamespace(agent=None, config=cfg, permission_state={}, model_label="fake")
     rt._home = home
     return rt
 

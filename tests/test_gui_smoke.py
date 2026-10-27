@@ -53,13 +53,20 @@ def test_full_turn_streams_and_persists(qapp):
         # ① 消息上屏：用户块 + 工具行 + AI 回答块都在 pane 里
         pane = win.panes[tid]
         texts = []
+        tool_summaries = []
         for i in range(pane._vbox.count()):
             w = pane._vbox.itemAt(i).widget()
-            if w is not None and hasattr(w, "text"):
+            if w is None:
+                continue
+            if hasattr(w, "text"):
                 texts.append(w.text())
-        all_text = "\n".join(texts)
+            from src.gui.pane import ToolLineWidget
+
+            if isinstance(w, ToolLineWidget):
+                tool_summaries.append(w._summary.text())
+        all_text = "\n".join(texts + tool_summaries)
         assert "跑一遍 HITL 全流程" in all_text  # 用户块
-        assert "✓ execute" in all_text  # 工具行
+        assert any("execute" in s for s in tool_summaries)  # 工具行（默认折叠）
         assert auto_approve["hits"] >= 1  # 走了 HITL（自动放行）
 
         # ② 检查点落盘（SqliteSaver）

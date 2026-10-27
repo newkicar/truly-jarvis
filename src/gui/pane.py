@@ -27,6 +27,7 @@ from src.gui import md_render
 
 RENDER_BATCH_MS = 150
 _DETAIL_OUTPUT_CAP = 8000
+_BUBBLE_H = 96  # 用户气泡内缩略图边长
 
 
 def _detail_html(args_text: str, output_text: str, err: bool, depth: int) -> str:
@@ -186,7 +187,7 @@ class ChatPane(QScrollArea):
         # 插到 spacer 之前（保持 spacer 永远在底部 stretch）
         self._vbox.insertWidget(self._vbox.count() - 1, w)
 
-    def append_user(self, text: str) -> None:
+    def append_user(self, text: str, image_paths: list[str] | None = None) -> None:
         self._close_thinking()
         l = QLabel(f"[你] {text}")
         l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
@@ -194,7 +195,29 @@ class ChatPane(QScrollArea):
         l.setTextFormat(Qt.TextFormat.PlainText)
         l.setStyleSheet("color:#e8e8e8; background:#1f3a5f; border-radius:4px; padding:6px;")
         self._insert(l)
+        if image_paths:
+            self._insert(self._image_row(image_paths))
         self._follow()
+
+    def _image_row(self, paths: list[str]) -> QWidget:
+        """用户气泡内缩略图行（≈96px 高，可点放大——ImagePreview）。"""
+        from src.gui.image_widgets import ImagePreview, _thumb_pixmap
+
+        host = QWidget()
+        row = QHBoxLayout(host)
+        row.setContentsMargins(2, 0, 2, 0)
+        row.setSpacing(6)
+        for p in paths:
+            lab = QLabel()
+            lab.setPixmap(_thumb_pixmap(p, _BUBBLE_H))
+            lab.setFixedSize(_BUBBLE_H, _BUBBLE_H)
+            lab.setCursor(Qt.CursorShape.PointingHandCursor)
+            lab.setToolTip("点击放大")
+            path = p
+            lab.mousePressEvent = lambda _e, pp=path: ImagePreview(pp).show()  # noqa: SLF001
+            row.addWidget(lab)
+        row.addStretch(1)
+        return host
 
     def append_fallback(self, text: str) -> None:
         if not text:

@@ -23,7 +23,10 @@ from PySide6.QtWidgets import (
 )
 
 from src import commands
+from src import clipboard_image
 from src.gui.events import UiBridge
+from src.gui.image_strip import build_image_submit, save_clipboard_image_to_temp
+from src.gui.image_widgets import ImageStrip
 from src.gui.input_bar import InputBar
 from src.gui.pane import RENDER_BATCH_MS, ChatPane
 from src.gui.runtime import GuiPresenter
@@ -81,8 +84,11 @@ class MainWindow(QMainWindow):
         self.status_label.setStyleSheet("color:#bbbbbb; padding:2px;")
         ml.addWidget(self.status_label)
 
+        self.image_strip = ImageStrip()
+        ml.addWidget(self.image_strip)
         self.input_bar = InputBar()
         self.input_bar.edit.setPlaceholderText("输入消息（Enter 发送，Shift+Enter 换行）")
+        self.input_bar.set_image_paste_hook(self._try_image_paste)
         self.input_bar.submit_requested.connect(self._on_input_submit)
         self.input_bar.cancel_requested.connect(self._cancel_active)
         ml.addWidget(self.input_bar)
@@ -155,6 +161,25 @@ class MainWindow(QMainWindow):
             self.presenter.rename_session(tid, new_title.strip())
             self.refresh_sessions()
 
+    # ---- 图片粘贴（工单 07）：剪贴板图 / 图片路径 → 附件条
+    def _try_image_paste(self) -> bool:
+        from PySide6.QtWidgets import QApplication
+
+        cb = QApplication.clipboard()
+        img = cb.image()
+        if img is not None and not img.isNull():
+            path = save_clipboard_image_to_temp(img)
+            if path:
+                self.image_strip.add_image(path)
+                self.status_label.setText("已添加图片附件（发送前可 ✕ 移除）")
+                return True
+        p = clipboard_image.looks_like_image_path(cb.text() or "")
+        if p:
+            self.image_strip.add_image(p)
+            self.status_label.setText("已添加图片附件")
+            return True
+        return False  # 普通文本走原生粘贴
+
     # ---- 发送 / 回合
     def _submit(self) -> None:
         # InputBar 已清空编辑框并 emit 原始多行文本（含换行，走 build_submission）
@@ -167,10 +192,16 @@ class MainWindow(QMainWindow):
             return
         if payload is None:
             return
+        images = self.image_strip.paths()
+        user_input, user_input_fallback, _ = build_image_submit(payload, images)
         tid = self.active_tid
         p = self._ensure_pane(tid)
-        p.append_user(payload)
-        verdict = self.presenter.start_turn(tid, payload)
+        p.append_user(payload, images or None)
+        if images:
+            self.image_strip.clear()
+        verdict = self.presenter.start_turn(
+            tid, payload, user_input=user_input, user_input_fallback=user_input_fallback
+        )
         self.input_bar.set_cancel_enabled(verdict == "started")
         self.status_label.setText(
             "已发送，执行中…" if verdict == "started" else "已排队，回合结束后自动续发"

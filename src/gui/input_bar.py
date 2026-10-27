@@ -31,6 +31,7 @@ class InputBar(QWidget):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self._image_paste_hook: "Callable[[], bool] | None" = None
         self.edit = QPlainTextEdit()
         self.edit.setTabChangesFocus(True)
         self.edit.textChanged.connect(self._refit)
@@ -65,6 +66,10 @@ class InputBar(QWidget):
         fm = self.edit.fontMetrics()
         self.edit.setFixedHeight(compute_input_height(lines, fm.height()))
 
+    def set_image_paste_hook(self, hook) -> None:
+        """Ctrl+V 时先调 hook()：True=已按图片/路径入附件条（消费），False=走原生粘贴。"""
+        self._image_paste_hook = hook
+
     # ---- 键位（事件过滤）：裸 Enter/Return=提交整框；Shift+Enter=框内换行（原生）。
     #      Ctrl+C/V/X/A 等修饰组合不拦截，走 Qt 原生（选区复制保留）。
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
@@ -77,6 +82,9 @@ class InputBar(QWidget):
                     return False  # 换行走原生
                 self._submit()
                 return True
+            if key == Qt.Key_V and (event.modifiers() & Qt.ControlModifier):
+                if self._image_paste_hook is not None and self._image_paste_hook():
+                    return True  # 图片/路径已入附件条
         return super().eventFilter(obj, event)
 
     def _submit(self) -> None:
