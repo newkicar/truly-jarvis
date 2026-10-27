@@ -140,8 +140,12 @@ class WelcomePage(QWizardPage):
         body = QLabel(
             "接下来 5 步配置 JARVIS 的 LLM 端点（公司网关 / 第三方 OpenAI 兼容 / 本地推理）。\n\n"
             "安全承诺：API Key 存入 Windows 凭据管理器（Credential Manager），"
-            "配置文件只留一个引用（key_ref），不落明文；"
-            "配置存于 %APPDATA%\\Jarvis，与安装目录分离，卸载/重装不丢。"
+            "配置文件只留一个引用（key_ref），不落明文。\n\n"
+            "数据落点（均与安装目录分离，卸载/重装/升级不丢）：\n"
+            "· 配置 → %APPDATA%\\Jarvis（GUI 设置与加密凭据）\n"
+            "· 长期记忆 / 技能 / 会话检查点 → .jarvis（默认用户目录下，"
+            "JARVIS_HOME 可改；跨项目复用）\n"
+            "· 项目文件与知识库 → 你在 jarvis.json 里指定的目录"
         )
         body.setWordWrap(True)
         self.setLayout(_form(body))

@@ -4,9 +4,9 @@
 
 **Blocked by:** 01（GUI 运行时骨架）+ **外部：主线记忆目录迁移合并到 main**（rebase 前置）
 
-**Status:** ready-for-agent（rebase 前挂起）
+**Status:** done（2026-10-27，rebase 到 main 含 0019eac；GUI 侧文案/路径对齐）
 
-- [ ] 主线合并后 `git rebase` worktree 到 main，记忆路由/注入清单/dream 路径与主线一致
-- [ ] 长期信息记忆落 `%USER%\.jarvis`，项目 `memory/` 仅项目信息记忆
-- [ ] GUI 自检页/向导文案正确展示全局记忆与配置分离
-- [ ] 既有单测全绿（rebase 后回归）
+- [x] 主线合并后 `git rebase` worktree 到 main，记忆路由/注入清单/dream 路径与主线一致（rebase 到 9f2ab80，零冲突）
+- [x] 长期信息记忆落 `%USER%\.jarvis`，项目 `memory/` 仅项目信息记忆（config 哨兵 + 显式相对路径=项目根，测试锁定三态）
+- [x] GUI 向导文案展示全局记忆与配置分离（自检页随工单 12 落地）
+- [x] 既有单测全绿（rebase 后 test_memory_dir×12 + test_gui_ticket11×3 绿）
