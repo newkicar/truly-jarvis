@@ -61,6 +61,7 @@ class MainWindow(QMainWindow):
         ll.addWidget(title)
         self.session_list = QListWidget()
         self.session_list.itemClicked.connect(self._on_session_clicked)
+        self.session_list.itemDoubleClicked.connect(self._on_session_double_clicked)
         ll.addWidget(self.session_list, stretch=1)
         self.btn_new = QPushButton("＋ 新会话")
         self.btn_new.clicked.connect(lambda: self._switch_to(self.presenter.new_session_id()))
@@ -134,7 +135,7 @@ class MainWindow(QMainWindow):
             tids = [self.active_tid] + tids
         for tid in tids:
             p = self._ensure_pane(tid)
-            label = commands.session_label(self.presenter.runtime.agent, tid)
+            label = self.presenter.session_label(tid)
             mark = "▸ " if tid == self.active_tid else "   "
             run = " ⚡" if self.presenter.gate.is_running(tid) else ""
             it = QListWidgetItem(f"{mark}{label}{run}")
@@ -143,6 +144,16 @@ class MainWindow(QMainWindow):
             self.session_list.addItem(it)
             if tid == self.active_tid:
                 self.session_list.setCurrentItem(it)
+
+    # ---- 会话改名（工单 05：双击改名即时生效 + 持久化）
+    def _on_session_double_clicked(self, item: QListWidgetItem) -> None:
+        from PySide6.QtWidgets import QInputDialog
+
+        tid = item.data(Qt.UserRole)
+        new_title, okk = QInputDialog.getText(self, "重命名会话", "新名称:", text=item.text().lstrip("▸ ").rstrip())
+        if okk and new_title.strip():
+            self.presenter.rename_session(tid, new_title.strip())
+            self.refresh_sessions()
 
     # ---- 发送 / 回合
     def _submit(self) -> None:
@@ -186,6 +197,7 @@ class MainWindow(QMainWindow):
         b.tool_call.connect(self._on_tool)
         b.subagent.connect(self._on_subagent)
         b.status.connect(self._on_status)
+        b.turn_started.connect(self._on_turn_started)
         b.turn_done.connect(self._on_turn_done)
         b.refresh_sessions.connect(self.refresh_sessions)
         b.notify.connect(self._on_notify)
@@ -231,6 +243,13 @@ class MainWindow(QMainWindow):
     def _on_status(self, tid: str, text: str) -> None:
         if tid == self.active_tid:
             self.status_label.setText(text)
+
+    def _on_turn_started(self, tid: str) -> None:
+        p = self.panes.get(tid)
+        if p is not None:
+            p.running = True
+        self.input_bar.set_cancel_enabled(True)
+        self.refresh_sessions()
 
     def _on_turn_done(self, tid: str, ok: bool) -> None:
         p = self.panes.get(tid)

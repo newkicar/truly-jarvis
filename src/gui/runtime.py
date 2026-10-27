@@ -27,6 +27,7 @@ from src.jump_in_queue import JumpInRegistry
 from src.permissions import build_permission_interrupts
 
 from src.gui.events import UiBridge
+from src.gui.session_registry import SessionRegistry, generate_session_name, registry_path
 from src.gui.turn_gate import TurnGate
 
 
@@ -165,6 +166,34 @@ class GuiPresenter:
         self.gate = TurnGate()
         self._ask_action: Callable[[Any, str], dict | None] | None = None
         self._turns: dict[str, Any] = {}
+        self.session_registry = SessionRegistry(
+            registry_path(runtime.config.project_root)
+        )
+
+    # ---- 会话命名（工单 05）
+    def rename_session(self, tid: str, title: str) -> None:
+        self.session_registry.rename(tid, title, ai_generated=False)
+        self.bridge.refresh_sessions.emit()
+
+    def session_label(self, tid: str) -> str:
+        return self.session_registry.label(self.runtime.agent, tid)
+
+    def _maybe_name(self, tid: str, ok: bool) -> None:
+        """首轮成功结束 → 后台 AI 命名（已有短名/摘要的不动；失败静默回落）。"""
+        if not ok:
+            return
+        if self.session_registry.get(tid) is not None:
+            return
+        user_text = commands.first_human_text(self.runtime.agent, tid) or ""
+
+        def _n() -> None:
+            model = getattr(self.runtime.agent, "_jarvis_model", None)
+            name = generate_session_name(model, user_text)
+            if name:
+                self.session_registry.rename(tid, name, ai_generated=True)
+                self.bridge.refresh_sessions.emit()
+
+        Thread(target=_n, daemon=True, name=f"jarvis-gui-name-{tid[:10]}").start()
 
     # ---- HITL 取卡（01 兜底：拒绝，安全默认；04 换审批卡片）
     def set_ask_action(self, fn: Callable[[Any, str], dict | None]) -> None:
@@ -222,6 +251,7 @@ class GuiPresenter:
         rt = self.runtime
         b = self.bridge
         t0 = time.monotonic()
+        ok = False
         b.turn_started.emit(tid)
         try:
             ok = streaming.run_agent_turn(
@@ -261,6 +291,8 @@ class GuiPresenter:
         finally:
             self._turns.pop(tid, None)
             b.refresh_sessions.emit()
+            # 首轮成功 → 后台 AI 命名（工单 05）
+            self._maybe_name(tid, ok)
             # FIFO 重投：出队下一条排队消息，重新入门起新回合（工单 03）
             nxt = self.gate.finish(tid)
             if nxt is not None:

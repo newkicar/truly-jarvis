@@ -21,12 +21,21 @@ def bridge(qapp) -> UiBridge:
 
 
 def _fake_runtime():
+    """lightweight runtime stub（回合 worker 只用 agent/config/permission_state；
+    session_registry 需要真 project_root → 建个 home 目录）。"""
+    from pathlib import Path  # noqa: F401
+
+    from tests.gui_fakes import new_home
+
+    home = new_home()
     cfg = SimpleNamespace(
-        project_root=None,
+        project_root=home,
         execution_max_steps=200,
         model_image_input="auto",
     )
-    return SimpleNamespace(agent=None, config=cfg, permission_state={})
+    rt = SimpleNamespace(agent=None, config=cfg, permission_state={})
+    rt._home = home
+    return rt
 
 
 def wait_until(cond, timeout: float = 5.0) -> bool:
