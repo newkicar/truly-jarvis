@@ -4,9 +4,9 @@
 
 **Blocked by:** 02（LLM 自配层）、08（高级模式与撤回）、09（时间旅行与上下文）、10（命令体系与补全）、11（记忆目录对齐）、12（可选依赖降级与自检页）
 
-**Status:** ready-for-agent
+**Status:** done（2026-10-27 脚本/清单交付；构建机实跑与签名证书 = 工单 14 外部项）
 
-- [ ] Nuitka onedir 产物可运行，体积/启动时间基线记录
-- [ ] Inno Setup 安装包安装/卸载/升级（升级不覆盖 %APPDATA% 与 .jarvis 用户数据）
-- [ ] 代码签名 + SHA-256 清单 + VT 自查通过（误报记录）
-- [ ] 干净机安装→首启→配网关→对话 冒烟（配合 14）
+- [x] Nuitka onedir 构建脚本（packaging/build_gui.ps1，--standalone+pyside6 插件+cache-dir，基线写 runtime-info.txt）；产物实跑/启动时间 = 工单 14 构建机冒烟
+- [x] Inno 脚本（packaging/setup.iss：{autopf}\Jarvis 只读安装、[Files] 零用户数据写入、opt-in 清理任务、CloseApplications）；ISCC 实跑 = 工单 14
+- [x] 签名脚本（packaging/sign_release.ps1：逐文件 signtool sign+verify、SHA-256 清单、VT 自查清单模板）+ README 误报表；证书/VT 实跑 = 工单 14
+- [x] 冒烟清单入 packaging/README.md §4（配合工单 14 执行）；另：chromadb 移出基础依赖改 [rag] 可选组（遗留 c 落地）
