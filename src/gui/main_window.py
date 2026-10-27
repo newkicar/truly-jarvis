@@ -189,6 +189,19 @@ class MainWindow(QMainWindow):
         b.turn_done.connect(self._on_turn_done)
         b.refresh_sessions.connect(self.refresh_sessions)
         b.notify.connect(self._on_notify)
+        b.create_card.connect(self._on_create_card)
+        b.focus_input.connect(self._on_focus_input)
+
+    def _on_create_card(self, tid: str, payload, card_id: str) -> None:
+        from src.gui.cards import card_widget_from_payload
+
+        p = self.panes.get(tid)
+        if p is None:
+            p = self._ensure_pane(tid)
+        p.append_card(card_widget_from_payload(payload))
+
+    def _on_focus_input(self) -> None:
+        self.input_bar.edit.setFocus()
 
     def _on_delta(self, tid: str, delta: str) -> None:
         p = self.panes.get(tid)

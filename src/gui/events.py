@@ -32,3 +32,5 @@ class UiBridge(QObject):
     refresh_sessions = Signal()
     # 轻提示（状态行一次性文案）
     notify = Signal(str)
+    # 审批决策完成 → 焦点回输入框（工单 04）
+    focus_input = Signal()
