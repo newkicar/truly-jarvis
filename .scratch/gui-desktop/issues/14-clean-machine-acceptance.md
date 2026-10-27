@@ -4,7 +4,7 @@
 
 **Blocked by:** 13（打包与签名）
 
-**Status:** ready-for-agent（人工验收为主）
+**Status:** 清单已交付（packaging/ACCEPTANCE.md，2026-10-27）；干净机实跑 + 杀软/VT + push/合并 = 用户外部项
 
 - [ ] 干净机（或虚拟机）安装→首启向导→配 LLM→对话 全链路通过
 - [ ] 审批卡 / 图片附件 / 工具详情 / AI 命名 / 排队 各走一遍留截图
