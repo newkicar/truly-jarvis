@@ -274,6 +274,8 @@ class GuiPresenter:
                     ),
                     "on_subagent": lambda n, s, depth=0: b.subagent.emit(tid, n, s, depth),
                     "on_status": lambda s: b.status.emit(tid, s),
+                    # 工单 06 共享 seam：思考块（可选第 6 键；CLI/TUI 不传则零行为变化）
+                    "on_thinking": lambda d: b.thinking.emit(tid, d),
                 },
                 on_fallback_message=lambda t: b.fallback.emit(tid, t),
                 is_cancelled=lambda: self.gate.is_cancelled(tid),
@@ -331,6 +333,7 @@ class GuiPresenter:
                     ),
                     "on_subagent": lambda n, s, depth=0: b.subagent.emit(tid, n, s, depth),
                     "on_status": lambda s: b.status.emit(tid, s),
+                    "on_thinking": lambda d: b.thinking.emit(tid, d),
                 },
                 on_fallback_message=lambda t: b.fallback.emit(tid, t),
                 permission_state=rt.permission_state,

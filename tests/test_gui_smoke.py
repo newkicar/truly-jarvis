@@ -99,3 +99,46 @@ def test_turn_gate_blocks_second_submission(qapp):
         rt.close()
     finally:
         cleanup_home(home)
+
+
+def test_cold_replay_restores_tool_records(qapp):
+    """工单 06：切会话/重启 app 后工具调用记录不丢——第二个 MainWindow 冷建
+    同 thread pane，从检查点重建 user/AI + 工具行（默认折叠）。"""
+    from src.gui.events import UiBridge
+    from src.gui.main_window import MainWindow
+    from src.gui.runtime import GuiPresenter, build_runtime_for_config
+
+    home = new_home()
+    try:
+        rt = build_runtime_for_config(home, model=ScriptedMockModel())
+        bridge = UiBridge()
+        presenter = GuiPresenter(rt, bridge)
+        presenter.set_ask_action(lambda inv, tid: {"decision": "approve"})
+        win = MainWindow(presenter, bridge)
+
+        done = {"n": 0}
+        bridge.turn_done.connect(lambda tid, ok: done.__setitem__("n", done["n"] + 1))
+        tid = presenter.new_session_id()
+        win._switch_to(tid)
+        win.input_bar.edit.setPlainText("跑一遍")
+        win._on_input_submit("跑一遍")
+        assert wait_until(lambda: done["n"] >= 1, timeout=180.0)
+        _pump(qapp, 1.0)
+
+        # 冷建第二个窗口（模拟切走/重启后的首访）
+        win2 = MainWindow(presenter, bridge)
+        pane2 = win2._ensure_pane(tid)
+        _pump(qapp, 0.5)
+        from src.gui.pane import ToolLineWidget
+
+        tools = [
+            pane2._vbox.itemAt(i).widget()
+            for i in range(pane2._vbox.count())
+            if isinstance(pane2._vbox.itemAt(i).widget(), ToolLineWidget)
+        ]
+        assert tools, "冷建 pane 未重建工具行"
+        assert any("execute" in t._summary.text() for t in tools)
+        assert all(not t._detail.isVisible() for t in tools)  # 默认折叠
+        rt.close()
+    finally:
+        cleanup_home(home)

@@ -20,6 +20,8 @@ class UiBridge(QObject):
     tool_call = Signal(str, str, str, bool, str, int)
     # 子代理状态（name, status, depth）
     subagent = Signal(str, str, str, int)
+    # 思考块增量（tid, delta）——可选第 6 键 on_thinking 的 GUI 端（工单 06）
+    thinking = Signal(str, str)
     # 状态行（重试退避 / 步数预算）
     status = Signal(str, str)
     # 回合开始（tid）——FIFO 重投 / 用户提交

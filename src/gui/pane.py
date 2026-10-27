@@ -13,6 +13,8 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QScrollArea,
@@ -24,6 +26,115 @@ from PySide6.QtWidgets import (
 from src.gui import md_render
 
 RENDER_BATCH_MS = 150
+_DETAIL_OUTPUT_CAP = 8000
+
+
+def _detail_html(args_text: str, output_text: str, err: bool, depth: int) -> str:
+    """工具详情区（等宽 args + 完整输出；错误态染红；超长截断）。"""
+    out = str(output_text or "")
+    truncated = ""
+    if len(out) > _DETAIL_OUTPUT_CAP:
+        out = out[:_DETAIL_OUTPUT_CAP]
+        truncated = f"<br><br>…（截断，共 {len(str(output_text))} 字符）"
+    color = "#e57373" if err else "#c8c8c8"
+    pad = "&nbsp;" * depth * 2
+    return (
+        f'<span style="font-family:Consolas,\'Courier New\',monospace; font-size:12px; color:{color};">'
+        f"{pad}<b>args</b><br>{args_text.replace(chr(10), '<br>')}"
+        f"<br><br><b>output</b><br>{out.replace(chr(10), '<br>')}<br>{truncated}</span>"
+    )
+
+
+class ToolLineWidget(QFrame):
+    """工具调用行：一行摘要 +「＋ 详情」展开钮（codex「+ Show details」对标）。
+
+    详情区 = 完整 args + 完整输出（等宽；错误态染红），默认折叠。
+    """
+
+    def __init__(self, name, args_text: str, err: bool, output: str, depth: int = 0) -> None:
+        super().__init__()
+        mark = "✗" if err else "✓"
+        color = "#e57373" if err else "#7fbf7f"
+        out_preview = str(output or "")
+        if len(out_preview) > 160:
+            out_preview = out_preview[:160] + "…"
+        summary = f"{'  ' * depth}{mark} {name}({str(args_text)[:120]})"
+        if out_preview:
+            summary += f"  → {out_preview}"
+
+        self._expanded = False
+        self._detail_html = _detail_html(str(args_text), str(output or ""), err, depth)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        row = QHBoxLayout()
+        self._summary = QLabel(summary)
+        self._summary.setFont(md_render.mono_font())
+        self._summary.setStyleSheet(f"color:{color}; font-size:12px;")
+        self._summary.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
+        self.btn_toggle = QPushButton("＋ 详情")
+        self.btn_toggle.setFixedWidth(76)
+        self.btn_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_toggle.setStyleSheet(
+            "QPushButton { color:#8ab4f8; background:transparent; border:1px solid #334155;"
+            " border-radius:4px; font-size:11px; }"
+        )
+        self.btn_toggle.clicked.connect(self.toggle)
+        row.addWidget(self._summary, stretch=1)
+        row.addWidget(self.btn_toggle)
+        lay.addLayout(row)
+
+        self._detail = QLabel()
+        self._detail.setTextFormat(Qt.TextFormat.RichText)
+        self._detail.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
+        self._detail.setWordWrap(True)
+        self._detail.setVisible(False)
+        lay.addWidget(self._detail)
+
+    def toggle(self) -> None:
+        self._expanded = not self._expanded
+        self._detail.setVisible(self._expanded)
+        if self._expanded:
+            self._detail.setText(self._detail_html)
+        self.btn_toggle.setText("－ 收起" if self._expanded else "＋ 详情")
+
+
+class ThinkingBox(QFrame):
+    """思考块（工单 06）：小字淡色、回答上方、默认展开可折叠。"""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._buf = ""
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(6, 4, 6, 4)
+        header = QHBoxLayout()
+        self.btn_toggle = QPushButton("思考 ∧")
+        self.btn_toggle.setFixedWidth(64)
+        self.btn_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_toggle.setStyleSheet(
+            "QPushButton { color:#8a99a8; background:transparent; border:none;"
+            " font-size:11px; }"
+        )
+        self._expanded = True
+        self.btn_toggle.clicked.connect(self.toggle)
+        header.addStretch(1)
+        header.addWidget(self.btn_toggle)
+        lay.addLayout(header)
+        self._body = QLabel()
+        self._body.setWordWrap(True)
+        self._body.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
+        self._body.setStyleSheet("color:#8a99a8; font-size:11px;")
+        lay.addWidget(self._body)
+
+    def add_delta(self, t: str) -> None:
+        self._buf += t
+        self._body.setText(self._buf)
+
+    def toggle(self) -> None:
+        self._expanded = not self._expanded
+        self._body.setVisible(self._expanded)
+        self.btn_toggle.setText("思考 ∧" if self._expanded else "思考 ∨")
+
 
 
 class ChatPane(QScrollArea):
@@ -38,6 +149,7 @@ class ChatPane(QScrollArea):
         self._ai_label: QLabel | None = None
         self._ai_buf = ""
         self._dirty = False
+        self._thinking_box: ThinkingBox | None = None
         self._back_btn: QPushButton | None = None
 
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)  # 点击聚焦（四键前提）
@@ -75,6 +187,7 @@ class ChatPane(QScrollArea):
         self._vbox.insertWidget(self._vbox.count() - 1, w)
 
     def append_user(self, text: str) -> None:
+        self._close_thinking()
         l = QLabel(f"[你] {text}")
         l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
         l.setWordWrap(True)
@@ -83,19 +196,10 @@ class ChatPane(QScrollArea):
         self._insert(l)
         self._follow()
 
-    def append_thinking(self, text: str) -> None:
-        """思考块（工单 06；小字淡色）。"""
-        l = QLabel(md_render.thinking_block_html(text))
-        l.setTextFormat(Qt.TextFormat.RichText)
-        l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
-        l.setWordWrap(True)
-        l.setStyleSheet("background:#0d1117; border-radius:4px; padding:4px;")
-        self._insert(l)
-        self._follow()
-
     def append_fallback(self, text: str) -> None:
         if not text:
             return
+        self._close_thinking()
         l = QLabel(md_render.md_to_qt_html(text))
         l.setTextFormat(Qt.TextFormat.RichText)
         l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
@@ -105,20 +209,10 @@ class ChatPane(QScrollArea):
         self._follow()
 
     def append_tool(self, name, args, err, output, depth=0) -> None:
-        mark = "✗" if err else "✓"
-        color = "#e57373" if err else "#7fbf7f"
-        out = str(output or "")
-        if len(out) > 200:
-            out = out[:200] + "…"
-        line = f"{'  ' * depth}{mark} {name}({str(args)[:120]})"
-        if out:
-            line += f"  → {out}"
-        l = QLabel(line)
-        l.setTextFormat(Qt.TextFormat.PlainText)
-        l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
-        l.setFont(md_render.mono_font())
-        l.setStyleSheet(f"color:{color}; font-size:12px;")
-        self._insert(l)
+        """工具行 = 一行摘要 +「＋ 详情」展开钮（默认折叠，工单 06）。"""
+        self._close_thinking()
+        w = ToolLineWidget(str(name), str(args), bool(err), str(output or ""), depth)
+        self._insert(w)
         self._follow()
 
     def append_subagent(self, name, status, depth=0) -> None:
@@ -127,6 +221,18 @@ class ChatPane(QScrollArea):
         l.setStyleSheet("color:#ffd75e; font-size:12px;")
         self._insert(l)
         self._follow()
+
+    # ---- 思考块（工单 06；小字淡色，回答上方，默认展开可折叠）
+    def thinking_delta(self, delta: str) -> None:
+        if self._thinking_box is None:
+            self._thinking_box = ThinkingBox()
+            self._insert(self._thinking_box)
+        self._thinking_box.add_delta(delta)
+        self._follow()
+
+    def _close_thinking(self) -> None:
+        # 块保留在 pane（可折叠），后续思考再起新块
+        self._thinking_box = None
 
     # ---- 流式 AI 消息（合批 / 即时双策略）
     def ai_delta(self, delta: str) -> None:
@@ -153,6 +259,7 @@ class ChatPane(QScrollArea):
             self._follow()
 
     def ai_end(self, text: str) -> None:
+        self._close_thinking()
         if self._ai_label is not None:
             self._ai_label.setText(md_render.md_to_qt_html(self._ai_buf or text))
             self._ai_label = None
@@ -165,6 +272,19 @@ class ChatPane(QScrollArea):
     def append_card(self, card: QWidget) -> None:
         self._insert(card)
         self._follow()
+
+    def rebuild_from_records(self, records: list) -> None:
+        """工单 06：从检查点记录重建（user/AI 文本 + 工具行，工具行默认折叠）。"""
+        for r in records:
+            if r.kind == "user":
+                self.append_user(r.text)
+            elif r.kind == "ai":
+                self.append_fallback(r.text)
+            elif r.kind == "tool" and r.tool is not None:
+                t = r.tool
+                self.append_tool(t.name, t.args_text, t.error, t.output, t.depth)
+        self.stick = True
+        self.snap_to_bottom()
 
     # ---- 粘底状态机
     def _at_bottom(self, tol: int = 4) -> bool:
@@ -220,13 +340,3 @@ class ChatPane(QScrollArea):
             self.snap_to_bottom()
             return
         super().keyPressEvent(event)
-
-    def rebuild_from_history(self, history: list[tuple[str, str]]) -> None:
-        """冷启动从检查点重建文本消息（user/ai）；工具行重建见工单 06。"""
-        for role, text in history:
-            if role == "user":
-                self.append_user(text)
-            elif role == "ai":
-                self.append_fallback(text)
-        self.stick = True
-        self.snap_to_bottom()

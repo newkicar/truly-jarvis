@@ -97,3 +97,54 @@ def test_ai_end_fallback_when_no_stream(qtbot):
     p.ai_end("无流兜底消息")
     # 无 _ai_label 时走 append_fallback（新增块）
     assert p._ai_label is None
+
+
+# ---- 工单 06：工具行「＋ 详情」+ 思考块
+def test_tool_line_collapsed_default_then_expands(qtbot, qapp):
+    from src.gui.pane import ToolLineWidget
+
+    w = ToolLineWidget("execute", "{'command': 'git status'}", False, "ok out")
+    qtbot.addWidget(w)
+    w.show()
+    qapp.processEvents()
+    assert w.btn_toggle.text() == "＋ 详情"
+    assert w._detail.isHidden()
+    w.btn_toggle.click()
+    qapp.processEvents()
+    assert w.btn_toggle.text() == "－ 收起"
+    assert not w._detail.isHidden()
+    assert "git status" in w._detail.text()
+
+
+def test_tool_line_error_marked(qtbot):
+    from src.gui.pane import ToolLineWidget
+
+    w = ToolLineWidget("execute", "{'command': 'x'}", True, "boom")
+    qtbot.addWidget(w)
+    assert "✗" in w._summary.text()
+
+
+def test_thinking_box_accumulates_and_toggles(qtbot):
+    from src.gui.pane import ThinkingBox
+
+    box = ThinkingBox()
+    qtbot.addWidget(box)
+    box.add_delta("思考")
+    box.add_delta("中…")
+    assert "思考中…" in box._body.text()
+    assert not box._body.isHidden()  # 默认展开
+    box.toggle()
+    assert box._body.isHidden()
+
+
+def test_pane_thinking_delta_creates_box_once(qtbot):
+    p = ChatPane("t1"); qtbot.addWidget(p)
+    p.thinking_delta("a")
+    p.thinking_delta("b")
+    assert p._thinking_box is not None
+    assert "ab" in p._thinking_box._body.text()
+    # 工具事件收掉当前块，下一次思考起新块
+    p.append_tool("execute", "{}", False, "ok")
+    assert p._thinking_box is None
+    p.thinking_delta("c")
+    assert p._thinking_box is not None and p._thinking_box._body.text() == "c"

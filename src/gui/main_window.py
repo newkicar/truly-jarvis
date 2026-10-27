@@ -39,9 +39,8 @@ class MainWindow(QMainWindow):
         self._last_input_text = ""
         self._build_ui()
         self._wire_bridge()
-        for tid in presenter.session_ids():
-            self._ensure_pane(tid)
-        first = list(self.panes)
+        # 懒建 pane（重记录重建只在首访该会话时发生，启动不预建全部）
+        first = presenter.session_ids()
         self._switch_to(first[0] if first else presenter.new_session_id())
 
     # ---- 结构
@@ -103,11 +102,13 @@ class MainWindow(QMainWindow):
         if tid in self.panes:
             return self.panes[tid]
         p = ChatPane(tid)
-        for role, text in commands.thread_history_text(self.presenter.runtime.agent, tid, 40):
-            if role == "user":
-                p.append_user(text)
-            elif role == "ai":
-                p.append_fallback(text)
+        # 工单 06：冷建/首访旧会话 → 检查点完整记录重建（含工具行，默认折叠）
+        from src.gui import replay
+
+        try:
+            p.rebuild_from_records(replay.thread_record(self.presenter.runtime.agent, tid))
+        except Exception:  # noqa: BLE001 — 记录重建是增强，失败回落空 pane 不崩
+            pass
         self.stack.addWidget(p)
         self.panes[tid] = p
         return p
@@ -134,7 +135,6 @@ class MainWindow(QMainWindow):
         if self.active_tid and self.active_tid not in tids:
             tids = [self.active_tid] + tids
         for tid in tids:
-            p = self._ensure_pane(tid)
             label = self.presenter.session_label(tid)
             mark = "▸ " if tid == self.active_tid else "   "
             run = " ⚡" if self.presenter.gate.is_running(tid) else ""
@@ -196,6 +196,7 @@ class MainWindow(QMainWindow):
         b.fallback.connect(self._on_fallback)
         b.tool_call.connect(self._on_tool)
         b.subagent.connect(self._on_subagent)
+        b.thinking.connect(self._on_thinking)
         b.status.connect(self._on_status)
         b.turn_started.connect(self._on_turn_started)
         b.turn_done.connect(self._on_turn_done)
@@ -239,6 +240,11 @@ class MainWindow(QMainWindow):
         p = self.panes.get(tid)
         if p is not None:
             p.append_subagent(name, status, depth)
+
+    def _on_thinking(self, tid: str, delta: str) -> None:
+        p = self.panes.get(tid)
+        if p is not None:
+            p.thinking_delta(delta)
 
     def _on_status(self, tid: str, text: str) -> None:
         if tid == self.active_tid:

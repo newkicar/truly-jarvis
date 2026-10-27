@@ -1,8 +1,8 @@
 """Markdown → Qt 富文本渲染（QLabel 文本框用）。
 
 - md_to_qt_html：QTextDocument.setMarkdown 转 HTML，code 块套等宽+底色 span。
-- thinking_block_html：思考块（小字淡色，工单 06；01 预留接口）。
-- tool_detail_html：工具详情展开区（等宽 args + 输出，工单 06）。
+- mono_font：工具/参数等宽字体。
+（思考块 / 工具详情由 pane.ThinkingBox / pane.ToolLineWidget 直接构造，见 pane.py）
 """
 from __future__ import annotations
 
@@ -32,34 +32,6 @@ def md_to_qt_html(md: str) -> str:
 
 def mono_font() -> QFont:
     f = QFont("Consolas")
-    f.setStyleHint(QFont.Monospace)
+    f.setStyleHint(QFont.StyleHint.Monospace)
     f.setPointSize(10)
     return f
-
-
-# ---- 工单 06 预留：思考块 / 工具详情
-
-
-def thinking_block_html(text: str) -> str:
-    """思考块：小字淡色（用户裁定样式），与正文明显区分。"""
-    safe = (
-        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    )
-    return (
-        f'<span style="color:#8a99a8; font-size:11px; font-style:italic;">'
-        f'<br>{safe}</span>'
-    )
-
-
-def tool_detail_html(args_text: str, output_text: str, *, error: bool = False) -> str:
-    """工具详情区：args + 完整输出（等宽）；错误态染红。"""
-    def esc(s: str) -> str:
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-    color = "#e57373" if error else "#c8c8c8"
-    return (
-        f'<span style="font-family: Consolas, \'Courier New\', monospace; '
-        f'font-size:12px; color:{color};">'
-        f"<br><b>args</b><br>{esc(args_text)}<br>"
-        f"<br><b>output</b><br>{esc(output_text)}</span>"
-    )
