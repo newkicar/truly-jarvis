@@ -43,6 +43,7 @@ try {
         --include-package=src `
         --include-package=jarvis `
         --output-dir=build\nuitka-out `
+        --output-filename=gui_main `
         --cache-dir=.build\nuitka-cache `
         @extra `
         src\gui_main.py
