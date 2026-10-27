@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 
 from src import commands
 from src import clipboard_image
+from src.gui.completion import CompletionPopup, accept_suggestion, resolve_for_input
 from src.gui.events import UiBridge
 from src.gui.image_strip import build_image_submit, save_clipboard_image_to_temp
 from src.gui.image_widgets import ImageStrip
@@ -79,6 +80,33 @@ class MainWindow(QMainWindow):
         tt_replay.triggered.connect(self._on_time_travel_dialog)
         self._tt_menu = tt
 
+        # ---- 工单 10：命令菜单 / 主题 / MCP / 定时任务
+        cmd = self.menuBar().addMenu("命令")
+        filter_action = cmd.addAction("筛选命令…")
+        filter_action.triggered.connect(self._on_filter_commands)
+        cmd.addSeparator()
+        self._build_command_menu(cmd)
+
+        theme_menu = self.menuBar().addMenu("主题")
+        from src.gui import theme as _theme
+
+        self._theme_items = {}
+        for t in _theme.THEMES:
+            act = theme_menu.addAction(t.upper())
+            act.setCheckable(True)
+            act.setChecked(_theme.load_theme() == t)
+            act.triggered.connect(lambda _on=False, tt=t: self._on_theme(tt))
+            self._theme_items[t] = act
+        theme_menu.addSeparator()
+        theme_menu.addAction("切换明暗", lambda: self._on_theme(_theme.toggle_theme()))
+
+        mcp_menu = self.menuBar().addMenu("MCP 工具")
+        self._build_mcp_menu(mcp_menu)
+
+        sched_menu = self.menuBar().addMenu("定时任务")
+        sched_open = sched_menu.addAction("打开定时任务面板")
+        sched_open.triggered.connect(self._on_scheduler_panel)
+
         left = QFrame()
         left.setFixedWidth(230)
         ll = QVBoxLayout(left)
@@ -128,6 +156,13 @@ class MainWindow(QMainWindow):
         self._render_timer.setInterval(RENDER_BATCH_MS)
         self._render_timer.timeout.connect(self._flush_all_dirty)
         self._render_timer.start()
+
+        # 补全弹层（工单 10：@ 路径 / / 命令 / /use skill 模糊；Tab 接受）
+        self._completion_state = None
+        self.completion_popup = CompletionPopup(self._on_completion_accept)
+        self.completion_popup.hide()
+        self.input_bar.edit.textChanged.connect(lambda: self._refresh_completion())
+        self.input_bar.edit.cursorPositionChanged.connect(lambda: self._refresh_completion())
 
     # ---- 工单 08：高级模式（Plan/Act 全局 · YOLO 线程级 · 撤回消息层）
     def _on_plan_toggled(self, on: bool) -> None:
@@ -189,6 +224,110 @@ class MainWindow(QMainWindow):
 
     def _on_snapshots_list(self) -> None:
         self._show_text("文件快照", commands.list_snapshots())
+
+    # ---- 工单 10：命令菜单 / 补全 / 主题 / MCP / 定时任务
+    def _build_command_menu(self, menu) -> None:
+        from src.slash_completion import SLASH_COMMANDS
+
+        for c in SLASH_COMMANDS:
+            act = menu.addAction(c.usage)
+            act.setToolTip(c.summary)
+            usage = c.usage
+            act.triggered.connect(lambda _on=False, u=usage: self._execute_slash(u))
+
+    def _on_filter_commands(self) -> None:
+        from PySide6.QtWidgets import QInputDialog
+
+        from src.slash_completion import SLASH_COMMANDS, filter_commands
+
+        q, ok = QInputDialog.getText(self, "筛选命令", "关键词（留空=全部）:")
+        if not ok:
+            return
+        cmds = filter_commands(SLASH_COMMANDS, q.strip())
+        lines = "\n".join(f"{c.usage}  — {c.summary}" for c in cmds) or "（无匹配）"
+        self._show_text(f"命令（{q}）", lines)
+
+    def _execute_slash(self, raw: str) -> None:
+        tid = self.active_tid
+        if not tid:
+            return
+        agent = self.presenter.runtime.agent
+        state = self.presenter.runtime.permission_state
+        b = self.presenter.bridge
+
+        def _run() -> str:
+            text, new_tid, replay_cid = commands.dispatch_command(
+                agent, tid, raw, None,
+                vault_path=self.presenter.runtime.config.vault_path,
+                permission_state=state,
+            )
+            if replay_cid:
+                self.presenter.start_replay(new_tid or tid, replay_cid)
+            elif new_tid:
+                b.switch_session.emit(new_tid, f"已切换到会话 {new_tid}")
+            if text:
+                b.notify.emit(text)
+            return text or ""
+
+        self.presenter.run_command(_run, tid)
+
+    def _on_scheduler_panel(self) -> None:
+        from src.gui.scheduler_panel import SchedulerPanel
+
+        SchedulerPanel(self.presenter, self).exec()
+
+    def _build_mcp_menu(self, menu) -> None:
+        cfg = self.presenter.runtime.config
+        servers = cfg.mcps or {}
+        if not servers:
+            act = menu.addAction("（未配置 mcps.servers）")
+            act.setEnabled(False)
+            return
+        for name, spec in servers.items():
+            enabled = spec.get("enabled", True) if isinstance(spec, dict) else True
+            act = menu.addAction(f"{name}（{'启用' if enabled else '停用'}）")
+            act.setEnabled(False)  # 只读展示；改 jarvis.json 的 mcps.servers 后重启生效
+            act.setToolTip(str(spec))
+        count = getattr(self.presenter.runtime, "mcp_tool_count", 0)
+        if count:
+            note = menu.addAction(f"已加载 {count} 个 MCP 工具（工具行带 server 前缀）")
+            note.setEnabled(False)
+
+    def _on_theme(self, theme: str) -> None:
+        from PySide6.QtWidgets import QApplication
+
+        from src.gui import theme as _theme
+
+        _theme.save_theme(theme)
+        _theme.apply_theme(QApplication.instance(), theme)
+        for t, act in self._theme_items.items():
+            act.setChecked(t == theme)
+
+    # ---- 补全（工单 10）
+    def _refresh_completion(self) -> None:
+        skills = self.presenter.skills_catalog()
+        state = resolve_for_input(
+            self.input_bar.edit,
+            skills=skills,
+            config=self.presenter.runtime.config,
+        )
+        self._completion_state = state
+        if state.kind != "none" and state.items:
+            self.completion_popup.show_items(state.items)
+            anchor = self.input_bar.mapToGlobal(QPoint(0, 0))
+            self.completion_popup.move(
+                anchor.x() + 4, anchor.y() - self.completion_popup.height() - 4
+            )
+            self.completion_popup.show()
+        else:
+            self.completion_popup.hide()
+
+    def _on_completion_accept(self, insert: str) -> None:
+        if self._completion_state is not None:
+            accept_suggestion(self.input_bar.edit, self._completion_state, insert)
+        self.completion_popup.hide()
+        self._completion_state = None
+        self._refresh_completion()
 
     def _on_time_travel_dialog(self) -> None:
         if not self.active_tid:

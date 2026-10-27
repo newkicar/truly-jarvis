@@ -140,10 +140,13 @@ class SchedulerGate:
     def jobs(self) -> list:
         return self._sched.get_jobs() if self._sched else []
 
-    def reload(self) -> int:
+    def reload(self) -> str:
+        """热重载 schedules/*.json（kernel reload_schedules；未启用 → 提示文本）。"""
+        from src import scheduler as _sched_mod
+
         if self._sched is None:
-            return 0
-        return self._sched.reload_schedules()
+            return "定时任务未启用（本进程未 --scheduled 启动，无法热重载）"
+        return _sched_mod.reload_schedules(self._sched, self._runtime.agent, self._runtime.config)
 
     def shutdown(self) -> None:
         if self._sched is not None:
@@ -388,3 +391,12 @@ class GuiPresenter:
 
     def session_ids(self) -> list[str]:
         return commands.session_thread_ids(self.runtime.agent)
+
+    # ---- skill 补全池（工单 10：逐次重扫不缓存，新 skill 即现；异常 → []）
+    def skills_catalog(self) -> list:
+        from src.skill_discovery import discover_skill_catalog
+
+        try:
+            return discover_skill_catalog(self.runtime.config)
+        except Exception:  # noqa: BLE001 — 补全池缺失不崩 app
+            return []

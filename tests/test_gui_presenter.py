@@ -22,9 +22,7 @@ def bridge(qapp) -> UiBridge:
 
 def _fake_runtime():
     """lightweight runtime stub（回合 worker 只用 agent/config/permission_state；
-    session_registry 需要真 project_root → 建个 home 目录）。"""
-    from pathlib import Path  # noqa: F401
-
+    session_registry 需要真 project_root → 建个 home 目录；gate 供定时门控测试）。"""
     from tests.gui_fakes import new_home
 
     home = new_home()
@@ -32,8 +30,15 @@ def _fake_runtime():
         project_root=home,
         execution_max_steps=200,
         model_image_input="auto",
+        mcps={},
+        vault_path=None,
+        memory_dir=home / "memory",
+        schedules_dir=home / "schedules",
     )
     rt = SimpleNamespace(agent=None, config=cfg, permission_state={}, model_label="fake")
+    from src.gui.runtime import SchedulerGate
+
+    rt.gate = SchedulerGate(rt, enabled=False)
     rt._home = home
     return rt
 
