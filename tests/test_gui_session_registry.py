@@ -175,3 +175,46 @@ def test_presenter_maybe_name_skips_abandoned_and_named(qapp):
         assert p.session_registry.get("t2") is None
     finally:
         cleanup_home(home)
+
+
+# ---------------------------------------------------------------- 置顶/归档标记（会话名称栏规格）
+def test_registry_pin_and_archive_flags_persist():
+    from pathlib import Path
+
+    d = _tmp_dir()
+    r = SessionRegistry(Path(d) / "sessions.json")
+    r.rename("t1", "标题", ai_generated=False)
+    assert r.is_pinned("t1") is False and r.is_archived("t1") is False
+    r.set_pinned("t1", True)
+    r.set_archived("t1", True)
+    raw = json.loads((Path(d) / "sessions.json").read_text(encoding="utf-8"))
+    assert raw["t1"]["pinned"] is True and raw["t1"]["archived"] is True
+    assert raw["t1"]["title"] == "标题"  # rename 已保留的字段不被标记操作破坏
+    r2 = SessionRegistry(Path(d) / "sessions.json")  # 重读仍带标记
+    assert r2.is_pinned("t1") and r2.is_archived("t1")
+
+
+def test_registry_flags_backward_compatible():
+    """旧版 sessions.json（无 pinned/archived 键）→ 缺省 False，不崩。"""
+    from pathlib import Path
+
+    d = _tmp_dir()
+    f = Path(d) / "sessions.json"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps({"old1": {"title": "旧", "ai_generated": False}}), encoding="utf-8")
+    r = SessionRegistry(f)
+    assert r.is_pinned("old1") is False and r.is_archived("old1") is False
+    r.set_pinned("old1", True)
+    assert json.loads(f.read_text(encoding="utf-8"))["old1"]["title"] == "旧"
+
+
+def test_registry_rename_keeps_flags():
+    from pathlib import Path
+
+    d = _tmp_dir()
+    r = SessionRegistry(Path(d) / "sessions.json")
+    r.rename("t1", "旧名", ai_generated=False)
+    r.set_pinned("t1", True)
+    r.rename("t1", "新名")
+    e = r.get("t1")
+    assert e["title"] == "新名" and e["pinned"] is True  # 改名不掉置顶

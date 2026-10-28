@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 
 from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtWidgets import (
@@ -89,6 +90,11 @@ class MainWindow(QMainWindow):
         cmd.addSeparator()
         doctor_action = cmd.addAction("自检（Doctor）…")
         doctor_action.triggered.connect(self._on_doctor)
+        cmd.addSeparator()
+        self._show_archived = False
+        self._archived_action = cmd.addAction("显示已归档会话")
+        self._archived_action.setCheckable(True)
+        self._archived_action.triggered.connect(self._on_show_archived_toggled)
         self._build_command_menu(cmd)
 
         theme_menu = self.menuBar().addMenu("主题")
@@ -121,6 +127,9 @@ class MainWindow(QMainWindow):
         self.session_list = QListWidget()
         self.session_list.itemClicked.connect(self._on_session_clicked)
         self.session_list.itemDoubleClicked.connect(self._on_session_double_clicked)
+        # 右键会话条目 → 上下文菜单（分享/下载/重命名/置顶/克隆/归档/删除）
+        self.session_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.session_list.customContextMenuRequested.connect(self._on_session_context)
         ll.addWidget(self.session_list, stretch=1)
         self.btn_new = QPushButton("＋ 新会话")
         self.btn_new.clicked.connect(lambda: self._switch_to(self.presenter.new_session_id()))
@@ -489,29 +498,140 @@ class MainWindow(QMainWindow):
             tids = self.presenter.session_ids()
         except Exception:  # noqa: BLE001
             return
-        self.session_list.clear()
-        if self.active_tid and self.active_tid not in tids:
-            tids = [self.active_tid] + tids
+        # 归档过滤 + 置顶优先（同组内保持原序；★ 置顶 / 📁 归档 前缀）
+        pinned: list[str] = []
+        others: list[str] = []
+        visible: list[str] = []
         for tid in tids:
+            reg = self.presenter.session_registry
+            if reg.is_archived(tid) and not self._show_archived:
+                continue
+            visible.append(tid)
+            (pinned if reg.is_pinned(tid) else others).append(tid)
+        ordered = [t for t in pinned if t in visible] + [t for t in others if t in visible]
+        if self.active_tid and self.active_tid not in ordered:
+            ordered = [self.active_tid] + ordered
+        self.session_list.clear()
+        for tid in ordered:
             label = self.presenter.session_label(tid)
+            reg = self.presenter.session_registry
             mark = "▸ " if tid == self.active_tid else "   "
+            pin = "★ " if reg.is_pinned(tid) else ""
+            arch = "📁 " if reg.is_archived(tid) else ""
             run = " ⚡" if self.presenter.gate.is_running(tid) else ""
-            it = QListWidgetItem(f"{mark}{label}{run}")
+            it = QListWidgetItem(f"{mark}{pin}{arch}{label}{run}")
             it.setData(Qt.UserRole, tid)
             it.setToolTip(tid)
             self.session_list.addItem(it)
             if tid == self.active_tid:
                 self.session_list.setCurrentItem(it)
 
-    # ---- 会话改名（工单 05：双击改名即时生效 + 持久化）
+    def _on_show_archived_toggled(self, on: bool) -> None:
+        self._show_archived = on
+        self.refresh_sessions()
+
+    # ---- 会话改名（工单 05：双击改名即时生效 + 持久化；右键菜单共用）
     def _on_session_double_clicked(self, item: QListWidgetItem) -> None:
+        self._rename_session_item(item.data(Qt.UserRole))
+
+    def _rename_session_item(self, tid: str) -> None:
         from PySide6.QtWidgets import QInputDialog
 
-        tid = item.data(Qt.UserRole)
-        new_title, okk = QInputDialog.getText(self, "重命名会话", "新名称:", text=item.text().lstrip("▸ ").rstrip())
+        cur = self.presenter.session_label(tid)
+        new_title, okk = QInputDialog.getText(self, "重命名会话", "新名称:", text=cur)
         if okk and new_title.strip():
             self.presenter.rename_session(tid, new_title.strip())
+
+    # ---- 会话右键菜单（分享/下载/重命名/置顶/克隆/归档/删除）
+    def _on_session_context(self, pos) -> None:
+        it = self.session_list.itemAt(pos)
+        if it is None:
+            return
+        menu = self._build_session_menu(it.data(Qt.UserRole))
+        menu.exec(self.session_list.mapToGlobal(pos))
+
+    def _build_session_menu(self, tid: str):
+        from PySide6.QtWidgets import QMenu
+
+        reg = self.presenter.session_registry
+        menu = QMenu(self)
+        share = menu.addAction("分享（复制 Markdown 全文）")
+        share.triggered.connect(lambda: self._share_session_markdown(tid))
+        download = menu.addAction("下载 Markdown…")
+        download.triggered.connect(lambda: self._download_session_markdown(tid))
+        menu.addSeparator()
+        rename = menu.addAction("重命名")
+        rename.triggered.connect(lambda: self._rename_session_item(tid))
+        pin_on = reg.is_pinned(tid)
+        pin = menu.addAction("取消置顶" if pin_on else "置顶")
+        pin.triggered.connect(lambda: self.presenter.pin_session(tid, not pin_on))
+        clone = menu.addAction("克隆会话")
+        clone.triggered.connect(lambda: self._clone_session(tid))
+        arch_on = reg.is_archived(tid)
+        arch = menu.addAction("取消归档" if arch_on else "归档")
+        arch.triggered.connect(lambda: self._archive_session(tid, not arch_on))
+        menu.addSeparator()
+        delete = menu.addAction("删除会话")
+        delete.triggered.connect(lambda: self._delete_session(tid))
+        return menu
+
+    def _session_markdown_text(self, tid: str) -> str:
+        from datetime import datetime
+
+        from src.gui.session_export import session_markdown
+
+        title = self.presenter.session_label(tid)
+        return session_markdown(
+            self.presenter.runtime.agent,
+            tid,
+            title,
+            now_text=datetime.now().strftime("%Y-%m-%d %H:%M"),
+        )
+
+    def _share_session_markdown(self, tid: str) -> None:
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.clipboard().setText(self._session_markdown_text(tid))
+        self.status_label.setText(f"已复制「{self.presenter.session_label(tid)}」Markdown 全文到剪贴板")
+
+    def _download_session_markdown(self, tid: str) -> None:
+        from PySide6.QtWidgets import QFileDialog
+
+        title = self.presenter.session_label(tid)
+        path, _ok = QFileDialog.getSaveFileName(
+            self, "下载会话 Markdown", f"{title or tid}.md", "Markdown 文件 (*.md)"
+        )
+        if not path:
+            return
+        Path(path).write_text(self._session_markdown_text(tid), encoding="utf-8")
+        self.status_label.setText(f"已导出 {path}")
+
+    def _clone_session(self, tid: str) -> None:
+        note, new_tid = self.presenter.clone_session(tid)
+        self.status_label.setText(note)
+
+    def _archive_session(self, tid: str, on: bool) -> None:
+        self.presenter.archive_session(tid, on)
+        # 归档且当前隐藏归档项 → 活动会话被移出列表时切到新会话
+        if on and not self._show_archived and tid == self.active_tid:
+            self._switch_to(self.presenter.new_session_id())
+        elif not on:
             self.refresh_sessions()
+
+    def _delete_session(self, tid: str) -> None:
+        from PySide6.QtWidgets import QMessageBox
+
+        ans = QMessageBox.question(
+            self, "删除会话",
+            f"删除会话「{self.presenter.session_label(tid)}」的全部对话历史？（不可恢复）",
+        )
+        if ans != QMessageBox.StandardButton.Yes:
+            return
+        was_active = tid == self.active_tid
+        note = self.presenter.delete_session(tid)
+        self.status_label.setText(note)
+        if was_active:
+            self._switch_to(self.presenter.new_session_id())
 
     # ---- 图片粘贴（工单 07）：剪贴板图 / 图片路径 → 附件条
     def _try_image_paste(self) -> bool:

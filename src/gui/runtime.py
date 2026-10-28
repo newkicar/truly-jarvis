@@ -190,6 +190,37 @@ class GuiPresenter:
         self.session_registry.rename(tid, title, ai_generated=False)
         self.bridge.refresh_sessions.emit()
 
+    # ---- 会话管理（置顶/归档/克隆/删除；检查点操作走 checkpointer，注册表走 registry）
+    def pin_session(self, tid: str, on: bool) -> None:
+        self.session_registry.set_pinned(tid, on)
+        self.bridge.refresh_sessions.emit()
+
+    def archive_session(self, tid: str, on: bool) -> None:
+        self.session_registry.set_archived(tid, on)
+        self.bridge.refresh_sessions.emit()
+
+    def clone_session(self, tid: str) -> tuple[str, str]:
+        """检查点整线程复制 + 注册表「原名-副本」。返回 (说明, 新 tid)。"""
+        new_tid = self.new_session_id()
+        self.runtime.checkpointer.copy_thread(tid, new_tid)
+        title = (self.session_registry.get(tid) or {}).get("title", "").strip()
+        if not title:
+            title = commands.session_label(self.runtime.agent, tid)
+        self.session_registry.rename(new_tid, f"{title}-副本", ai_generated=False)
+        self.bridge.refresh_sessions.emit()
+        return f"已克隆为「{title}-副本」", new_tid
+
+    def delete_session(self, tid: str) -> str:
+        """整会话删除：检查点线程 + 注册表条目（消息/文件/Inbox 不动）。"""
+        try:
+            self.runtime.checkpointer.delete_thread(tid)
+        except Exception as exc:  # noqa: BLE001 — 检查点删失败也要清注册表，给可行动文案
+            self.session_registry.delete(tid)
+            return f"会话记录已清，但检查点删除失败：{exc}"
+        self.session_registry.delete(tid)
+        self.bridge.refresh_sessions.emit()
+        return f"已删除会话 {tid}"
+
     def _maybe_name(self, tid: str, ok: bool) -> None:
         """首轮成功结束 → 后台 AI 命名（已有短名/摘要的不动；失败静默回落）。"""
         if not ok:

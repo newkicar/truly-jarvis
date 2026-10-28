@@ -41,8 +41,32 @@ class SessionRegistry:
 
     def rename(self, tid: str, title: str, *, ai_generated: bool = False) -> None:
         data = self.load()
-        data[tid] = {"title": title, "ai_generated": ai_generated}
+        entry = data.get(tid)
+        entry = dict(entry) if isinstance(entry, dict) else {}
+        entry["title"] = title
+        entry["ai_generated"] = ai_generated
+        data[tid] = entry
         self._atomic_write(data)
+
+    def _set_flag(self, tid: str, key: str, value: bool) -> None:
+        data = self.load()
+        entry = data.get(tid)
+        entry = dict(entry) if isinstance(entry, dict) else {}
+        entry[key] = value
+        data[tid] = entry
+        self._atomic_write(data)
+
+    def set_pinned(self, tid: str, on: bool) -> None:
+        self._set_flag(tid, "pinned", on)
+
+    def set_archived(self, tid: str, on: bool) -> None:
+        self._set_flag(tid, "archived", on)
+
+    def is_pinned(self, tid: str) -> bool:
+        return bool((self.get(tid) or {}).get("pinned", False))
+
+    def is_archived(self, tid: str) -> bool:
+        return bool((self.get(tid) or {}).get("archived", False))
 
     def delete(self, tid: str) -> None:
         data = self.load()
