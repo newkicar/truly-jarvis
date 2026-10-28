@@ -67,23 +67,45 @@ def accept_suggestion(
     return True
 
 
+def has_query_no_match(widget, state: OverlayState) -> bool:
+    """弹层该显示「No matching items」行：kind 非 none 且候选为空、且用户确实
+    输入了查询串（空查询 = 全量清单，不算无匹配）。"""
+    if state.kind == "none" or state.items:
+        return False
+    text = widget.toPlainText()
+    row, col = rowcol_from_cursor(widget)
+    line, line_col = tui_completion.line_projection(text, (row, col))
+    q = line[state.at_index + 1 : line_col]
+    return len(q.strip()) > 0
+
+
 class CompletionPopup(QListWidget):
-    """输入框上方候选弹层：候选来自 OverlayState；鼠标/键盘选中后 accept。"""
+    """输入框上方候选弹层：候选来自 OverlayState；鼠标/键盘选中后 accept。
+
+    形态（2026-10-28 规格）：Qt.Popup 无边框浮层（无标题栏/最小化/关闭按钮，
+    失焦自动隐藏），跟随 / @ 输入出现、删除即消失（hide 由 owner 驱动）。
+    """
 
     def __init__(self, on_accept, parent=None) -> None:
         super().__init__(parent)
         self._on_accept = on_accept
         self.setFixedWidth(360)
         self.setFrameShape(QFrame.Shape.NoFrame)
+        # 无标题栏/窗口按钮；点击外部或失焦自动隐藏（tooltip 式弹层）
+        self.setWindowFlags(Qt.Popup)
 
-    def show_items(self, items: tuple[SuggestionItem, ...]) -> None:
+    def show_items(self, items: tuple[SuggestionItem, ...], no_match: bool = False) -> None:
         self.clear()
         for it in items:
             item = QListWidgetItem(f"{it.label}   [{it.insert}]")
             item.setData(_USER_ROLE, it.insert)
             item.setToolTip(it.hint or "")
             self.addItem(item)
-        self.setVisible(bool(items))
+        if no_match and not items:
+            miss = QListWidgetItem("No matching items")
+            miss.setFlags(Qt.ItemFlag.NoItemFlags)  # 不可选不可点
+            self.addItem(miss)
+        self.setVisible(bool(items) or no_match)
 
     def accept_top(self) -> None:
         it = self.currentItem() or (self.item(0) if self.count() else None)

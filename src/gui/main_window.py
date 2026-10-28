@@ -163,7 +163,7 @@ class MainWindow(QMainWindow):
 
         # 补全弹层（工单 10：@ 路径 / / 命令 / /use skill 模糊；Tab 接受）
         self._completion_state = None
-        self.completion_popup = CompletionPopup(self._on_completion_accept)
+        self.completion_popup = CompletionPopup(self._on_completion_accept, self)
         self.completion_popup.hide()
         self.input_bar.edit.textChanged.connect(lambda: self._refresh_completion())
         self.input_bar.edit.cursorPositionChanged.connect(lambda: self._refresh_completion())
@@ -334,8 +334,12 @@ class MainWindow(QMainWindow):
         for t, act in self._theme_items.items():
             act.setChecked(t == theme)
 
-    # ---- 补全（工单 10）
+    # ---- 补全（工单 10；2026-10-28 规格：无边框浮层 + 不挡输入框 + 无匹配提示）
     def _refresh_completion(self) -> None:
+        from PySide6.QtWidgets import QApplication
+
+        from src.gui.completion import has_query_no_match
+
         skills = self.presenter.skills_catalog()
         state = resolve_for_input(
             self.input_bar.edit,
@@ -343,12 +347,18 @@ class MainWindow(QMainWindow):
             config=self.presenter.runtime.config,
         )
         self._completion_state = state
-        if state.kind != "none" and state.items:
-            self.completion_popup.show_items(state.items)
+        if state.kind != "none":
+            no_match = has_query_no_match(self.input_bar.edit, state)
+            self.completion_popup.show_items(state.items, no_match=no_match)
+            # 弹层底边贴输入条上沿（不挡输入框）；上方放不下时翻到输入条下沿之下
+            bar_geo = self.input_bar.geometry()
             anchor = self.input_bar.mapToGlobal(QPoint(0, 0))
-            self.completion_popup.move(
-                anchor.x() + 4, anchor.y() - self.completion_popup.height() - 4
-            )
+            ph = self.completion_popup.sizeHint().height()
+            y = anchor.y() - ph - 4
+            screen = QApplication.primaryScreen().availableGeometry()
+            if y < screen.y() + 2:
+                y = anchor.y() + bar_geo.height() + 4
+            self.completion_popup.move(anchor.x() + 4, y)
             self.completion_popup.show()
         else:
             self.completion_popup.hide()

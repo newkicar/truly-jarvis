@@ -202,3 +202,80 @@ def test_scheduler_gate_reload_disabled_gives_hint():
         rt.gate.enabled  # property 存在
     finally:
         cleanup_home(home)
+
+
+# ---------------------------------------------------------------- 弹层形态（2026-10-28 规格）
+def test_popup_frameless_tooltip_style(qapp):
+    """弹层 = Qt.Popup 无边框浮层（无标题栏/最小化/关闭按钮；点外部自动隐藏）。"""
+    from PySide6.QtCore import Qt
+
+    rt = _fake_runtime()
+    p = GuiPresenter(rt, UiBridge())
+    win = MainWindow(p, p.bridge)
+    flags = win.completion_popup.windowFlags()
+    assert flags & Qt.WindowType.Popup  # 无边框浮层：无标题栏/最小化/关闭按钮（Qt 自动合并的 hint 位不影响）
+
+
+def test_popup_positions_above_input_not_covering(qapp):
+    """/ 弹层底边贴输入条上沿（不挡输入框）；空间不足时翻到输入条下沿之下。"""
+    rt = _fake_runtime()
+    p = GuiPresenter(rt, UiBridge())
+    win = MainWindow(p, p.bridge)
+    win.show()
+    qapp.processEvents()
+    win.input_bar.edit.setPlainText("/se")
+    win.input_bar.edit.moveCursor(QTextCursor.MoveOperation.End)
+    win._refresh_completion()
+    qapp.processEvents()
+    pop = win.completion_popup
+    assert pop.isVisible()
+    from PySide6.QtCore import QPoint
+
+    y_top = win.input_bar.mapToGlobal(QPoint(0, 0)).y()
+    pop_bottom = pop.y() + pop.geometry().height()
+    assert pop_bottom <= y_top + 1, f"弹层底边 {pop_bottom} 侵入输入条顶 {y_top}"
+
+
+def test_popup_no_match_shows_hint_row(qapp, monkeypatch):
+    """有查询串但零候选 → 弹层显示「No matching items」行（不隐藏）。"""
+    rt = _fake_runtime()
+    p = GuiPresenter(rt, UiBridge())
+    win = MainWindow(p, p.bridge)
+    win.show()
+    qapp.processEvents()
+    win.input_bar.edit.setPlainText("/definitely-no-such-cmd")
+    win.input_bar.edit.moveCursor(QTextCursor.MoveOperation.End)
+    win._refresh_completion()
+    qapp.processEvents()
+    pop = win.completion_popup
+    assert pop.isVisible()
+    assert pop.count() == 1
+    assert pop.item(0).text() == "No matching items"
+    # 删除 / 与查询串 → kind=none → 弹层消失
+    win.input_bar.edit.setPlainText("")
+    win._refresh_completion()
+    qapp.processEvents()
+    assert not pop.isVisible()
+
+
+def test_popup_shows_on_slash_and_follows_typing(qapp):
+    """/ 出现、随输入过滤（模糊，内核 filter_commands）、删除 / 消失。"""
+    rt = _fake_runtime()
+    p = GuiPresenter(rt, UiBridge())
+    win = MainWindow(p, p.bridge)
+    win.show()
+    qapp.processEvents()
+    pop = win.completion_popup
+    win.input_bar.edit.setPlainText("/")
+    win.input_bar.edit.moveCursor(QTextCursor.MoveOperation.End)
+    win._refresh_completion()
+    qapp.processEvents()
+    n_all = pop.count()
+    assert pop.isVisible() and n_all > 5  # 全量命令清单
+    win.input_bar.edit.setPlainText("/ses")
+    win.input_bar.edit.moveCursor(QTextCursor.MoveOperation.End)
+    win._refresh_completion()
+    qapp.processEvents()
+    n_filtered = pop.count()
+    assert n_filtered < n_all and n_filtered >= 1
+    assert any("sessions" in pop.item(i).text() for i in range(pop.count()))
