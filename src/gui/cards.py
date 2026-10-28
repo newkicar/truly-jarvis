@@ -78,23 +78,20 @@ class ApprovalCard(QFrame):
         self._editor_shown = False
         self._card_id = uuid.uuid4().hex[:8]
 
-        self.setObjectName("approval_card")
-        self.setStyleSheet(
-            "#approval_card { border:1px solid #7a5c00; border-radius:6px; background:#2a2517; }"
-        )
-        # 卡片宽度随面板收缩（内容用 _soft_break 断行，不再顶出窗口）
+        self.setObjectName("approval-card")
+        # 卡片宽度随面板收缩（内容用 _soft_break 断行，不再顶出窗口）；配色全走 theme QSS
         self.setMinimumWidth(0)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 8, 10, 8)
 
         head = QLabel(f"<b>需要审批 · {inv.name}</b>")
-        head.setStyleSheet("color:#ffd75e; font-size:14px;")
+        head.setObjectName("card-head")
         head.setTextFormat(Qt.TextFormat.RichText)
         outer.addWidget(head)
 
         if getattr(inv, "path", None):
             p = QLabel(f"目标: {_soft_break(str(inv.path), 48)}")
-            p.setStyleSheet("color:#bbbbbb;")
+            p.setObjectName("card-label")
             p.setWordWrap(True)
             p.setMinimumWidth(0)
             outer.addWidget(p)
@@ -103,17 +100,15 @@ class ApprovalCard(QFrame):
             # 固定高只读编辑框：最小宽塌缩（QLabel 即使断行仍被最长行顶宽），
             # 长 diff 内部滚动；mono 字体 + 可选鼠标选中
             pv = QPlainTextEdit(_soft_break(preview, 48))
+            pv.setObjectName("card-preview")
             pv.setReadOnly(True)
             pv.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
             pv.setFont(md_render.mono_font())
             pv.setFixedHeight(120)
-            pv.setStyleSheet(
-                "QPlainTextEdit { color:#c8c8c8; background:#1c1c1c; border-radius:4px; padding:4px; }"
-            )
             outer.addWidget(pv)
 
         note = QLabel("「放弃本轮」= 放弃本轮（工具不会执行；不是取消整个任务）")
-        note.setStyleSheet("color:#888888; font-size:11px;")
+        note.setObjectName("card-note")
         outer.addWidget(note)
 
         btns1 = QHBoxLayout()
@@ -122,13 +117,11 @@ class ApprovalCard(QFrame):
         self.btn_reject = QPushButton("拒绝")
         self.btn_edit = QPushButton("编辑参数")
         self.btn_giveup = QPushButton("放弃本轮")
-        self.btn_approve.setStyleSheet(
-            "QPushButton { background:#2e7d32; color:white; font-weight:bold;"
-            " border-radius:4px; padding:4px 10px; }"
-        )
-        self.btn_reject.setStyleSheet(
-            "QPushButton { background:#8e2020; color:white; border-radius:4px; padding:4px 10px; }"
-        )
+        self.btn_approve.setObjectName("btn-primary")
+        self.btn_reject.setObjectName("btn-danger")
+        self.btn_giveup.setObjectName("btn-danger")
+        self.btn_always.setObjectName("btn-ghost")
+        self.btn_edit.setObjectName("btn-ghost")
         # 两行按钮（旧 5 按钮单行最小宽 ~820px 会把面板顶出窄窗口）：
         # 行 1 = 主操作（放行/永久放行/拒绝），行 2 = 次操作（编辑参数/放弃本轮）
         for b in (self.btn_approve, self.btn_always, self.btn_reject):
@@ -162,11 +155,13 @@ class ApprovalCard(QFrame):
             default_prefix = extract_command_prefix(cmd)
             row = QHBoxLayout()
             lab = QLabel(f"前缀（默认 {default_prefix}）:")
-            lab.setStyleSheet("color:#bbbbbb;")
+            lab.setObjectName("card-label")
             self._prefix_edit = QLineEdit(default_prefix)
+            self._prefix_edit.setObjectName("card-input")
             self._prefix_edit.setFixedWidth(240)
             self._prefix_edit.setFont(md_render.mono_font())
             ok = QPushButton("确认永久放行")
+            ok.setObjectName("btn-primary")
             ok.clicked.connect(
                 lambda: self._decide(
                     {"decision": "always_approve", "prefix": self._prefix_edit.text().strip() or default_prefix}
@@ -199,34 +194,33 @@ class ApprovalCard(QFrame):
         bl = QVBoxLayout(box)
         bl.setContentsMargins(0, 4, 0, 4)
         label = QLabel("编辑参数（留空 = 保留原值）:")
-        label.setStyleSheet("color:#bbbbbb;")
+        label.setObjectName("card-label")
         bl.addWidget(label)
         single_line = inv.name == "execute"
         editors: list[tuple[str, "QLineEdit | QPlainTextEdit"]] = []
         for k, v in args.items():
             kl = QLabel(f"<b>{k}</b>（原值）")
-            kl.setStyleSheet("color:#999999;")
+            kl.setObjectName("card-key")
             kl.setTextFormat(Qt.TextFormat.RichText)
             bl.addWidget(kl)
             orig = QPlainTextEdit(_soft_break(_clip(v, 400), 48))
+            orig.setObjectName("card-orig")
             orig.setReadOnly(True)
             orig.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
             orig.setFont(md_render.mono_font())
             orig.setFixedHeight(60)
-            orig.setStyleSheet("QPlainTextEdit { color:#6a727c; background:#181c22; }")
             bl.addWidget(orig)
             if single_line:
                 ed: QLineEdit | QPlainTextEdit = QLineEdit(str(v or ""))
             else:
                 ed = QPlainTextEdit(str(v or ""))
                 ed.setFixedHeight(90)
+            ed.setObjectName("card-input")
             ed.setFont(md_render.mono_font())
             bl.addWidget(ed)
             editors.append((k, ed))
         ok = QPushButton("确认编辑后放行")
-        ok.setStyleSheet(
-            "QPushButton { background:#1565c0; color:white; border-radius:4px; padding:4px 10px; }"
-        )
+        ok.setObjectName("btn-primary")
         bl.addWidget(ok)
 
         def _confirm() -> None:
@@ -253,7 +247,7 @@ class ApprovalCard(QFrame):
             "edit": "已编辑参数并放行",
         }.get(str(result.get("decision")), "?")
         head = QLabel(f"<b>✓ {text}</b>")
-        head.setStyleSheet("color:#6fd66f;")
+        head.setObjectName("card-done")
         head.setTextFormat(Qt.TextFormat.RichText)
         self.layout().addWidget(head)
         self._on_decision(result)
@@ -264,7 +258,7 @@ class ApprovalCard(QFrame):
         self._locked = True
         self._lock_buttons()
         head = QLabel("<b>已放弃本轮（工具未执行）</b>")
-        head.setStyleSheet("color:#e57373;")
+        head.setObjectName("card-deny")
         head.setTextFormat(Qt.TextFormat.RichText)
         self.layout().addWidget(head)
         self._on_abandon()

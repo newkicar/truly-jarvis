@@ -85,7 +85,7 @@ class SchedulerPanel(QDialog):
             + ("已启用（本进程 --scheduled）" if presenter.runtime.gate.enabled
                else "未启用（重启 app 加 --scheduled 才运行定时任务）")
         )
-        note.setStyleSheet("color:#8a99a8; font-size:11px;")
+        note.setObjectName("hint-note")
         root.addWidget(note)
 
         bar = QHBoxLayout()

@@ -231,7 +231,7 @@ def make_doctor_dialog(rows: list[DoctorRow], parent=None):
     label = QLabel(doctor_report_markup(rows))
     label.setTextFormat(Qt.TextFormat.RichText)
     label.setWordWrap(True)
-    label.setStyleSheet("font-size:12px; padding:8px;")
+    label.setObjectName("report-label")
     area.setWidget(label)
     lay.addWidget(area, 1)
     btn = QPushButton("关闭")

@@ -53,3 +53,6 @@ skills/
 .ci_tmp/
 scratch/
 .scratch/prototype/proto_home/
+
+# taste-skill deal 表（机器生成；token 值已入 theme.py，可再生）
+.taste-skill/

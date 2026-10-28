@@ -36,6 +36,7 @@ class InputBar(QWidget):
         self._tab_hook: "Callable[[], bool] | None" = None
         self._esc_hook: "Callable[[], bool] | None" = None
         self.edit = QPlainTextEdit()
+        self.edit.setObjectName("input-edit")
         self.edit.setTabChangesFocus(True)
         # 内容超出固定 5 行高度时：右侧垂直滚动条按需出现（滚轴上下滚 + 按住拖动，
         # QPlainTextEdit 原生行为；AsNeeded 为缺省但显式声明意图）
@@ -43,13 +44,11 @@ class InputBar(QWidget):
         self.edit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.edit.textChanged.connect(self._refit)
         self.btn_cancel = QPushButton("取消")
+        self.btn_cancel.setObjectName("btn-ghost")
         self.btn_cancel.setEnabled(False)
         self.btn_cancel.clicked.connect(self.cancel_requested.emit)
         self.btn_send = QPushButton("发送")
-        self.btn_send.setStyleSheet(
-            "QPushButton { background:#2e7d32; color:white; font-weight:bold;"
-            " border-radius:4px; padding:2px 12px; }"
-        )
+        self.btn_send.setObjectName("btn-primary")
         self.btn_send.clicked.connect(self._submit)
 
         row = QHBoxLayout(self)

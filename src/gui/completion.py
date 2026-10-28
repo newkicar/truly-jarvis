@@ -91,6 +91,7 @@ class CompletionPopup(QListWidget):
         super().__init__(parent)
         self._on_accept = on_accept
         self._last_shown: tuple[tuple[str, ...], bool] | None = None
+        self.setObjectName("completion-popup")
         self.setFixedWidth(360)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setWindowFlags(Qt.ToolTip)

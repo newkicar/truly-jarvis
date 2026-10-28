@@ -45,7 +45,7 @@ class _Chip(QFrame):
         self.label.setPixmap(pm)
         self.label.setFixedSize(side, side)
         self.label.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.label.setStyleSheet("border:1px solid #334155; border-radius:6px;")
+        self.label.setObjectName("image-thumb")
 
         def _click(_e=None) -> None:
             self.zoom_requested.emit(path)
@@ -53,9 +53,9 @@ class _Chip(QFrame):
         self.label.mousePressEvent = _click  # noqa: SLF001 — 简化点击→放大
         lay.addWidget(self.label)
         self.btn_rm = QPushButton("✕")
+        self.btn_rm.setObjectName("img-remove")
         self.btn_rm.setFixedHeight(16)
         self.btn_rm.setToolTip("移除图片")
-        self.btn_rm.setStyleSheet("color:#999999; font-size:11px;")
         lay.addWidget(self.btn_rm)
 
     def remove_requested(self) -> None:  # pragma: no cover (接口占位)

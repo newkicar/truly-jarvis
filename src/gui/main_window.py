@@ -46,6 +46,12 @@ class MainWindow(QMainWindow):
         self._last_input_text = ""
         self._build_ui()
         self._wire_bridge()
+        # 启动即应用已持久化主题（taste-skill token QSS；切主题零重建、全量跟随）
+        from PySide6.QtWidgets import QApplication
+
+        from src.gui import theme as _theme
+
+        _theme.apply_theme(QApplication.instance(), _theme.load_theme())
         # 懒建 pane（重记录重建只在首访该会话时发生，启动不预建全部）
         first = presenter.session_ids()
         self._switch_to(first[0] if first else presenter.new_session_id())
@@ -60,7 +66,7 @@ class MainWindow(QMainWindow):
 
         # ---- 工单 08：高级菜单（Plan/Act · YOLO · 撤回，默认收起不占主界面）
         self.mode_badge = QLabel("")
-        self.mode_badge.setStyleSheet("color:#8a99a8; font-size:11px;")
+        self.mode_badge.setObjectName("badge-mode")
         adv = self.menuBar().addMenu("高级")
         self.plan_action = adv.addAction("规划模式（Plan：写工具被拦，先规划）")
         self.plan_action.setCheckable(True)
@@ -122,9 +128,11 @@ class MainWindow(QMainWindow):
         ll = QVBoxLayout(left)
         ll.setContentsMargins(8, 8, 4, 8)
         title = QLabel("<b>JARVIS</b>  会话")
-        title.setStyleSheet("font-size:14px;")
+        title.setObjectName("title-sessions")
+        title.setTextFormat(Qt.TextFormat.RichText)
         ll.addWidget(title)
         self.session_list = QListWidget()
+        self.session_list.setObjectName("session-list")
         self.session_list.itemClicked.connect(self._on_session_clicked)
         self.session_list.itemDoubleClicked.connect(self._on_session_double_clicked)
         # 右键会话条目 → 上下文菜单（分享/下载/重命名/置顶/克隆/归档/删除）
@@ -132,10 +140,11 @@ class MainWindow(QMainWindow):
         self.session_list.customContextMenuRequested.connect(self._on_session_context)
         ll.addWidget(self.session_list, stretch=1)
         self.btn_new = QPushButton("＋ 新会话")
+        self.btn_new.setObjectName("btn-primary")
         self.btn_new.clicked.connect(lambda: self._switch_to(self.presenter.new_session_id()))
         ll.addWidget(self.btn_new)
         self.running_badge = QLabel("")
-        self.running_badge.setStyleSheet("color:#ffd75e; font-size:11px;")
+        self.running_badge.setObjectName("badge-running")
         ll.addWidget(self.running_badge)
         ll.addWidget(self.mode_badge)
         root.addWidget(left)
@@ -148,7 +157,7 @@ class MainWindow(QMainWindow):
         ml.addWidget(self.stack, stretch=1)
 
         self.status_label = QLabel("就绪")
-        self.status_label.setStyleSheet("color:#bbbbbb; padding:2px;")
+        self.status_label.setObjectName("status-bar")
         ml.addWidget(self.status_label)
 
         self.image_strip = ImageStrip()

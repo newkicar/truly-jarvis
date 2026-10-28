@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.gui import md_render
+from src.gui import md_render, theme
 
 RENDER_BATCH_MS = 150
 _DETAIL_OUTPUT_CAP = 8000
@@ -37,7 +37,8 @@ def _detail_html(args_text: str, output_text: str, err: bool, depth: int) -> str
     if len(out) > _DETAIL_OUTPUT_CAP:
         out = out[:_DETAIL_OUTPUT_CAP]
         truncated = f"<br><br>…（截断，共 {len(str(output_text))} 字符）"
-    color = "#e57373" if err else "#c8c8c8"
+    tok = theme.current_tokens()
+    color = tok["negative"] if err else tok["muted"]
     pad = "&nbsp;" * depth * 2
     return (
         f'<span style="font-family:Consolas,\'Courier New\',monospace; font-size:12px; color:{color};">'
@@ -55,7 +56,6 @@ class ToolLineWidget(QFrame):
     def __init__(self, name, args_text: str, err: bool, output: str, depth: int = 0) -> None:
         super().__init__()
         mark = "✗" if err else "✓"
-        color = "#e57373" if err else "#7fbf7f"
         out_preview = str(output or "")
         if len(out_preview) > 160:
             out_preview = out_preview[:160] + "…"
@@ -71,21 +71,20 @@ class ToolLineWidget(QFrame):
         row = QHBoxLayout()
         self._summary = QLabel(summary)
         self._summary.setFont(md_render.mono_font())
-        self._summary.setStyleSheet(f"color:{color}; font-size:12px;")
+        self._summary.setObjectName("tool-line")
+        self._summary.setProperty("err", "true" if err else "false")
         self._summary.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
         self.btn_toggle = QPushButton("＋ 详情")
         self.btn_toggle.setFixedWidth(76)
         self.btn_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_toggle.setStyleSheet(
-            "QPushButton { color:#8ab4f8; background:transparent; border:1px solid #334155;"
-            " border-radius:4px; font-size:11px; }"
-        )
+        self.btn_toggle.setObjectName("tool-toggle")
         self.btn_toggle.clicked.connect(self.toggle)
         row.addWidget(self._summary, stretch=1)
         row.addWidget(self.btn_toggle)
         lay.addLayout(row)
 
         self._detail = QLabel()
+        self._detail.setObjectName("tool-detail")
         self._detail.setTextFormat(Qt.TextFormat.RichText)
         self._detail.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
         self._detail.setWordWrap(True)
@@ -105,6 +104,7 @@ class ThinkingBox(QFrame):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self.setObjectName("thinking-box")
         self._buf = ""
         lay = QVBoxLayout(self)
         lay.setContentsMargins(6, 4, 6, 4)
@@ -112,19 +112,16 @@ class ThinkingBox(QFrame):
         self.btn_toggle = QPushButton("思考 ∧")
         self.btn_toggle.setFixedWidth(64)
         self.btn_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_toggle.setStyleSheet(
-            "QPushButton { color:#8a99a8; background:transparent; border:none;"
-            " font-size:11px; }"
-        )
+        self.btn_toggle.setObjectName("thinking-toggle")
         self._expanded = True
         self.btn_toggle.clicked.connect(self.toggle)
         header.addStretch(1)
         header.addWidget(self.btn_toggle)
         lay.addLayout(header)
         self._body = QLabel()
+        self._body.setObjectName("thinking-body")
         self._body.setWordWrap(True)
         self._body.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
-        self._body.setStyleSheet("color:#8a99a8; font-size:11px;")
         lay.addWidget(self._body)
 
     def add_delta(self, t: str) -> None:
@@ -167,14 +164,11 @@ class ChatPane(QScrollArea):
 
         # 悬浮「↓」pill：viewport 子部件（滚动不带走），贴右下角、不占布局行
         self._back_btn = QPushButton("↓")
+        self._back_btn.setObjectName("back-pill")
         self._back_btn.setFixedSize(34, 34)
         self._back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._back_btn.setText("↓")
         self._back_btn.setToolTip("回到底部")
-        self._back_btn.setStyleSheet(
-            "QPushButton { background:#1565c0; color:white; border-radius:17px;"
-            " font-size:16px; font-weight:bold; } QPushButton:hover { background:#1976d2; }"
-        )
         self._back_btn.clicked.connect(self.snap_to_bottom)
         self._back_btn.setParent(self.viewport())
         self._back_btn.setVisible(False)
@@ -190,8 +184,8 @@ class ChatPane(QScrollArea):
         ph = QLabel(
             "新会话\n在下方输入框里输入消息开始对话（Enter 发送，Shift+Enter 换行）"
         )
+        ph.setObjectName("pane-placeholder")
         ph.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        ph.setStyleSheet("color:#5c6773; font-size:13px;")
         ph.setContentsMargins(0, 80, 0, 0)
         return ph
 
@@ -216,10 +210,10 @@ class ChatPane(QScrollArea):
         self._close_thinking()
         self._hide_placeholder()
         l = QLabel(f"[你] {text}")
+        l.setObjectName("bub-user")
         l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
         l.setWordWrap(True)
         l.setTextFormat(Qt.TextFormat.PlainText)
-        l.setStyleSheet("color:#e8e8e8; background:#1f3a5f; border-radius:4px; padding:6px;")
         self._insert(l)
         if image_paths:
             self._insert(self._image_row(image_paths))
@@ -251,10 +245,10 @@ class ChatPane(QScrollArea):
         self._close_thinking()
         self._hide_placeholder()
         l = QLabel(md_render.md_to_qt_html(text))
+        l.setObjectName("bub-ai")
         l.setTextFormat(Qt.TextFormat.RichText)
         l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
         l.setWordWrap(True)
-        l.setStyleSheet("background:#101820; border-radius:4px; padding:6px;")
         self._insert(l)
         self._follow()
 
@@ -269,8 +263,8 @@ class ChatPane(QScrollArea):
     def append_subagent(self, name, status, depth=0) -> None:
         self._hide_placeholder()
         l = QLabel(f"{'  ' * depth}[{name}] {status}")
+        l.setObjectName("line-sub")
         l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
-        l.setStyleSheet("color:#ffd75e; font-size:12px;")
         self._insert(l)
         self._follow()
 
@@ -291,10 +285,10 @@ class ChatPane(QScrollArea):
         self._ai_buf += delta
         if self._ai_label is None:
             self._ai_label = QLabel()
+            self._ai_label.setObjectName("bub-ai")
             self._ai_label.setTextFormat(Qt.TextFormat.RichText)
             self._ai_label.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
             self._ai_label.setWordWrap(True)
-            self._ai_label.setStyleSheet("background:#101820; border-radius:4px; padding:6px;")
             self._hide_placeholder()
             self._insert(self._ai_label)
         if self.render_strategy == "instant":
