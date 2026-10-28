@@ -68,7 +68,17 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
     if config is None:
         auto_init_project()
-        config = load_config()
+        # GUI 自配层喂内核：无项目 .env 时必需键全来自向导 LLM 配置（不落明文）；
+        # TAVILY 可空（搜索工具未配置时温和提示，不阻断启动）。
+        overrides = None
+        if llm is not None:
+            overrides = {
+                "BASE_URL": llm.base_url,
+                "API_KEY": llm.api_key,
+                "MODEL_ID": llm.model_id,
+                "TAVILY_KEY": "",
+            }
+        config = load_config(env_overrides=overrides)
 
     model, label = None, ""
     if llm is not None:

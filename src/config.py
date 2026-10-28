@@ -134,11 +134,17 @@ def load_config(
     env_file: Path | None = None,
     json_file: Path | None = None,
     project_root: Path | None = None,
+    *,
+    env_overrides: dict[str, str] | None = None,
 ) -> Config:
     """加载 .env + jarvis.json，产出 Config。
 
     配置合并：~/.jarvis/jarvis.json（全局默认）+ 项目 jarvis.json（覆盖全局）。
     未显式传入路径时：从 cwd 发现 project_root，再解析 jarvis.json / .env。
+
+    env_overrides（GUI 自配层）：必填键可由调用方直接提供（key 大小写不敏感），
+    覆盖 .env 同名字段；.env 文件缺失不再抛 FileNotFoundError（= 无项目 .env，
+    必需键全靠 overrides 或默认环境），仍缺键时 KeyError 提示。
     """
     root = Path(project_root).resolve() if project_root else discover_project_root()
     if json_file is None:
@@ -159,11 +165,13 @@ def load_config(
         if fallback.is_file():
             env_file = fallback
 
-    env = parse_env_file(env_file)
+    env = parse_env_file(env_file) if env_file.is_file() else {}
+    if env_overrides:
+        env = {**env, **{str(k).upper(): str(v) for k, v in env_overrides.items()}}
 
     missing = [k for k in REQUIRED_ENV_KEYS if k not in env]
     if missing:
-        raise KeyError(f"缺少必需配置项（.env）: {', '.join(missing)}")
+        raise KeyError(f"缺少必需配置项（.env 或 env_overrides）: {', '.join(missing)}")
 
     data = _load_json_file(json_file)
 
