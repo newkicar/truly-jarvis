@@ -52,12 +52,6 @@ class InputBar(QWidget):
         row.addWidget(self.btn_send)
 
         self.edit.installEventFilter(self)
-        row = QHBoxLayout(self)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.addWidget(self.edit, stretch=1)
-        row.addWidget(self.btn_cancel)
-        row.addWidget(self.btn_send)
-
         self._refit()
 
     # ---- 高度自适应（1→5 行，超限内滚）

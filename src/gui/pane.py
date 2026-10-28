@@ -182,13 +182,28 @@ class ChatPane(QScrollArea):
 
         self.verticalScrollBar().valueChanged.connect(self._on_scroll)
 
+        # 空会话占位（首条 user/AI/工具内容出现即隐藏；回放/undo 重建后若空则复现）
+        self._placeholder = QLabel(
+            "新会话\n在下方输入框里输入消息开始对话（Enter 发送，Shift+Enter 换行）"
+        )
+        self._placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._placeholder.setStyleSheet("color:#5c6773; font-size:13px;")
+        self._placeholder.setContentsMargins(0, 80, 0, 0)
+        self._insert(self._placeholder)
+
     # ---- 块追加
     def _insert(self, w: QWidget) -> None:
         # 插到 spacer 之前（保持 spacer 永远在底部 stretch）
         self._vbox.insertWidget(self._vbox.count() - 1, w)
 
+    def _hide_placeholder(self) -> None:
+        ph = getattr(self, "_placeholder", None)
+        if ph is not None and not ph.isHidden():  # isHidden（isVisible 在未 show 时恒 False）
+            ph.hide()
+
     def append_user(self, text: str, image_paths: list[str] | None = None) -> None:
         self._close_thinking()
+        self._hide_placeholder()
         l = QLabel(f"[你] {text}")
         l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
         l.setWordWrap(True)
@@ -223,6 +238,7 @@ class ChatPane(QScrollArea):
         if not text:
             return
         self._close_thinking()
+        self._hide_placeholder()
         l = QLabel(md_render.md_to_qt_html(text))
         l.setTextFormat(Qt.TextFormat.RichText)
         l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
@@ -234,11 +250,13 @@ class ChatPane(QScrollArea):
     def append_tool(self, name, args, err, output, depth=0) -> None:
         """工具行 = 一行摘要 +「＋ 详情」展开钮（默认折叠，工单 06）。"""
         self._close_thinking()
+        self._hide_placeholder()
         w = ToolLineWidget(str(name), str(args), bool(err), str(output or ""), depth)
         self._insert(w)
         self._follow()
 
     def append_subagent(self, name, status, depth=0) -> None:
+        self._hide_placeholder()
         l = QLabel(f"{'  ' * depth}[{name}] {status}")
         l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
         l.setStyleSheet("color:#ffd75e; font-size:12px;")
@@ -266,6 +284,7 @@ class ChatPane(QScrollArea):
             self._ai_label.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
             self._ai_label.setWordWrap(True)
             self._ai_label.setStyleSheet("background:#101820; border-radius:4px; padding:6px;")
+            self._hide_placeholder()
             self._insert(self._ai_label)
         if self.render_strategy == "instant":
             self._ai_label.setText(md_render.md_to_qt_html(self._ai_buf))
@@ -293,6 +312,7 @@ class ChatPane(QScrollArea):
         self._follow()
 
     def append_card(self, card: QWidget) -> None:
+        self._hide_placeholder()
         self._insert(card)
         self._follow()
 

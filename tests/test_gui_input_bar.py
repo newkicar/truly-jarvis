@@ -55,3 +55,16 @@ def test_shift_enter_not_intercepted(qtbot):
     bar.edit.setPlainText("a")
     ev = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key_Return, Qt.ShiftModifier)
     assert not bar.eventFilter(bar.edit, ev)  # 放行（换行交 QPlainTextEdit 原生处理）
+
+
+def test_input_bar_single_layout_no_double_set(qtbot):
+    """回归（2026-10-28）：__init__ 曾对 InputBar 两次 setLayout（QHBoxLayout(self)×2）
+    → Qt 告警 'Attempting to add QLayout ... which already has a layout'，且布局崩坏
+    输入条塌成 0 高不可见。单一布局后：控件有父布局 + 行高 > 0。"""
+    bar = InputBar()
+    qtbot.addWidget(bar)
+    assert bar.layout() is not None
+    assert bar.edit.parentWidget() is bar
+    assert bar.btn_send.parentWidget() is bar
+    bar.show()
+    assert bar.sizeHint().height() > 0

@@ -148,3 +148,26 @@ def test_pane_thinking_delta_creates_box_once(qtbot):
     assert p._thinking_box is None
     p.thinking_delta("c")
     assert p._thinking_box is not None and p._thinking_box._body.text() == "c"
+
+
+def test_new_session_placeholder_shown_then_hidden(qtbot):
+    """空新会话显示占位引导；首条 user/AI 内容出现即隐藏（2026-10-28 报障：
+    点「+ 新会话」只见黑屏空面板，无引导）。"""
+    from src.gui.pane import ChatPane
+
+    pane = ChatPane("t-empty")
+    qtbot.addWidget(pane)
+    assert not pane._placeholder.isHidden()  # isVisible 需 show()；用 isHidden 判显隐
+    assert "新会话" in pane._placeholder.text()
+    pane.append_user("hi")
+    assert pane._placeholder.isHidden()
+
+
+def test_rebuilt_empty_history_placeholder_stays(qtbot):
+    """回放/undo 重建 0 条记录的会话：占位保持可见（不出现死黑屏）。"""
+    from src.gui.pane import ChatPane
+
+    pane = ChatPane("t-empty2")
+    qtbot.addWidget(pane)
+    pane.rebuild_from_records([])
+    assert not pane._placeholder.isHidden()
