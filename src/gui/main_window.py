@@ -430,8 +430,13 @@ class MainWindow(QMainWindow):
             self._switch_to(it.data(Qt.UserRole))
 
     def refresh_sessions(self) -> None:
+        # 排队的 refresh_sessions 信号可能在 runtime.close() 之后才入事件循环：
+        # DB 查询异常一律吞掉（teardown 时序竞态），保留现有列表返回
+        try:
+            tids = self.presenter.session_ids()
+        except Exception:  # noqa: BLE001
+            return
         self.session_list.clear()
-        tids = self.presenter.session_ids()
         if self.active_tid and self.active_tid not in tids:
             tids = [self.active_tid] + tids
         for tid in tids:

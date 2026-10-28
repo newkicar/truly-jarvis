@@ -45,8 +45,10 @@ class GuiRuntime:
     cancel_reasons: dict = field(default_factory=dict)
     saver_ctx: Any = None
     gate: "SchedulerGate" = None
+    closed: bool = False  # close() 后 checkpointer 连接已关，DB 查询须降级
 
     def close(self) -> None:
+        self.closed = True
         if self.saver_ctx is not None:
             self.saver_ctx.__exit__(None, None, None)
             self.saver_ctx = None
@@ -187,9 +189,6 @@ class GuiPresenter:
     def rename_session(self, tid: str, title: str) -> None:
         self.session_registry.rename(tid, title, ai_generated=False)
         self.bridge.refresh_sessions.emit()
-
-    def session_label(self, tid: str) -> str:
-        return self.session_registry.label(self.runtime.agent, tid)
 
     def _maybe_name(self, tid: str, ok: bool) -> None:
         """首轮成功结束 → 后台 AI 命名（已有短名/摘要的不动；失败静默回落）。"""
@@ -400,7 +399,16 @@ class GuiPresenter:
         return f"session-{uuid.uuid4().hex[:8]}"
 
     def session_ids(self) -> list[str]:
+        # close() 后（或排队的 refresh_sessions 信号晚到）查已关 DB 会炸穿事件循环
+        if getattr(self.runtime, "closed", False):
+            return []
         return commands.session_thread_ids(self.runtime.agent)
+
+    # ---- 会话标签（registry 优先；DB 已关时退化为 tid 短名）
+    def session_label(self, tid: str) -> str:
+        if getattr(self.runtime, "closed", False):
+            return tid
+        return self.session_registry.label(self.runtime.agent, tid)
 
     # ---- skill 补全池（工单 10：逐次重扫不缓存，新 skill 即现；异常 → []）
     def skills_catalog(self) -> list:

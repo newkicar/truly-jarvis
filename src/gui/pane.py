@@ -182,13 +182,21 @@ class ChatPane(QScrollArea):
 
         self.verticalScrollBar().valueChanged.connect(self._on_scroll)
 
-        # 空会话占位（首条 user/AI/工具内容出现即隐藏；回放/undo 重建后若空则复现）
-        self._placeholder = QLabel(
+        # 空会话占位（首条内容出现即从布局移除；rebuild 为空时复原）
+        self._placeholder: QLabel | None = None
+        self._add_placeholder()
+
+    def _make_placeholder(self) -> "QLabel":
+        ph = QLabel(
             "新会话\n在下方输入框里输入消息开始对话（Enter 发送，Shift+Enter 换行）"
         )
-        self._placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._placeholder.setStyleSheet("color:#5c6773; font-size:13px;")
-        self._placeholder.setContentsMargins(0, 80, 0, 0)
+        ph.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ph.setStyleSheet("color:#5c6773; font-size:13px;")
+        ph.setContentsMargins(0, 80, 0, 0)
+        return ph
+
+    def _add_placeholder(self) -> None:
+        self._placeholder = self._make_placeholder()
         self._insert(self._placeholder)
 
     # ---- 块追加
@@ -197,9 +205,12 @@ class ChatPane(QScrollArea):
         self._vbox.insertWidget(self._vbox.count() - 1, w)
 
     def _hide_placeholder(self) -> None:
-        ph = getattr(self, "_placeholder", None)
-        if ph is not None and not ph.isHidden():  # isHidden（isVisible 在未 show 时恒 False）
-            ph.hide()
+        """首条内容出现：占位**移出布局**（不留 item 0 空位干扰索引），置 None。"""
+        ph = self._placeholder
+        if ph is not None:
+            self._vbox.removeWidget(ph)
+            ph.setParent(None)
+            self._placeholder = None
 
     def append_user(self, text: str, image_paths: list[str] | None = None) -> None:
         self._close_thinking()
@@ -326,6 +337,8 @@ class ChatPane(QScrollArea):
             elif r.kind == "tool" and r.tool is not None:
                 t = r.tool
                 self.append_tool(t.name, t.args_text, t.error, t.output, t.depth)
+        if not records and self._placeholder is None:
+            self._add_placeholder()  # 重建为空（undo 撤到空白）→ 复原占位
         self.stick = True
         self.snap_to_bottom()
 
