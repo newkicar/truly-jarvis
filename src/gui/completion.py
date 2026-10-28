@@ -95,11 +95,12 @@ class CompletionPopup(QListWidget):
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setWindowFlags(Qt.ToolTip)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.itemClicked.connect(self._on_item_clicked)
 
     def show_items(self, items: tuple[SuggestionItem, ...], no_match: bool = False) -> None:
-        key = (tuple(i.insert for i in items), no_match)
-        if self._last_shown == key:
-            return  # 候选未变不重建（逐键刷新的卡顿主因之一）
+        key = (tuple((i.insert, i.label) for i in items), no_match)
+        if self._last_shown == key and self.isVisible():
+            return  # 候选未变且弹层仍开着不重建；被 hide 过（Tab 接受/Esc/删除）必须重显
         self._last_shown = key
         self.clear()
         for it in items:
@@ -113,10 +114,16 @@ class CompletionPopup(QListWidget):
             self.addItem(miss)
         self.setVisible(bool(items) or no_match)
 
-    def accept_top(self) -> None:
-        """首个*可选*候选（No matching items 行不可选）。无候选 = 空操作。"""
+    def _on_item_clicked(self, item: QListWidgetItem) -> None:
+        """点击候选 = 接受（鼠标流；No matching 行无选中标旗，不受影响）。"""
+        if item.flags() & Qt.ItemFlag.ItemIsSelectable:
+            self._on_accept(item.data(_USER_ROLE))
+
+    def accept_top(self) -> bool:
+        """首个*可选*候选（No matching items 行不可选）。接受=True，无候选=False。"""
         for i in range(self.count()):
             it = self.item(i)
             if it.flags() & Qt.ItemFlag.ItemIsSelectable:
                 self._on_accept(it.data(_USER_ROLE))
-                return
+                return True
+        return False

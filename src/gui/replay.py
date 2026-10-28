@@ -49,7 +49,7 @@ def thread_record(agent: Any, thread_id: str, max_messages: int = 500) -> list[R
 
     state = agent.get_state(commands.thread_config(thread_id))
     messages = ((state.values or {}).get("messages")) or [] if state else []
-    if len(messages) > max_messages:
+    if max_messages is not None and len(messages) > max_messages:
         messages = messages[-max_messages:]
 
     pending: dict[str, tuple[str, str]] = {}  # call_id → (name, args_text)

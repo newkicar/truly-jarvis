@@ -200,9 +200,15 @@ class GuiPresenter:
         self.bridge.refresh_sessions.emit()
 
     def clone_session(self, tid: str) -> tuple[str, str]:
-        """检查点整线程复制 + 注册表「原名-副本」。返回 (说明, 新 tid)。"""
+        """检查点整线程复制 + 注册表「原名-副本」。返回 (说明, 新 tid)。
+
+        复制失败不落注册表（不留「有名字没记录」的幽灵会话）：返回 (错误文案, "")。
+        """
         new_tid = self.new_session_id()
-        self.runtime.checkpointer.copy_thread(tid, new_tid)
+        try:
+            self.runtime.checkpointer.copy_thread(tid, new_tid)
+        except Exception as exc:  # noqa: BLE001
+            return f"克隆失败（检查点复制出错：{exc}）", ""
         title = (self.session_registry.get(tid) or {}).get("title", "").strip()
         if not title:
             title = commands.session_label(self.runtime.agent, tid)

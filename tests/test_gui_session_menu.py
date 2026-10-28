@@ -230,3 +230,66 @@ def test_delete_active_session_confirms_and_switches(qapp, monkeypatch):
     assert answers == ["ask"]
     assert saver.deleted == [tid]
     assert win.active_tid != tid  # 活动会话被删 → 切到新会话
+
+
+# ---------------------------------------------------------------- code-review 回归
+def test_export_uses_full_history_not_truncated(qapp):
+    """分享/下载 = 「全部」对话内容：thread_record 必须 max_messages=None（默认 500
+    条截断会把长会话截短——spec 明确要求全部）。"""
+    import src.gui.replay as replay_mod
+    import unittest.mock as mock
+
+    from src.gui.session_export import session_markdown
+
+    class _Agent:
+        def get_state(self, config):
+            return None
+
+    seen = {}
+
+    def _rec(agent, tid, max_messages=500):
+        seen["mm"] = max_messages
+        from src.gui.replay import Record
+        return [Record("user", "u")]
+
+    with mock.patch.object(replay_mod, "thread_record", _rec):
+        session_markdown(_Agent(), "t", "t")
+    assert seen["mm"] is None, f"导出被 500 条截断（max_messages={seen['mm']}）"
+
+
+def test_export_fence_escaping(qapp):
+    """工具参数里含 ``` 时用四反引号围栏（不死围栏）。"""
+    import src.gui.replay as replay_mod
+    import unittest.mock as mock
+
+    from src.gui.replay import Record, ToolRecord
+    from src.gui.session_export import session_markdown
+
+    def _rec(agent, tid, max_messages=500):
+        return [Record("tool", tool=ToolRecord("execute", "a ``` b", False, "out", 0))]
+
+    class _Agent:
+        def get_state(self, config):
+            return None
+
+    with mock.patch.object(replay_mod, "thread_record", _rec):
+        md = session_markdown(_Agent(), "t", "t")
+    assert "````json" in md and md.index("````json") < md.index("a ``` b") < md.rindex("````")  # 四反引号围栏包裹含 ``` 的正文
+
+
+def test_clone_failure_leaves_no_ghost_session(qapp, monkeypatch):
+    """copy_thread 失败 → 不落注册表（无「有名字没记录」的幽灵会话），返回错误文案。"""
+    rt = _fake_runtime()
+    p = GuiPresenter(rt, UiBridge())
+    p.session_registry.rename("t-src", "源", ai_generated=False)
+
+    class _BoomSaver:
+        def copy_thread(self, s, d):
+            raise OSError("db 忙")
+
+    rt.checkpointer = _BoomSaver()
+    note, new_tid = p.clone_session("t-src")
+    assert new_tid == ""
+    assert "克隆失败" in note
+    assert p.session_registry.get("t-src") is not None
+    assert all("副本" not in str(v) for v in p.session_registry.load().values())

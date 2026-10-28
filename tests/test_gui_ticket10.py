@@ -402,3 +402,60 @@ def test_completion_skills_cached_within_ttl(monkeypatch):
     win._refresh_completion_now()
     win._refresh_completion_now()
     assert calls["n"] == 1, "TTL 内应复用 skill 缓存"
+
+
+def test_popup_reappears_after_dismiss_same_query(qapp):
+    """回归（code-review 发现）：Esc 关掉弹层后打回同一查询串，弹层必须重新出现
+    （show_items 的「候选未变跳过重建」缓存曾把 hide 态也吞掉 → 打字又失联）。"""
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QKeyEvent
+
+    rt = _fake_runtime()
+    p = GuiPresenter(rt, UiBridge())
+    win = MainWindow(p, p.bridge)
+    win.show()
+    qapp.processEvents()
+    edit = win.input_bar.edit
+    edit.setPlainText("/se")
+    edit.moveCursor(QTextCursor.MoveOperation.End)
+    win._refresh_completion_now()
+    qapp.processEvents()
+    assert win.completion_popup.isVisible()
+    # Esc 关掉
+    ev = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key_Escape, Qt.KeyboardModifiers.NoModifier)
+    assert win.input_bar.eventFilter(edit, ev)
+    assert not win.completion_popup.isVisible()
+    # 删到 /se 再打回 /se（或 Tab 接受后退回同串）：同候选必须重显
+    edit.setPlainText("/")
+    edit.moveCursor(QTextCursor.MoveOperation.End)
+    win._refresh_completion_now()
+    qapp.processEvents()
+    edit.setPlainText("/se")
+    edit.moveCursor(QTextCursor.MoveOperation.End)
+    win._refresh_completion_now()
+    qapp.processEvents()
+    assert win.completion_popup.isVisible(), "同一查询被 hide 后未重显（缓存吞掉）"
+
+
+def test_popup_click_accepts_item(qapp):
+    """点击候选 = 接受（mouse 流；ToolTip/NoFocus 下键盘不进气泡，点击是主路）。"""
+    from PySide6.QtCore import Qt
+
+    rt = _fake_runtime()
+    p = GuiPresenter(rt, UiBridge())
+    win = MainWindow(p, p.bridge)
+    win.show()
+    qapp.processEvents()
+    edit = win.input_bar.edit
+    edit.setPlainText("/se")
+    edit.moveCursor(QTextCursor.MoveOperation.End)
+    win._refresh_completion_now()
+    qapp.processEvents()
+    pop = win.completion_popup
+    assert pop.count() >= 1
+    first = pop.item(0)
+    assert first.flags() & Qt.ItemFlag.ItemIsSelectable
+    pop.itemClicked.emit(first)  # 模拟鼠标点击候选行 → _on_item_clicked → accept
+    qapp.processEvents()
+    assert edit.toPlainText().startswith("/ses")  # 首项已插入
+    assert not pop.isVisible()

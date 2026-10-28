@@ -2,15 +2,16 @@
 
 数据源 = replay.thread_record（检查点 user/AI 文本 + 工具行配对），
 纯函数：同一会话同一时刻输出恒等（测试可断言结构，无 Qt/IO 依赖）。
+导出 = 全部对话内容（max_messages=None，不截断）。
 """
 from __future__ import annotations
 
 from src.gui import replay
 
 
-def _md_escape_codeblock(text: str) -> str:
-    """正文里的 ``` 与导出用的围栏冲突时加长围栏（四反引号包裹）。"""
-    return text
+def _fence(body: str) -> str:
+    """代码围栏：正文含 ``` 时用四反引号包裹，防围栏冲突。"""
+    return "````" if "```" in body else "```"
 
 
 def session_markdown(agent, thread_id: str, title: str, *, now_text: str = "") -> str:
@@ -20,7 +21,7 @@ def session_markdown(agent, thread_id: str, title: str, *, now_text: str = "") -
     工具调用挂在所属 AI 回复下（### 工具：name + 参数/结果，错误标注）。
     now_text 缺省 = 不写时间戳（测试确定性；GUI 传入 datetime 文本）。
     """
-    records = replay.thread_record(agent, thread_id)
+    records = replay.thread_record(agent, thread_id, max_messages=None)
     lines: list[str] = []
     meta = [f"会话 ID：`{thread_id}`"]
     if now_text:
@@ -43,9 +44,10 @@ def session_markdown(agent, thread_id: str, title: str, *, now_text: str = "") -
             indent = "  " * t.depth
             lines.append(f"{indent}### 工具：{t.name}")
             lines.append("")
-            lines.append(f"{indent}```json")
+            f_args = _fence(t.args_text)
+            lines.append(f"{indent}{f_args}json")
             lines.append(t.args_text)
-            lines.append(f"{indent}```")
+            lines.append(f"{indent}{f_args}")
             if t.error:
                 lines.append(f"{indent}❌ 结果（错误）：")
             else:

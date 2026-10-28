@@ -398,15 +398,7 @@ class MainWindow(QMainWindow):
 
     def _completion_tab_accept(self) -> bool:
         """输入框裸 Tab：弹层开着且有候选 → 接受首项（True 消费）；否则 False 原生。"""
-        pop = self.completion_popup
-        if not pop.isVisible():
-            return False
-        for i in range(pop.count()):
-            it = pop.item(i)
-            if it.flags() & Qt.ItemFlag.ItemIsSelectable:
-                pop.accept_top()  # 内部走 _on_completion_accept（应用+收起+重解析）
-                return True
-        return False
+        return self.completion_popup.accept_top() if self.completion_popup.isVisible() else False
 
     def _completion_esc_dismiss(self) -> bool:
         """输入框裸 Esc：弹层开着 → 关掉它（保留文本）；否则不消费。"""
@@ -499,22 +491,19 @@ class MainWindow(QMainWindow):
         except Exception:  # noqa: BLE001
             return
         # 归档过滤 + 置顶优先（同组内保持原序；★ 置顶 / 📁 归档 前缀）
+        reg = self.presenter.session_registry
         pinned: list[str] = []
         others: list[str] = []
-        visible: list[str] = []
         for tid in tids:
-            reg = self.presenter.session_registry
             if reg.is_archived(tid) and not self._show_archived:
                 continue
-            visible.append(tid)
             (pinned if reg.is_pinned(tid) else others).append(tid)
-        ordered = [t for t in pinned if t in visible] + [t for t in others if t in visible]
+        ordered = pinned + others
         if self.active_tid and self.active_tid not in ordered:
             ordered = [self.active_tid] + ordered
         self.session_list.clear()
         for tid in ordered:
             label = self.presenter.session_label(tid)
-            reg = self.presenter.session_registry
             mark = "▸ " if tid == self.active_tid else "   "
             pin = "★ " if reg.is_pinned(tid) else ""
             arch = "📁 " if reg.is_archived(tid) else ""
@@ -607,16 +596,14 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"已导出 {path}")
 
     def _clone_session(self, tid: str) -> None:
-        note, new_tid = self.presenter.clone_session(tid)
+        note, _new_tid = self.presenter.clone_session(tid)
         self.status_label.setText(note)
 
     def _archive_session(self, tid: str, on: bool) -> None:
-        self.presenter.archive_session(tid, on)
+        self.presenter.archive_session(tid, on)  # presenter 已发 refresh_sessions 信号
         # 归档且当前隐藏归档项 → 活动会话被移出列表时切到新会话
         if on and not self._show_archived and tid == self.active_tid:
             self._switch_to(self.presenter.new_session_id())
-        elif not on:
-            self.refresh_sessions()
 
     def _delete_session(self, tid: str) -> None:
         from PySide6.QtWidgets import QMessageBox
