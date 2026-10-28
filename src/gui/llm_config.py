@@ -113,41 +113,55 @@ class DpapiKeyStore:
         self._dir = secret_dir or (default_home() / "secrets")
 
     def _protect(self, secret: str) -> bytes:
+        """CryptProtectData（user-scope）。
+
+        注意两个坑（本机实测）：
+        - 第 1 参是 PDATA_BLOB 结构指针（cbData+pbData），不是裸 buffer——
+          传裸 buffer/None 会报 Win32 87（ERROR_INVALID_PARAMETER）；
+        - szDataDescription 是 LPCWSTR：声明 c_char_p 传 bytes 同样 87。
+        """
         import ctypes
+        from ctypes import c_char, c_uint32, c_void_p
 
         class _BLOB(ctypes.Structure):
-            _fields_ = [("cbData", ctypes.c_uint32), ("pbData", ctypes.POINTER(ctypes.c_char))]
+            _fields_ = [("cbData", c_uint32), ("pbData", ctypes.POINTER(c_char))]
 
-        buf = ctypes.create_string_buffer(secret.encode("utf-8"))
+        data = secret.encode("utf-8")
+        buf = ctypes.create_string_buffer(data, len(data))
+        inb = _BLOB(len(data), ctypes.cast(buf, ctypes.POINTER(c_char)))
         out = _BLOB(0, None)
         crypt = ctypes.windll.crypt32
         crypt.CryptProtectData.argtypes = [
-            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p,
-            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32, ctypes.POINTER(_BLOB),
+            ctypes.POINTER(_BLOB), ctypes.c_wchar_p, ctypes.POINTER(_BLOB),
+            c_void_p, c_void_p, c_uint32, ctypes.POINTER(_BLOB),
         ]
+        crypt.CryptProtectData.restype = c_uint32
         crypt.CryptUnprotectData.argtypes = [
-            ctypes.POINTER(_BLOB), ctypes.POINTER(ctypes.c_char_p),
-            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32, ctypes.POINTER(_BLOB),
+            ctypes.POINTER(_BLOB), ctypes.POINTER(ctypes.c_wchar_p), ctypes.POINTER(_BLOB),
+            c_void_p, c_void_p, c_uint32, ctypes.POINTER(_BLOB),
         ]
-        if not crypt.CryptProtectData(None, b"jarvis-llm", buf, None, None, 0, ctypes.byref(out)):
-            raise OSError("CryptProtectData 失败")
+        crypt.CryptUnprotectData.restype = c_uint32
+        if not crypt.CryptProtectData(ctypes.byref(inb), "jarvis-llm", None, None, None, 0, ctypes.byref(out)):
+            raise OSError(f"CryptProtectData 失败（Win32 {ctypes.GetLastError()}）")
         return ctypes.string_at(out.pbData, out.cbData)
 
     def _unprotect(self, blob: bytes) -> str:
         import ctypes
+        from ctypes import c_char, c_uint32, c_void_p
 
         class _BLOB(ctypes.Structure):
-            _fields_ = [("cbData", ctypes.c_uint32), ("pbData", ctypes.POINTER(ctypes.c_char))]
+            _fields_ = [("cbData", c_uint32), ("pbData", ctypes.POINTER(c_char))]
 
-        inb = _BLOB(len(blob), ctypes.cast(ctypes.create_string_buffer(blob, len(blob)), ctypes.POINTER(ctypes.c_char)))
+        inb = _BLOB(len(blob), ctypes.cast(ctypes.create_string_buffer(blob, len(blob)), ctypes.POINTER(c_char)))
         out = _BLOB(0, None)
         crypt = ctypes.windll.crypt32
         crypt.CryptUnprotectData.argtypes = [
-            ctypes.POINTER(_BLOB), ctypes.POINTER(ctypes.c_char_p),
-            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32, ctypes.POINTER(_BLOB),
+            ctypes.POINTER(_BLOB), ctypes.POINTER(ctypes.c_wchar_p), ctypes.POINTER(_BLOB),
+            c_void_p, c_void_p, c_uint32, ctypes.POINTER(_BLOB),
         ]
+        crypt.CryptUnprotectData.restype = c_uint32
         if not crypt.CryptUnprotectData(ctypes.byref(inb), None, None, None, None, 0, ctypes.byref(out)):
-            raise OSError("CryptUnprotectData 失败")
+            raise OSError(f"CryptUnprotectData 失败（Win32 {ctypes.GetLastError()}）")
         return ctypes.string_at(out.pbData, out.cbData).decode("utf-8")
 
     def set(self, ref: str, secret: str) -> None:

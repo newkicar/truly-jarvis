@@ -80,7 +80,17 @@ class LlmWizard(QWizard):
 
             QMessageBox.warning(self, "无法保存", msg)
             return
-        self.save()
+        try:
+            self.save()
+        except Exception as exc:  # noqa: BLE001 - 存储层故障给可行动提示，不裸露 traceback
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.critical(
+                self, "保存失败",
+                f"凭据/配置写入失败：{exc}\n\n"
+                "可改用项目 .env（BASE_URL/API_KEY/MODEL_ID）方式配置后重启。",
+            )
+            return
         super().accept()
 
     # ---- 探测（worker 线程跑，信号回主线程）

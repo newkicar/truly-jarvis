@@ -1,5 +1,6 @@
 """工单 02 — LLM 自配层：五档探测纯函数 + config.json 存取 + key_ref 悬空 + 损坏自愈。"""
 import json
+import os
 
 import pytest
 
@@ -140,3 +141,18 @@ def test_wizard_validation(tmp_home_dir):
     # 探测不支持的网关允许空模型（勾选手填后 model 必填，此处未勾 → 报错）
     ok, msg = llm_config.validate_wizard(LlmConfig("https://gw/v1", "sk", ""))
     assert not ok
+
+
+@pytest.mark.skipif(os.name != "nt", reason="DPAPI 仅 Windows（用户级加密）")
+def test_dpapi_store_roundtrip(tmp_home_dir, monkeypatch):
+    """真实 DPAPI 路径回归：CryptProtectData 第 1 参必须是 PDATA_BLOB 结构指针，
+    且 szDataDescription 是宽字符串——裸 buffer/bytes 会 Win32 87 静默失败。
+    set→get 全链路，secrets 目录放测试 home（不碰用户真目录）。"""
+    from pathlib import Path
+
+    monkeypatch.setenv("JARVIS_GUI_HOME", tmp_home_dir)
+    store = llm_config.DpapiKeyStore(Path(tmp_home_dir) / "secrets")
+    store.set(llm_config.KEY_REF, "sk-dpapi-roundtrip")
+    assert store.get(llm_config.KEY_REF) == "sk-dpapi-roundtrip"
+    store.delete(llm_config.KEY_REF)
+    assert store.get(llm_config.KEY_REF) is None
