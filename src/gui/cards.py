@@ -42,6 +42,23 @@ def _clip(v: Any, n: int) -> str:
     return s if len(s) <= n else s[:n] + "…"
 
 
+def _soft_break(text: str, every: int = 60) -> str:
+    """长无空格 token 每 every 字符强制断行。
+
+    PySide6 6.12 的 QLabel 未暴露 WordWrapMode.BreakWord：不换行长 token 会把
+    QLabel minimumSizeHint 顶到数千 px（600 字 ≈ 7200px 实证）→ 卡片最小宽把
+    会话面板/主窗口撑出屏幕（2026-10-28 报障「审批栏太宽超出界面」）。
+    显式 \\n 断行后 wordWrap 生效、最小宽塌缩到按钮行。
+    """
+    out: list[str] = []
+    for seg in str(text).split("\n"):
+        while len(seg) > every:
+            out.append(seg[:every])
+            seg = seg[every:]
+        out.append(seg)
+    return "\n".join(out)
+
+
 class ApprovalCard(QFrame):
     """codex 式内联审批卡片。on_decision(result)/on_abandon() 由 owner 注入。"""
 
@@ -65,6 +82,8 @@ class ApprovalCard(QFrame):
         self.setStyleSheet(
             "#approval_card { border:1px solid #7a5c00; border-radius:6px; background:#2a2517; }"
         )
+        # 卡片宽度随面板收缩（内容用 _soft_break 断行，不再顶出窗口）
+        self.setMinimumWidth(0)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 8, 10, 8)
 
@@ -74,23 +93,30 @@ class ApprovalCard(QFrame):
         outer.addWidget(head)
 
         if getattr(inv, "path", None):
-            p = QLabel(f"目标: {inv.path}")
+            p = QLabel(f"目标: {_soft_break(str(inv.path), 48)}")
             p.setStyleSheet("color:#bbbbbb;")
+            p.setWordWrap(True)
+            p.setMinimumWidth(0)
             outer.addWidget(p)
 
         if preview:
-            pv = QLabel(preview)
-            pv.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
-            pv.setWordWrap(True)
+            # 固定高只读编辑框：最小宽塌缩（QLabel 即使断行仍被最长行顶宽），
+            # 长 diff 内部滚动；mono 字体 + 可选鼠标选中
+            pv = QPlainTextEdit(_soft_break(preview, 48))
+            pv.setReadOnly(True)
+            pv.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
             pv.setFont(md_render.mono_font())
-            pv.setStyleSheet("color:#c8c8c8; background:#1c1c1c; border-radius:4px; padding:4px;")
+            pv.setFixedHeight(120)
+            pv.setStyleSheet(
+                "QPlainTextEdit { color:#c8c8c8; background:#1c1c1c; border-radius:4px; padding:4px; }"
+            )
             outer.addWidget(pv)
 
         note = QLabel("「放弃本轮」= 放弃本轮（工具不会执行；不是取消整个任务）")
         note.setStyleSheet("color:#888888; font-size:11px;")
         outer.addWidget(note)
 
-        btns = QHBoxLayout()
+        btns1 = QHBoxLayout()
         self.btn_approve = QPushButton("放行")
         self.btn_always = QPushButton("永久放行")
         self.btn_reject = QPushButton("拒绝")
@@ -103,9 +129,18 @@ class ApprovalCard(QFrame):
         self.btn_reject.setStyleSheet(
             "QPushButton { background:#8e2020; color:white; border-radius:4px; padding:4px 10px; }"
         )
-        for b in (self.btn_approve, self.btn_always, self.btn_reject, self.btn_edit, self.btn_giveup):
-            btns.addWidget(b)
-        outer.addLayout(btns)
+        # 两行按钮（旧 5 按钮单行最小宽 ~820px 会把面板顶出窄窗口）：
+        # 行 1 = 主操作（放行/永久放行/拒绝），行 2 = 次操作（编辑参数/放弃本轮）
+        for b in (self.btn_approve, self.btn_always, self.btn_reject):
+            b.setMinimumWidth(0)
+            btns1.addWidget(b)
+        btns2 = QHBoxLayout()
+        for b in (self.btn_edit, self.btn_giveup):
+            b.setMinimumWidth(0)
+            btns2.addWidget(b)
+        btns2.addStretch(1)
+        outer.addLayout(btns1)
+        outer.addLayout(btns2)
         outer.addWidget(self._editor_slot())
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.btn_approve.setFocus()  # 卡片打开即默认焦点（单次 Enter 完成审批）
@@ -169,10 +204,17 @@ class ApprovalCard(QFrame):
         single_line = inv.name == "execute"
         editors: list[tuple[str, "QLineEdit | QPlainTextEdit"]] = []
         for k, v in args.items():
-            kl = QLabel(f"<b>{k}</b>（原值: {_clip(v, 80)}）")
+            kl = QLabel(f"<b>{k}</b>（原值）")
             kl.setStyleSheet("color:#999999;")
             kl.setTextFormat(Qt.TextFormat.RichText)
             bl.addWidget(kl)
+            orig = QPlainTextEdit(_soft_break(_clip(v, 400), 48))
+            orig.setReadOnly(True)
+            orig.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
+            orig.setFont(md_render.mono_font())
+            orig.setFixedHeight(60)
+            orig.setStyleSheet("QPlainTextEdit { color:#6a727c; background:#181c22; }")
+            bl.addWidget(orig)
             if single_line:
                 ed: QLineEdit | QPlainTextEdit = QLineEdit(str(v or ""))
             else:

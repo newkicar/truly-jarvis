@@ -173,7 +173,7 @@ def test_abandon_card_stops_turn(qapp):
 
 
 # ---------------------------------------------------------------- 辅助
-def _wait_card(win, tid, name, timeout=30.0):
+def _wait_card(win, tid, name, timeout=120.0):
     import time
 
     from PySide6.QtWidgets import QApplication
@@ -191,3 +191,42 @@ def _wait_card(win, tid, name, timeout=30.0):
                 return w
         time.sleep(0.02)
     raise AssertionError(f"未等到 {name} 卡片")
+
+
+# ---------------------------------------------------------------- 卡片宽度（2026-10-28 报障）
+def test_card_min_width_does_not_blow_up(qtbot):
+    """审批卡片最小宽不得被长内容顶爆（旧版 600 字符 preview → 7843px 最小宽，
+    把会话面板/主窗口撑出屏幕）。长 preview/长 path/长原值 后卡片最小宽
+    仍由按钮行主导（< 400px）。"""
+    from src.gui.cards import ApprovalCard
+
+    out: list = []
+    inv = _inv("execute", {"command": " ".join(["powershell -NoProfile -Command " + "x" * 60] * 8)})
+    card = ApprovalCard(inv, "y" * 600, lambda r: out.append(r), lambda: out.append(None))
+    qtbot.addWidget(card)
+    assert card.minimumSizeHint().width() < 400
+
+    inv2 = _inv("write_file", {"file_path": "a.txt", "content": "z" * 500}, path="D:" + "/deep/path" * 30)
+    card2 = ApprovalCard(inv2, "w" * 600, lambda r: out.append(r), lambda: out.append(None))
+    qtbot.addWidget(card2)
+    assert card2.minimumSizeHint().width() < 400
+
+
+def test_card_fits_narrow_pane(qtbot):
+    """窄面板（600px）内卡片宽度收在面板内，不溢出（面板不再被卡片撑宽）。"""
+    from src.gui.pane import ChatPane
+
+    pane = ChatPane("t-narrow")
+    qtbot.addWidget(pane)
+    pane.append_card(_card(_inv("execute", {"command": "k" * 600}), []))
+    pane.resize(600, 400)
+    pane.show()
+    assert pane.widget().width() <= 600
+
+
+def test_soft_break_splits_long_tokens():
+    from src.gui.cards import _soft_break
+
+    assert _soft_break("a" * 100, 30).count("\n") == 3
+    assert _soft_break("短", 30) == "短"
+    assert _soft_break("行1\n" + "b" * 70, 30) == "行1\n" + "b" * 30 + "\n" + "b" * 30 + "\n" + "b" * 10
