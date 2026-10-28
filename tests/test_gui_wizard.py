@@ -83,3 +83,16 @@ def test_wizard_unsupported_probe_allows_empty_model(qapp, home_dir):
     w.accept()
     data = json.loads((home_dir / "config.json").read_text(encoding="utf-8"))
     assert data["llm"]["probe_supported"] is False
+
+
+def test_wizard_result_enum_contract(qapp, home_dir):
+    """PySide6 6.x 起枚举不在实例上暴露（wiz.Accepted 报 AttributeError）：
+    结果比较必须走 QDialog.DialogCode（gui_main._run_wizard 契约）。"""
+    from PySide6.QtWidgets import QDialog
+
+    w = LlmWizard(key_store=InMemoryKeyStore(), home=home_dir)
+    w.show()
+    qapp.processEvents()
+    assert not hasattr(w, "Accepted"), "PySide6 实例级枚举已移除，勿依赖"
+    w.done(QDialog.DialogCode.Accepted)
+    assert w.result() == QDialog.DialogCode.Accepted

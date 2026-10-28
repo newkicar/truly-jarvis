@@ -24,7 +24,10 @@ def _run_wizard(app) -> "object | None":
     wiz = LlmWizard(key_store=store, home=home, start_page_index=start_page, parent=None)
     wiz.show()
     wiz.exec()
-    if wiz.result() == wiz.Accepted:
+    from PySide6.QtWidgets import QDialog
+
+    # PySide6 6.x 起枚举不在实例上暴露（wiz.Accepted 不存在）→ 类级作用域枚举
+    if wiz.result() == QDialog.DialogCode.Accepted:
         return wiz.current_config()
     return None
 
