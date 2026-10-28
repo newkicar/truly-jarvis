@@ -279,3 +279,126 @@ def test_popup_shows_on_slash_and_follows_typing(qapp):
     n_filtered = pop.count()
     assert n_filtered < n_all and n_filtered >= 1
     assert any("sessions" in pop.item(i).text() for i in range(pop.count()))
+
+
+# ---------------------------------------------------------------- 弹层键盘流（2026-10-28 报障：打字被弹层抢走）
+def test_popup_does_not_grab_keyboard(qapp):
+    """弹层必须是 ToolTip 浮层 + NoFocus（不抢键盘：Qt.ToolTip 语义 = 抓鼠标
+    不抓键盘，无标题栏/窗口按钮；旧 Qt.Popup 独占键盘 → 输入框敲一个字就
+    「失联」须 Esc 才能继续打字——报障根因）。"""
+    from PySide6.QtCore import Qt
+
+    rt = _fake_runtime()
+    p = GuiPresenter(rt, UiBridge())
+    win = MainWindow(p, p.bridge)
+    win.show()
+    qapp.processEvents()
+    pop = win.completion_popup
+    assert pop.focusPolicy() == Qt.FocusPolicy.NoFocus
+    assert pop.windowFlags() & Qt.ToolTip  # ToolTip 语义：抓鼠标不抓键盘
+
+
+def test_typing_continues_while_popup_open(qapp):
+    """弹层开着时输入框仍收键：连续敲 /ses → 弹层内容随字过滤，文本持续增长
+    （旧 Popup 抢键盘：敲完 /s 后第 2 个字符进不了输入框）。"""
+    import time
+
+    rt = _fake_runtime()
+    p = GuiPresenter(rt, UiBridge())
+    win = MainWindow(p, p.bridge)
+    win.show()
+    qapp.processEvents()
+    edit = win.input_bar.edit
+    pop = win.completion_popup
+
+    def type_keys(text):
+        for ch in text:
+            edit.setPlainText(edit.toPlainText() + ch)
+            edit.moveCursor(QTextCursor.MoveOperation.End)  # 模拟真实键入（光标在尾部）
+            win._refresh_completion_now()
+            qapp.processEvents()
+
+    type_keys("/se")
+    assert pop.isVisible() and pop.count() >= 1
+    type_keys("s")
+    assert edit.toPlainText() == "/ses" and pop.isVisible()  # 第 4 个字照样进框
+    win.input_bar._refit()
+
+
+def test_tab_accepts_top_suggestion(qapp):
+    """Tab 接受弹层首项（键盘流不离开输入框；弹层未开/无候选时 Tab 走原生）。"""
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QKeyEvent
+
+    rt = _fake_runtime()
+    p = GuiPresenter(rt, UiBridge())
+    win = MainWindow(p, p.bridge)
+    win.show()
+    qapp.processEvents()
+    edit = win.input_bar.edit
+    edit.setPlainText("/se")
+    edit.moveCursor(QTextCursor.MoveOperation.End)
+    win._refresh_completion_now()
+    qapp.processEvents()
+    assert win.completion_popup.isVisible()
+    ev = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key_Tab, Qt.KeyboardModifiers.NoModifier)
+    assert win.input_bar.eventFilter(edit, ev)  # 弹层开着：Tab 被消费
+    assert edit.toPlainText().startswith("/ses")  # 首项 /sessions 已插入
+    assert not win.completion_popup.isVisible()
+
+
+def test_tab_native_when_no_popup(qapp):
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QKeyEvent
+
+    rt = _fake_runtime()
+    p = GuiPresenter(rt, UiBridge())
+    win = MainWindow(p, p.bridge)
+    win.show()
+    qapp.processEvents()
+    edit = win.input_bar.edit
+    edit.setPlainText("普通文字")
+    win._refresh_completion_now()
+    ev = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key_Tab, Qt.KeyboardModifiers.NoModifier)
+    assert not win.input_bar.eventFilter(edit, ev)  # 无弹层：Tab 放行原生换焦点
+
+
+def test_esc_dismisses_popup_keeps_text(qapp):
+    """Esc 关弹层（保留已输入文本）——沿用用户 Esc 习惯，但不再是「救命键」。"""
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QKeyEvent
+
+    rt = _fake_runtime()
+    p = GuiPresenter(rt, UiBridge())
+    win = MainWindow(p, p.bridge)
+    win.show()
+    qapp.processEvents()
+    edit = win.input_bar.edit
+    edit.setPlainText("/se")
+    edit.moveCursor(QTextCursor.MoveOperation.End)
+    win._refresh_completion_now()
+    qapp.processEvents()
+    assert win.completion_popup.isVisible()
+    ev = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key_Escape, Qt.KeyboardModifiers.NoModifier)
+    assert win.input_bar.eventFilter(edit, ev)
+    assert not win.completion_popup.isVisible()
+    assert edit.toPlainText() == "/se"
+
+
+def test_completion_skills_cached_within_ttl(monkeypatch):
+    """skills 目录重扫是磁盘 I/O：逐键全量重扫 = 弹层卡顿主因 → TTL 缓存。"""
+    rt = _fake_runtime()
+    p = GuiPresenter(rt, UiBridge())
+    win = MainWindow(p, p.bridge)
+    calls = {"n": 0}
+    orig = p.skills_catalog
+
+    def counting():
+        calls["n"] += 1
+        return orig()
+
+    monkeypatch.setattr(p, "skills_catalog", counting)
+    win._refresh_completion_now()
+    win._refresh_completion_now()
+    win._refresh_completion_now()
+    assert calls["n"] == 1, "TTL 内应复用 skill 缓存"

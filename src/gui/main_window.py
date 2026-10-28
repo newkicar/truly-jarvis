@@ -165,8 +165,17 @@ class MainWindow(QMainWindow):
         self._completion_state = None
         self.completion_popup = CompletionPopup(self._on_completion_accept, self)
         self.completion_popup.hide()
-        self.input_bar.edit.textChanged.connect(lambda: self._refresh_completion())
-        self.input_bar.edit.cursorPositionChanged.connect(lambda: self._refresh_completion())
+        self.input_bar.edit.textChanged.connect(lambda: self._completion_timer.start())
+        self.input_bar.edit.cursorPositionChanged.connect(lambda: self._completion_timer.start())
+        # 逐键防抖（120ms singleShot 重启）：消除「每敲一键全量重扫+重挂弹层」的卡顿
+        self._completion_timer = QTimer(self)
+        self._completion_timer.setSingleShot(True)
+        self._completion_timer.setInterval(120)
+        self._completion_timer.timeout.connect(self._refresh_completion_now)
+        # Tab/Esc 在输入框侧处理（弹层 NoFocus 不抢键盘；接受/关闭不进弹层）
+        self.input_bar.set_tab_hook(self._completion_tab_accept)
+        self.input_bar.set_esc_hook(self._completion_esc_dismiss)
+        self._skills_cache: list = [0.0, None]  # [ts, catalog]，TTL 10s；None=未扫过
 
     # ---- 工单 08：高级模式（Plan/Act 全局 · YOLO 线程级 · 撤回消息层）
     def _on_plan_toggled(self, on: bool) -> None:
@@ -334,13 +343,25 @@ class MainWindow(QMainWindow):
         for t, act in self._theme_items.items():
             act.setChecked(t == theme)
 
-    # ---- 补全（工单 10；2026-10-28 规格：无边框浮层 + 不挡输入框 + 无匹配提示）
-    def _refresh_completion(self) -> None:
+    # ---- 补全（工单 10；2026-10-28 规格：无边框浮层 + 不挡输入框 + 无匹配提示
+    #      + 不抢键盘（ToolTip/NoFocus）+ 逐键防抖 + skill 目录 TTL 缓存）
+    def _skills_cached(self) -> list:
+        import time
+
+        now = time.monotonic()
+        ts, cached = self._skills_cache
+        if cached is not None and now - ts < 10.0:
+            return cached
+        cat = self.presenter.skills_catalog()
+        self._skills_cache = [now, cat if cat is not None else []]
+        return self._skills_cache[1]
+
+    def _refresh_completion_now(self) -> None:
         from PySide6.QtWidgets import QApplication
 
         from src.gui.completion import has_query_no_match
 
-        skills = self.presenter.skills_catalog()
+        skills = self._skills_cached()
         state = resolve_for_input(
             self.input_bar.edit,
             skills=skills,
@@ -362,6 +383,28 @@ class MainWindow(QMainWindow):
             self.completion_popup.show()
         else:
             self.completion_popup.hide()
+
+    # 兼容旧调用名（测试/既有代码）
+    _refresh_completion = _refresh_completion_now
+
+    def _completion_tab_accept(self) -> bool:
+        """输入框裸 Tab：弹层开着且有候选 → 接受首项（True 消费）；否则 False 原生。"""
+        pop = self.completion_popup
+        if not pop.isVisible():
+            return False
+        for i in range(pop.count()):
+            it = pop.item(i)
+            if it.flags() & Qt.ItemFlag.ItemIsSelectable:
+                pop.accept_top()  # 内部走 _on_completion_accept（应用+收起+重解析）
+                return True
+        return False
+
+    def _completion_esc_dismiss(self) -> bool:
+        """输入框裸 Esc：弹层开着 → 关掉它（保留文本）；否则不消费。"""
+        if self.completion_popup.isVisible():
+            self.completion_popup.hide()
+            return True
+        return False
 
     def _on_completion_accept(self, insert: str) -> None:
         if self._completion_state is not None:

@@ -33,6 +33,8 @@ class InputBar(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._image_paste_hook: "Callable[[], bool] | None" = None
+        self._tab_hook: "Callable[[], bool] | None" = None
+        self._esc_hook: "Callable[[], bool] | None" = None
         self.edit = QPlainTextEdit()
         self.edit.setTabChangesFocus(True)
         # 内容超出固定 5 行高度时：右侧垂直滚动条按需出现（滚轴上下滚 + 按住拖动，
@@ -68,6 +70,14 @@ class InputBar(QWidget):
         """Ctrl+V 时先调 hook()：True=已按图片/路径入附件条（消费），False=走原生粘贴。"""
         self._image_paste_hook = hook
 
+    def set_tab_hook(self, hook) -> None:
+        """裸 Tab：hook() True=消费（如补全弹层接受候选）；False=原生换焦点。"""
+        self._tab_hook = hook
+
+    def set_esc_hook(self, hook) -> None:
+        """裸 Esc：hook() True=消费（如关掉补全弹层，保留文本）；False=原生（无操作）。"""
+        self._esc_hook = hook
+
     # ---- 键位（事件过滤）：裸 Enter/Return=提交整框；Shift+Enter=框内换行（原生）。
     #      Ctrl+C/V/X/A 等修饰组合不拦截，走 Qt 原生（选区复制保留）。
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
@@ -80,6 +90,12 @@ class InputBar(QWidget):
                     return False  # 换行走原生
                 self._submit()
                 return True
+            if key == Qt.Key_Tab and not (event.modifiers() & (Qt.ShiftModifier | Qt.ControlModifier)):
+                if self._tab_hook is not None and self._tab_hook():
+                    return True
+            if key == Qt.Key_Escape and not event.modifiers():
+                if self._esc_hook is not None and self._esc_hook():
+                    return True
             if key == Qt.Key_V and (event.modifiers() & Qt.ControlModifier):
                 if self._image_paste_hook is not None and self._image_paste_hook():
                     return True  # 图片/路径已入附件条

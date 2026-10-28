@@ -80,21 +80,27 @@ def has_query_no_match(widget, state: OverlayState) -> bool:
 
 
 class CompletionPopup(QListWidget):
-    """输入框上方候选弹层：候选来自 OverlayState；鼠标/键盘选中后 accept。
+    """输入框上方候选弹层：候选来自 OverlayState；点击 / Tab（输入框侧）选中后 accept。
 
-    形态（2026-10-28 规格）：Qt.Popup 无边框浮层（无标题栏/最小化/关闭按钮，
-    失焦自动隐藏），跟随 / @ 输入出现、删除即消失（hide 由 owner 驱动）。
+    形态（2026-10-28）：**Qt.ToolTip + NoFocus** 无边框浮层——不抢键盘焦点
+    （Qt.Popup 会独占键盘，输入框敲一个字就被打断，须 Esc 才能继续打字），
+    无标题栏/窗口按钮；点外部自动隐藏（tooltip 原生语义）。
     """
 
     def __init__(self, on_accept, parent=None) -> None:
         super().__init__(parent)
         self._on_accept = on_accept
+        self._last_shown: tuple[tuple[str, ...], bool] | None = None
         self.setFixedWidth(360)
         self.setFrameShape(QFrame.Shape.NoFrame)
-        # 无标题栏/窗口按钮；点击外部或失焦自动隐藏（tooltip 式弹层）
-        self.setWindowFlags(Qt.Popup)
+        self.setWindowFlags(Qt.ToolTip)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
     def show_items(self, items: tuple[SuggestionItem, ...], no_match: bool = False) -> None:
+        key = (tuple(i.insert for i in items), no_match)
+        if self._last_shown == key:
+            return  # 候选未变不重建（逐键刷新的卡顿主因之一）
+        self._last_shown = key
         self.clear()
         for it in items:
             item = QListWidgetItem(f"{it.label}   [{it.insert}]")
@@ -108,16 +114,9 @@ class CompletionPopup(QListWidget):
         self.setVisible(bool(items) or no_match)
 
     def accept_top(self) -> None:
-        it = self.currentItem() or (self.item(0) if self.count() else None)
-        if it is not None:
-            self._on_accept(it.data(_USER_ROLE))
-
-    def keyPressEvent(self, e) -> None:  # noqa: N802
-        from PySide6.QtCore import Qt
-
-        if e.key() in (Qt.Key_Tab, Qt.Key_Return, Qt.Key_Enter):
-            self.accept_top()
-        elif e.key() == Qt.Key_Escape:
-            self.hide()
-        else:
-            super().keyPressEvent(e)
+        """首个*可选*候选（No matching items 行不可选）。无候选 = 空操作。"""
+        for i in range(self.count()):
+            it = self.item(i)
+            if it.flags() & Qt.ItemFlag.ItemIsSelectable:
+                self._on_accept(it.data(_USER_ROLE))
+                return
