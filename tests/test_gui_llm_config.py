@@ -156,3 +156,37 @@ def test_dpapi_store_roundtrip(tmp_home_dir, monkeypatch):
     assert store.get(llm_config.KEY_REF) == "sk-dpapi-roundtrip"
     store.delete(llm_config.KEY_REF)
     assert store.get(llm_config.KEY_REF) is None
+
+
+# ---------------------------------------------------------------- 回归（2026-10-28 启动链路）
+@pytest.mark.skipif(os.name != "nt", reason="DPAPI 仅 Windows")
+def test_make_key_store_wizard_and_startup_paths_consistent(tmp_home_dir, monkeypatch):
+    """向导（make_key_store(default_home())）与启动校验（make_key_store()）必须落同一
+    secrets 目录——否则向导保存后 ensure_configured 判 dangling，向导反复弹出
+    （2026-10-28 实机报障）。屏蔽 keyring 强制 DPAPI 分支。"""
+    import importlib
+    from pathlib import Path
+
+    from src.gui import llm_config
+
+    monkeypatch.setitem(importlib.sys.modules, "keyring", None)
+    monkeypatch.setenv(llm_config.ENV_HOME_OVERRIDE, tmp_home_dir)
+    wizard_store = llm_config.make_key_store(llm_config.default_home())
+    llm_config.save_llm_config(
+        llm_config.LlmConfig("https://gw/v1", "sk-consistent", "m"),
+        wizard_store, llm_config.default_home(),
+    )
+    startup_store = llm_config.make_key_store()
+    assert startup_store.get(llm_config.KEY_REF) == "sk-consistent"
+    assert llm_config.ensure_configured().key_status == "ok"
+
+
+def test_llm_config_to_chat_model_method():
+    """gui_main 走 llm.to_chat_model() 实例入口（模块函数保留供纯逻辑测试）。"""
+    from langchain_openai import ChatOpenAI
+
+    from src.gui import llm_config
+
+    m = llm_config.LlmConfig("https://gw/v1", "sk", "m-1").to_chat_model()
+    assert isinstance(m, ChatOpenAI)
+    assert m.model_name == "m-1"

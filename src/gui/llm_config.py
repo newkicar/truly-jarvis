@@ -181,15 +181,20 @@ class DpapiKeyStore:
 
 
 def make_key_store(home: Path | None = None) -> KeyStore:
-    """优先 keyring（Credential Manager）；不可用 → DPAPI（仅 win32）；再不行 → 内存（警告）。"""
+    """优先 keyring（Credential Manager）；不可用 → DPAPI（仅 win32）；再不行 → 内存（警告）。
+
+    落盘一致性：显式 home → <home>/secrets；默认 → %APPDATA%\\Jarvis\\secrets
+    （与 DpapiKeyStore() 缺省目录同址，save/load 两路径恒一致）。
+    """
+    secrets_dir = (home / "secrets") if home is not None else None
     try:
         import keyring  # noqa: F401
 
-        return _KeyringStore()
+        return _KeyringStore(secrets_dir)
     except ImportError:
         pass
     if os.name == "nt":
-        return DpapiKeyStore(home)
+        return DpapiKeyStore(secrets_dir)
     return InMemoryKeyStore()
 
 
@@ -198,11 +203,11 @@ class _KeyringStore:
 
     SERVICE = "Jarvis"
 
-    def __init__(self, home: Path | None = None) -> None:
+    def __init__(self, secrets_dir: Path | None = None) -> None:
         import keyring
 
         self._kr = keyring
-        self._fallback = DpapiKeyStore(home) if os.name == "nt" else None
+        self._fallback = DpapiKeyStore(secrets_dir) if os.name == "nt" else None
 
     def set(self, ref: str, secret: str) -> None:
         try:
@@ -244,6 +249,10 @@ class LlmConfig:
     model_id: str
     provider: str = "openai-compatible"  # openai-compatible / local
     probe_supported: bool = PROBE_SUPPORTED_DEFAULT
+
+    def to_chat_model(self):
+        """自配 LLM → ChatOpenAI（实例便捷入口；实现见模块级 to_chat_model）。"""
+        return to_chat_model(self)
 
 
 @dataclass
