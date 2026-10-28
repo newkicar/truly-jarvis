@@ -1,4 +1,5 @@
-"""输入区组件（工单 03）：1→5 行自动拉高 + 超限内滚 + Enter/Shift+Enter 提交语义。
+"""输入区组件（工单 03 → 2026-10-28 规格更新）：固定 5 行高（旧 1 行基线拉高 5 倍）
++ 内容超 5 行时右侧垂直滚动条（鼠标滚轴 + 拖动 thumb，QPlainTextEdit 原生）。
 
 Ctrl+C/V/X/A 走 Qt 原生（选中文本即复制，事件过滤焦点归还，不劫持）。
 """
@@ -13,14 +14,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-MIN_LINES = 1
-MAX_LINES = 5
+# 输入框固定高度 = 5 行（用户裁定：旧 1 行太矮「连一行完整的字都看不见」，拉高 5 倍；
+# 超出 5 行不继续长框，改用右侧滚动条：滚轴上下滚 + 按住滚动条拖动，均 Qt 原生）
+FIXED_LINES = 5
 
 
-def compute_input_height(doc_lines: int, line_h: int, top_pad: int = 4) -> int:
-    """输入框高度 = 行数（1..5 截断）× 行高 + 上下边距。纯函数，TDD。"""
-    n = max(MIN_LINES, min(doc_lines, MAX_LINES))
-    return n * line_h + top_pad
+def compute_input_height(line_h: int, top_pad: int = 4, lines: int = FIXED_LINES) -> int:
+    """输入框固定高度 = lines × 行高 + 上下边距（不再随内容行数增长）。纯函数，TDD。"""
+    return max(1, lines) * line_h + top_pad
 
 
 class InputBar(QWidget):
@@ -34,6 +35,10 @@ class InputBar(QWidget):
         self._image_paste_hook: "Callable[[], bool] | None" = None
         self.edit = QPlainTextEdit()
         self.edit.setTabChangesFocus(True)
+        # 内容超出固定 5 行高度时：右侧垂直滚动条按需出现（滚轴上下滚 + 按住拖动，
+        # QPlainTextEdit 原生行为；AsNeeded 为缺省但显式声明意图）
+        self.edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.edit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.edit.textChanged.connect(self._refit)
         self.btn_cancel = QPushButton("取消")
         self.btn_cancel.setEnabled(False)
@@ -54,11 +59,10 @@ class InputBar(QWidget):
         self.edit.installEventFilter(self)
         self._refit()
 
-    # ---- 高度自适应（1→5 行，超限内滚）
+    # ---- 高度（固定 5 行；内容超出走垂直滚动条，框不再增长）
     def _refit(self) -> None:
-        lines = max(1, self.edit.document().blockCount())
         fm = self.edit.fontMetrics()
-        self.edit.setFixedHeight(compute_input_height(lines, fm.height()))
+        self.edit.setFixedHeight(compute_input_height(fm.height()))
 
     def set_image_paste_hook(self, hook) -> None:
         """Ctrl+V 时先调 hook()：True=已按图片/路径入附件条（消费），False=走原生粘贴。"""

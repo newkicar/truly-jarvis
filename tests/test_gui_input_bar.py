@@ -1,4 +1,5 @@
-"""工单 03 — 输入区：1→5 行自动拉高（纯函数）+ 提交语义 + 队列提示（offscreen）。"""
+"""工单 03 → 2026-10-28 — 输入区：固定 5 行高（旧 1 行拉高 5 倍）+ 超出走右侧
+垂直滚动条（滚轴/拖动，Qt 原生）+ 提交语义 + 队列提示（offscreen）。"""
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -6,31 +7,38 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from src.gui.input_bar import InputBar, compute_input_height  # noqa: E402
 
 
-# ---- 纯函数：高度自适应（1..5 行截断）
-def test_compute_input_height_caps_at_five_lines():
-    assert compute_input_height(1, 20) == 1 * 20 + 4
-    assert compute_input_height(3, 20) == 3 * 20 + 4
-    assert compute_input_height(9, 20) == 5 * 20 + 4  # 截断到 5 行，超限内滚
+# ---- 纯函数：固定 5 行高（不再随内容行数增长）
+def test_compute_input_height_fixed_five_lines():
+    assert compute_input_height(20) == 5 * 20 + 4
+    assert compute_input_height(16) == 5 * 16 + 4
+    # 自定义行数（如将来要调规格）
+    assert compute_input_height(20, lines=3) == 3 * 20 + 4
 
 
-def test_compute_input_height_min_one():
-    assert compute_input_height(0, 20) == 1 * 20 + 4
-
-
-def test_input_bar_grows_with_lines(qtbot):
-    bar = InputBar(); qtbot.addWidget(bar)
-    h1 = bar.edit.height()
+def test_input_bar_height_fixed_regardless_of_content(qtbot):
+    """规格核心：无论内容几行，输入框恒为 5 行高（旧版「1→5 自动拉高」作废）。"""
+    bar = InputBar()
+    qtbot.addWidget(bar)
+    bar.show()
+    fm = bar.edit.fontMetrics()
+    h0 = bar.edit.height()
+    assert h0 == compute_input_height(fm.height())
     bar.edit.setPlainText("第一行\n第二行\n第三行")
     bar._refit()
-    assert bar.edit.height() > h1
+    assert bar.edit.height() == h0  # 3 行内容不改变框高
 
 
-def test_input_bar_caps_at_five_lines(qtbot):
-    bar = InputBar(); qtbot.addWidget(bar)
+def test_input_bar_overflow_gets_scrollbar_range(qtbot):
+    """内容超出 5 行：垂直滚动条按需出现（滚轴滚动 + 拖动 thumb = Qt 原生）；
+    以滚动条行程 > 0 为确定性判据（offscreen 下可见性不可靠）。"""
+    bar = InputBar()
+    qtbot.addWidget(bar)
+    bar.show()
     bar.edit.setPlainText("\n".join(f"line{i}" for i in range(9)))
     bar._refit()
-    fm = bar.edit.fontMetrics()
-    assert bar.edit.height() == compute_input_height(5, fm.height())
+    sb = bar.edit.verticalScrollBar()
+    assert sb.maximum() > 0, "9 行内容应产生滚动行程"
+    assert bar.edit.horizontalScrollBar().maximum() == 0  # 横向滚动条常关
 
 
 def test_enter_submits_and_clears(qtbot):
