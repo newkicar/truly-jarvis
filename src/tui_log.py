@@ -149,6 +149,7 @@ class CopyableRichLog(RichLog):
     def on_show(self, event: events.Show) -> None:
         """tui-ux19: widget 首次上屏（父布局已完成，size.width 有效）→ 工具条目双变体预渲染可用。"""
         self._size_known = True
+        self._materialize_pending_entries()  # tui-ux19r2: materialize pre-layout pending entries
 
     def focus_on_click(self) -> bool:
         """tui-ux17: 点击日志区即聚焦（对标 opencode 列表点击聚焦模型；Textual 8.2.8
@@ -384,10 +385,49 @@ class CopyableRichLog(RichLog):
         row_w = max((sum(seg.cell_length for seg in s._segments) for s in strips), default=render_width)  # noqa: SLF001
         return strips, max(render_width, row_w)
 
+    def _materialize_pending_entries(self) -> None:
+        # tui-ux19r2: materialize entries written while size was unknown -
+        # splice dual variants in place, shift later entries by the row
+        # delta, and re-stick to the bottom when stuck.
+        for entry in self._tool_entries:
+            if entry["strips"] is not None:
+                continue
+            collapsed, expanded = entry["pending"]
+            c_strips, c_w = self._write_variant_strips(collapsed)
+            e_strips, e_w = self._write_variant_strips(expanded)
+            start, end = entry["start"], entry["end"]
+            delta = len(c_strips) - (end - start)
+            self.lines[start:end] = c_strips
+            entry["strips"] = [c_strips, e_strips]
+            entry["pending"] = None
+            entry["end"] = start + len(c_strips)
+            if delta:
+                for other in self._tool_entries:
+                    if other is not entry and other["start"] >= start:
+                        other["start"] += delta
+                        other["end"] += delta
+            self._widest_line_width = max(getattr(self, "_widest_line_width", 0), c_w, e_w)
+        self._line_cache.clear()
+        self.virtual_size = Size(self._widest_line_width, len(self.lines))
+        if self._stick:
+            self.scroll_end(animate=False, immediate=True, x_axis=False)
+        self._sync_plain_lines_from_strips()
+        self.refresh()
+
     def write_tool_entry(self, collapsed: str, expanded: str) -> None:
         # tui-ux19：注册一条可点击工具条目（折叠态上屏，展开态待命）。须在 UI 线程调用。
-        if not self._size_known or getattr(self, "max_lines", None) is not None:
+        if getattr(self, "max_lines", None) is not None:
             self.write(collapsed)
+            return
+        if not self._size_known:
+            # tui-ux19r2: pre-layout pending entry: plain write + register;
+            # on_show materializes the dual variants in place
+            start = len(self.lines)
+            self.write(collapsed)
+            self._tool_entries.append({
+                "active": False, "start": start, "end": len(self.lines),
+                "strips": None, "pending": (collapsed, expanded),
+            })
             return
         c_strips, c_w = self._write_variant_strips(collapsed)
         e_strips, e_w = self._write_variant_strips(expanded)
@@ -406,6 +446,10 @@ class CopyableRichLog(RichLog):
 
     def _toggle_tool_entry(self, index: int) -> None:
         entry = self._tool_entries[index]
+        if entry["strips"] is None:
+            # tui-ux19r2: pending entry not materialized yet (on_show has not
+            # fired): ignore the click instead of crashing
+            return
         new_strips = entry["strips"][0 if entry["active"] else 1]
         old_y = int(self.scroll_offset.y)
         start, end = entry["start"], entry["end"]

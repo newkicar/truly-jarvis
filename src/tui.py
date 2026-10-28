@@ -894,7 +894,7 @@ class JarvisApp(App):
         position: absolute;
         dock: bottom;
         display: none;
-        width: 100%;
+        width: auto;
         margin: 0;
     }
 

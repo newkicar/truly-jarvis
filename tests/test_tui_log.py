@@ -219,8 +219,9 @@ async def test_scrolled_up_shrink_no_yank():
 
 @pytest.mark.asyncio
 async def test_hint_docked_at_log_bottom():
-    """tui-ux16r2: active hint docks at the bottom of #messages_box,
-    full width, below the log viewport."""
+    """tui-ux19r2: active hint docks at the bottom of #messages_box as a
+    narrow left-anchored pill (width: auto) below the log viewport; a band
+    row no longer intercepts the full width (only the pill is clickable)."""
     app = _new_app()
     async with app.run_test(size=(80, 24)) as pilot:
         log = pilot.app.query_one("#messages", CopyableRichLog)
@@ -235,7 +236,7 @@ async def test_hint_docked_at_log_bottom():
         hint_region = hint.region
         box_region = box.region
         log_region = log.region
-        assert hint_region.width == box_region.width
+        assert hint_region.width < box_region.width  # narrow pill, not full width
         assert hint_region.y + hint_region.height == box_region.y + box_region.height
         assert log_region.y + log_region.height <= hint_region.y
 
@@ -377,3 +378,110 @@ async def test_esc_on_focused_log_exits_reading_mode_only():
         await pilot.pause()
         assert pilot.app.focused is pilot.app.query_one("#input", JarvisTextArea)
         assert pilot.app._esc_phase == "none"  # noqa: SLF001
+
+# ---------------------------------------------------------------------------
+# tui-ux19r2: clickable tool entries - band click interception + pending
+# registration + max_lines fallback
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_band_click_outside_pill_does_not_jump():
+    """tui-ux19r2: with hint visible (scrolled up), a click on the band row
+    at a column beyond the pill width must not trigger the jump (pre-fix
+    the full-width band Button intercepted every column of the band row)."""
+    app = _new_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        log = pilot.app.query_one("#messages", CopyableRichLog)
+        box = pilot.app.query_one("#messages_box", Container)
+        await _fill(pilot, log, 40)
+        log.scroll_y = 0
+        await pilot.pause()
+        log.write_tool_entry("tool line c", "expanded detail e")
+        await pilot.pause()
+        entry = log._tool_entries[-1]  # noqa: SLF001
+        assert entry["active"] is False
+        hint = _hint(pilot)
+        assert hint.has_class("-visible")
+        # 屏幕 80 列 = 侧边栏 + box：pilot offset 是 box 相对坐标，绝对坐标必须落回屏内。
+        # 取 band 行最右列——既在屏内，又必在窄 pill（width:auto）之外。
+        col = box.region.width - 1
+        assert col >= hint.region.x - box.region.x + hint.region.width
+        band_y_rel = hint.region.y - box.region.y + 1
+        ok = await pilot.click(box, offset=(col, band_y_rel))
+        assert ok  # 点击落在 band 行（box 内），而非 box 下方其他部件
+        await pilot.pause()
+        assert entry["active"] is False
+        assert log.scroll_offset.y < log.max_scroll_y  # did not jump to bottom
+
+
+@pytest.mark.asyncio
+async def test_click_marker_line_toggles_entry():
+    """Guard: clicking the marker line inside the log toggles the tool
+    entry (expanded <-> collapsed); green pre- and post-fix. Fills past
+    the viewport so the click lands in a scrolled state - the hit-test
+    arithmetic (content_row = scroll_offset.y + event.y) must hold with
+    a non-zero scroll offset."""
+    app = _new_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        log = pilot.app.query_one("#messages", CopyableRichLog)
+        await _fill(pilot, log, 40)
+        log.write_tool_entry("tool line c", "expanded detail e")
+        log.scroll_end(animate=False, immediate=True, x_axis=False)
+        await pilot.pause()
+        assert log.max_scroll_y > 0
+        assert int(log.scroll_offset.y) == int(log.max_scroll_y)
+        entry = log._tool_entries[-1]  # noqa: SLF001
+        assert entry["active"] is False
+        marker_y_rel = entry["end"] - 1 - int(log.scroll_offset.y)
+        assert marker_y_rel >= 0
+        ok = await pilot.click(log, offset=(1, marker_y_rel))
+        assert ok
+        await pilot.pause()
+        assert log._tool_entries[-1]["active"] is True
+
+
+@pytest.mark.asyncio
+async def test_tool_entry_before_show_is_pending_then_materializes():
+    """tui-ux19r2: write_tool_entry before on_show (layout not settled,
+    _size_known=False) registers a pending entry instead of dropping it
+    (pre-fix: not registered at all -> clicking the detail line did
+    nothing, the reported bug). on_show materializes the dual variants
+    in place; the toggle then works."""
+    app = _new_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        log = pilot.app.query_one("#messages", CopyableRichLog)
+        log._size_known = False  # noqa: SLF001 force the pre-layout path
+        log.write_tool_entry("early tool line", "early detail")
+        entries = log._tool_entries  # noqa: SLF001
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["strips"] is None
+        collapsed, expanded = entry["pending"]
+        assert "early tool line" in collapsed
+        assert "early detail" in expanded
+        log.on_show(None)  # noqa: SLF001 materialize
+        await pilot.pause()
+        entry = log._tool_entries[-1]  # noqa: SLF001
+        assert entry["strips"] is not None
+        assert entry["pending"] is None
+        log.scroll_end(animate=False, immediate=True, x_axis=False)
+        await pilot.pause()
+        marker_y_rel = entry["end"] - 1 - int(log.scroll_offset.y)
+        ok = await pilot.click(log, offset=(1, marker_y_rel))
+        assert ok
+        await pilot.pause()
+        assert log._tool_entries[-1]["active"] is True
+
+
+@pytest.mark.asyncio
+async def test_max_lines_log_keeps_plain_fallback():
+    """Guard: with max_lines set (RichLog trims history), write_tool_entry
+    stays a plain write and registers no clickable entry."""
+    app = _new_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        log = pilot.app.query_one("#messages", CopyableRichLog)
+        log.max_lines = 5
+        log.write_tool_entry("plain c", "plain e")
+        await pilot.pause()
+        assert log._tool_entries == []  # noqa: SLF001
+        assert "plain c" in log.plain_text()
