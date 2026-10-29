@@ -102,8 +102,8 @@ def main(argv: list[str] | None = None) -> int:
     registry = ProjectRegistry(default_registry_path())
     launch = registry.pick_launch()
     start_root = Path(str(launch["path"])) if launch else Path(config.project_root)
-    if not launch:
-        registry.add(start_root)
+    # 严格空态（工单 05）：空注册表**不**登记 cwd（避免"幽灵项目"）——cwd 仅作活动 runtime，
+    # 不进树；侧栏显「还没有项目」引导「打开/新建」。已有注册表时打开最近项目（并会登记/刷新）。
 
     def _make_runtime(root):
         from src.gui.runtime import build_runtime

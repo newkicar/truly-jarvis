@@ -48,10 +48,10 @@ def test_switch_builds_repoints_and_closes_old():
         a.mkdir(); b.mkdir()
         reg, ctrl, made, _ = _ctrl(d, a)
         p1 = ctrl.switch_project(a)
-        assert ctrl.presenter is p1 and ctrl.active_root == a.resolve()
+        assert ctrl.presenter is p1 and ctrl.active_root() == a.resolve()
         assert reg.active() == str(a.resolve())
         p2 = ctrl.switch_project(b)
-        assert ctrl.presenter is p2 and ctrl.active_root == b.resolve()
+        assert ctrl.presenter is p2 and ctrl.active_root() == b.resolve()
         assert len(made) == 2 and made[0].closed is True  # 旧的被关
         assert made[1].closed is False
     finally:

@@ -5,8 +5,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from src.gui.events import UiBridge
 from src.gui.main_window import MainWindow
+from src.gui.project_registry import ProjectRegistry
 from src.gui.runtime import GuiPresenter
-from tests.gui_fakes import cleanup_home, new_home
+from src.gui.workspace_controller import WorkspaceController
+from tests.gui_fakes import TEST_ROOT, cleanup_home, new_home
 from tests.test_gui_presenter import _fake_runtime
 
 
@@ -148,3 +150,41 @@ def test_empty_hint_shown_when_no_projects(qapp, monkeypatch):
     win.show()
     qapp.processEvents()
     assert win._empty_hint.isVisible()
+
+
+def test_mainwindow_with_real_controller_no_crash(qapp, monkeypatch):
+    """真实 WorkspaceController（非 fake）驱动 MainWindow：防 property/方法接口不一致（active_root() 崩溃）。"""
+    import shutil
+    import uuid
+    from types import SimpleNamespace
+
+    d = TEST_ROOT / f"realctrl-{uuid.uuid4().hex[:8]}"
+    d.mkdir(parents=True)
+    proj = d / "proj"
+    proj.mkdir()
+    try:
+        class FR:
+            def __init__(self, root):
+                self.config = SimpleNamespace(project_root=root, mcps={}, model_label="fake", vault_path=None)
+                self.agent = None
+                self.permission_state = {}
+                self.mcp_tool_count = 0
+                self.closed = False
+
+            def close(self):
+                self.closed = True
+
+        reg = ProjectRegistry(d / "projects.json")
+        reg.add(proj, now=1.0)
+        bridge = UiBridge()
+        ctrl = WorkspaceController(reg, lambda r: FR(r), bridge)
+        pres = ctrl.switch_project(proj)
+        assert isinstance(pres, GuiPresenter)
+        monkeypatch.setattr(pres, "session_ids", lambda: [])
+        win = MainWindow(pres, bridge, workspace=ctrl)
+        win.show()
+        qapp.processEvents()
+        assert "proj" in win.windowTitle()  # 标题含活动项目名（走 controller.active_root()）
+        win.close()
+    finally:
+        shutil.rmtree(d, ignore_errors=True)

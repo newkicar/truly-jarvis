@@ -140,7 +140,6 @@ class WorkspaceController:
     def presenter(self):
         return self._presenter
 
-    @property
     def active_root(self):
         return self._current_root
 
