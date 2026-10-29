@@ -20,8 +20,10 @@ dependencies = [
     "textual>=0.40.0",
     "tavily-python",
     "httpx",
-    "chromadb>=0.5.0",
     "apscheduler>=3.10",
+    # GUI（桌面端，PySide6；打包走 Essentials 避免捆 Addons/WebEngine）
+    "PySide6-Essentials>=6.5",
+    "keyring",
     # Office skills
     "openpyxl>=3.1",
     "pandas>=2.0",
@@ -32,8 +34,14 @@ dependencies = [
     "reportlab>=4.0",
 ]
 
+[project.optional-dependencies]
+# 遗留 c：RAG 原生大包不入基础客户端；缺 chromadb 自动回落 grep/wiki（rag.py 降级守卫）。
+# 开发机/需要语义检索时：pip install -e ".[rag]"
+rag = ["chromadb>=0.5.0"]
+
 [project.scripts]
 jarvis = "src.main:main"
+jarvis-gui = "src.gui_main:main"
 
 [tool.setuptools.packages.find]
 include = ["src*", "jarvis*", "skills*"]

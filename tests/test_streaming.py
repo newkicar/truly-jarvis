@@ -97,6 +97,73 @@ def test_consume_stream_skips_tool_call_message_blocks():
     assert segments == []
 
 
+def test_consume_stream_on_thinking_optional_key():
+    """工单 06 共享 seam：可选第 6 键 on_thinking（v3 messages 投影 .reasoning 增量）。"""
+
+    class _MsgT:
+        def __init__(self, text, thinking):
+            self.text = list(text)
+            self.reasoning = list(thinking)
+
+    events = []
+    stream = _Stream([("messages", _MsgT("答案", "思考片段"))])
+    streaming.consume_stream_events(
+        stream,
+        {
+            "on_message_delta": lambda d: events.append(("delta", d)),
+            "on_message_end": lambda s: events.append(("end", s)),
+            "on_thinking": lambda d: events.append(("think", d)),
+        },
+    )
+    # 思考增量在正文之前（模型先 reasoning 后 content）
+    thinks = [t for k, t in events if k == "think"]
+    assert "".join(thinks) == "思考片段"
+    assert events.index(("think", "思")) < events.index(("delta", "答"))
+    assert ("end", "答案") in events
+
+
+def test_consume_stream_without_on_thinking_no_behavior_change():
+    """未传 on_thinking = 思考通道不启用（CLI/TUI 现状零行为变化，TUI 已知问题①不回退）。"""
+
+    class _MsgT:
+        def __init__(self, text, thinking):
+            self.text = list(text)
+            self.reasoning = list(thinking)
+
+    events = []
+    stream = _Stream([("messages", _MsgT("答案", "思考"))])
+    streaming.consume_stream_events(
+        stream,
+        {
+            "on_message_delta": lambda d: events.append(("delta", d)),
+            "on_message_end": lambda s: events.append(("end", s)),
+        },
+    )
+    assert all(k != "think" for k, _ in events)
+    assert ("end", "答案") in events
+
+
+def test_consume_stream_on_thinking_delta_not_cancelled():
+    class _MsgT:
+        def __init__(self):
+            self.text = []
+            self.reasoning = list("长思考")
+
+    events = []
+    cancelled = {"flag": False}
+    stream = _Stream([("messages", _MsgT())])
+    streaming.consume_stream_events(
+        stream,
+        {
+            "on_message_delta": lambda d: events.append(("delta", d)),
+            "on_thinking": lambda d: events.append(("think", d)) or None,
+        },
+        is_cancelled=lambda: cancelled["flag"],
+    )
+    # 未取消时思考全量到达（取消抑制语义同正文 delta 通道）
+    assert ("think", "长") in events
+
+
 def test_run_agent_turn_replay_uses_checkpoint_config():
     class _Stream:
         def __init__(self):

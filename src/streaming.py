@@ -360,6 +360,22 @@ def consume_stream_events(
                 subagent_depth,
             )
         else:
+            # 思考块（GUI 工单 06 共享 seam）：可选第 6 键 on_thinking——模型
+            # reasoning 增量（v3 messages 投影 .reasoning，与 .text 同接口）。
+            # CLI/TUI 不传 on_thinking = 零行为变化（TUI 已知问题①在 GUI 端补齐）。
+            thinking_cb = callbacks.get("on_thinking")
+            if thinking_cb is not None:
+                for rdelta in iter_text_deltas(getattr(item, "reasoning", ()) or ()):
+                    if is_cancelled() and not draining:
+                        if on_cancelled:
+                            on_cancelled()
+                        if control is None:
+                            return consumed
+                        control.request_drain("user-cancel")
+                        draining = True
+                    if draining:
+                        break
+                    thinking_cb(rdelta)
             segment: list[str] = []
             for delta in iter_text_deltas(item.text):
                 if is_cancelled() and not draining:

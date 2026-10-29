@@ -22,6 +22,19 @@ def test_looks_like_image_path(tmp_path):
     assert looks_like_image_path("C:\\x\\y.txt") is None
 
 
+def test_looks_like_image_path_allows_spaces_in_dirs(tmp_path):
+    """GUI 工单 07 修：路径含空格（Windows 目录名常态，如 D:\\Python Project\\…）应识别。"""
+    sub = tmp_path / "My Photos"
+    sub.mkdir()
+    pic = sub / "pic.png"
+    pic.write_bytes(b"\x89PNG")
+    assert looks_like_image_path(str(pic)) == os.path.abspath(str(pic))
+    # 多行文本 / 无扩展名 / 不存在 仍拒
+    assert looks_like_image_path("first line\nsecond.png") is None
+    assert looks_like_image_path(str(pic) + " tail") is None
+    assert looks_like_image_path(str(sub / "gone.png")) is None
+
+
 def test_image_to_data_url(tmp_path):
     img = tmp_path / "a.png"
     img.write_bytes(b"\x89PNG")

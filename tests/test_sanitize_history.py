@@ -309,3 +309,110 @@ def test_empty_call_history_self_heals_on_next_round(monkeypatch):
             )
     finally:
         shutil.rmtree(base, ignore_errors=True)
+
+
+def test_sanitize_messages_drops_non_string_tool_call_id():
+    """"Expected 'id' to be a string."（网关 Rust serde 严格类型）触发源：
+    ``.tool_calls`` 里 id 为 int（真值非空，旧的 truthiness 检查放过）→ 整条
+    调用丢弃，对应 ToolMessage 一并清除（否则制造孤儿）。"""
+    # pydantic 正常构造会拒收 int id；用 model_construct 模拟旧 checkpoint
+    # 反序列化 / 第三方中间件塞入的脏数据。
+    ai = AIMessage.model_construct(
+        content="",
+        id="a_int",
+        tool_calls=[
+            {"name": "ls", "args": {}, "id": 42, "type": "tool_call"},
+            {"name": "read_file", "args": {"path": "x"}, "id": "call_ok", "type": "tool_call"},
+        ],
+        invalid_tool_calls=[],
+        additional_kwargs={},
+        response_metadata={},
+    )
+    tm_int = ToolMessage.model_construct(content="dir", tool_call_id=42, id="t_int")
+    tm_ok = ToolMessage(content="content", tool_call_id="call_ok", id="t_ok")
+    out = sanitize_messages([ai, tm_int, tm_ok])
+    assert out is not None
+    assert [m.id for m in out] == ["a_int", "t_ok"]
+    assert [(tc["name"], tc["id"]) for tc in out[0].tool_calls] == [("read_file", "call_ok")]
+
+
+def test_sanitize_messages_drops_dirty_raw_tool_calls_in_additional_kwargs():
+    """流式中断残留的 ``additional_kwargs["tool_calls"]``（id=None）在
+    ``.tool_calls`` 为空时被 langchain_openai 原样透传给网关 → 400
+    "Expected 'id' to be a string."；必须连原始列表一起清掉。"""
+    ai = AIMessage(
+        content="",
+        id="a_raw",
+        additional_kwargs={
+            "tool_calls": [
+                {"id": None, "type": "function", "function": {"name": "execute", "arguments": "{}"}}
+            ]
+        },
+    )
+    out = sanitize_messages([HumanMessage(content="q", id="h"), ai])
+    assert out is not None
+    fixed = out[1]
+    assert isinstance(fixed, AIMessage)
+    assert "tool_calls" not in fixed.additional_kwargs
+    assert fixed.tool_calls == []
+
+
+def test_sanitize_messages_keeps_valid_raw_tool_calls_untouched():
+    """全合法的原始 tool_calls（字符串 id + 字符串 name）不算脏：零改动返回 None。"""
+    ai = AIMessage(
+        content="",
+        id="a_ok",
+        additional_kwargs={
+            "tool_calls": [
+                {"id": "call_1", "type": "function", "function": {"name": "ls", "arguments": "{}"}}
+            ]
+        },
+    )
+    assert sanitize_messages([HumanMessage(content="q", id="h"), ai]) is None
+
+
+def test_sanitize_messages_drops_unsupported_content_parts():
+    """网关（vLLM）自己返回的 content 块（tool_call part）原样回传 → 400
+    "Unsupported chat content part type: 'tool_call'"：归一化丢弃 tool_call 块，
+    text 块与 .tool_calls 字段保留（工具语义不丢）。"""
+    ai = AIMessage(
+        content=[
+            {"type": "text", "text": "让我看看", "index": 0},
+            {"type": "tool_call", "id": "call_1", "name": "ls", "args": {}},
+        ],
+        tool_calls=[{"name": "ls", "args": {}, "id": "call_1", "type": "tool_call"}],
+        id="a_parts",
+    )
+    out = sanitize_messages([ai])
+    assert out is not None
+    fixed = out[0]
+    assert [(b.get("type")) for b in fixed.content] == ["text"]
+    assert fixed.tool_calls[0]["id"] == "call_1"
+
+
+def test_sanitize_messages_keeps_multimodal_and_thinking_parts():
+    """合法 content 块（image/thinking/text）零改动（None = 不动历史）。"""
+    ai = AIMessage(
+        content=[
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,x"}},
+            {"type": "thinking", "thinking": "hmm", "id": None},
+            {"type": "text", "text": "ok"},
+        ],
+        id="a_mm",
+    )
+    assert sanitize_messages([ai]) is None
+
+
+def test_sanitize_messages_all_unsupported_parts_become_empty_content():
+    """content 全是不兼容块 → 空字符串（保留合法 tool_calls，不造孤儿）。"""
+    ai = AIMessage(
+        content=[{"type": "tool_call", "id": "call_9", "name": "ls", "args": {}}],
+        tool_calls=[{"name": "ls", "args": {}, "id": "call_9", "type": "tool_call"}],
+        id="a_all",
+    )
+    tm = ToolMessage(content="listing", tool_call_id="call_9", id="t9")
+    out = sanitize_messages([ai, tm])
+    assert out is not None
+    assert out[0].content == ""
+    assert out[0].tool_calls[0]["id"] == "call_9"
+    assert isinstance(out[1], ToolMessage)

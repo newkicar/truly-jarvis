@@ -14,7 +14,11 @@ tavily-python
 httpx
 apscheduler
 textual>=0.40.0
-chromadb>=0.5.0
+chromadb>=0.5.0  # 遗留 c：运行期可选（基础客户端可省略，缺失自动回落 grep/wiki）；开发机保留
+
+# GUI（桌面端；打包用 Essentials 避免捆 Addons/WebEngine）
+PySide6-Essentials>=6.5
+keyring
 
 # Office skills
 openpyxl>=3.1

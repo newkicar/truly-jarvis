@@ -31,9 +31,13 @@ _PLACEHOLDER_RE = re.compile(r"\[Image #(\d+)\]")
 
 
 def looks_like_image_path(text: str) -> str | None:
-    """text 为单个已存在的图片文件路径时返回其绝对路径，否则 None。"""
+    """text 为单个已存在的图片文件路径时返回其绝对路径，否则 None。
+
+    允许路径含空格（Windows 目录名常态）；只排除换行（多行文本不是路径）
+    与无法解析为文件的 token（整句误判兜底：isfile 为假 → None）。
+    """
     token = (text or "").strip()
-    if not token or any(ch.isspace() for ch in token):
+    if not token or "\n" in token or "\r" in token:
         return None
     ext = os.path.splitext(token)[1].lower()
     if ext not in IMAGE_EXTS:

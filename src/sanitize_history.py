@@ -12,9 +12,20 @@ Bug 背景（历史中两类 400 触发源，都需成对清洗）：
 2. **空 tool_call / 孤儿结果**（流式聚合产出脏数据，实际事故）：
    - ``AIMessage.tool_calls`` 里混入 ``name=""``+``id=""`` 的空工具调用（在*合法*
      列表里，不在 invalid_tool_calls，旧实现看不见）；
+   - ``id`` 不是字符串（int/None 型）同样被网关拒收："Expected 'id' to be a
+     string."——``additional_kwargs["tool_calls"]``（流式中断残留，``.tool_calls``
+     为空时被 langchain_openai 原样透传）里的脏 id 也归此类；
    - ToolNode 对空名调用执行出错，产出 ``tool_call_id=""`` 的 error ToolMessage
      （孤儿）；下一轮网关（Rust 严格 serde）拒收整条请求 → 400 "missing field
      tool_call_id"。``tool_call_id`` 为 None 或悬空引用同样触发 400。
+
+3. **content 块列表里的网关不兼容 part**（本网关流式响应实测）：
+   - 网关把 Responses-API 风格块（``{"type":"tool_call",...}``、thinking 等）
+     放进 ``AIMessage.content``；下一轮 langchain_openai 原样回传 → 400
+     "Unsupported chat content part type: 'tool_call'."（vLLM）/ 同族 "Expected
+     'id' to be a string."（Rust 代理）；
+    - 工具调用语义由 ``.tool_calls`` 字段承载，content 里的 tool_call 块纯冗余
+      → 丢弃；text/多模态/thinking 块保留（thinking 块 id=None/int 实证 200）。
 
 处置：``before_model``（每次模型调用前都会跑，resume 路径同样覆盖）检测含
 invalid_tool_calls 或空调用的 AIMessage，重建之（保留 id/content，只留合法调用）；
@@ -38,33 +49,104 @@ from langgraph.runtime import Runtime
 
 
 def _bad_call(tc: Any) -> bool:
-    """脏调用：非 dict，或 id/name 为空（网关序列化后拒收）。"""
+    """脏调用：非 dict，或 id/name 不是非空字符串（网关 serde 严格校验拒收）。
+
+    ``id`` 必须是字符串：网关报 "Expected 'id' to be a string."（Rust serde 严格
+    类型）——历史里混入 int/None 型 id 时整条请求 400。
+    """
     if not isinstance(tc, dict):
         return True
-    return not tc.get("id") or not tc.get("name")
+    if not isinstance(tc.get("id"), str) or not tc["id"]:
+        return True
+    if not isinstance(tc.get("name"), str) or not tc["name"]:
+        return True
+    return False
+
+
+def _bad_raw_call(tc: Any) -> bool:
+    """``additional_kwargs["tool_calls"]`` 里的原始 OpenAI 调用是否脏。
+
+    langchain_openai 的 ``_convert_message_to_dict`` 在 ``.tool_calls`` 为空时
+    把 ``additional_kwargs["tool_calls"]`` **原样透传**（只裁剪键名，不做类型
+    校验）——流式中断残留的 ``id: None`` / int 型 id 在这里躲过 ``_bad_call``，
+    下一轮请求被网关拒收（"Expected 'id' to be a string."）。
+    """
+    if not isinstance(tc, dict):
+        return True
+    if not isinstance(tc.get("id"), str) or not tc["id"]:
+        return True
+    fn = tc.get("function")
+    if not isinstance(fn, dict):
+        return True
+    return not isinstance(fn.get("name"), str) or not fn["name"]
+
+
+def _raw_calls_dirty(msg: AIMessage) -> bool:
+    raw = msg.additional_kwargs.get("tool_calls")
+    if raw is None:
+        return False
+    if not isinstance(raw, list):
+        return True
+    return any(_bad_raw_call(tc) for tc in raw)
+
+
+# 网关 chat-completions 请求 content 可接受的块类型（vLLM 实测支持列表；
+# 该网关流式响应会用 Responses-API 风格块——tool_call/thinking 混在 content 里，
+# 原样回传即 400："Unsupported chat content part type: 'tool_call'"（vLLM）/
+# "Expected 'id' to be a string."（Rust 代理同类校验））。
+_KEEP_CONTENT_TYPES = (
+    "text", "input_text", "output_text",
+    "image", "image_url", "input_image", "image_pil", "image_embeds",
+    "audio_url", "input_audio", "audio_embeds",
+    "video_url", "video_embeds",
+    "thinking", "refusal", "prompt_embeds",
+)
+
+
+def _normalize_content(msg: AIMessage) -> tuple[Any, bool]:
+    """归一化 AIMessage.content：丢弃网关不接受的 content part（tool_call/未知类型）。
+
+    工具调用语义已由 ``.tool_calls`` 字段承载（网关按 tool_calls 校验），
+    content 里的 tool_call 块纯冗余且致 400；text/多模态/thinking 块保留
+    （thinking 块 id=None/int 实证 200，不动）。返回 (新 content, 是否变化)。
+    """
+    c = msg.content
+    if not isinstance(c, list):
+        return c, False
+    kept = []
+    changed = False
+    for b in c:
+        if isinstance(b, str) or (isinstance(b, dict) and b.get("type") in _KEEP_CONTENT_TYPES):
+            kept.append(b)
+        else:
+            changed = True
+    if not changed:
+        return c, False
+    return (kept if kept else ""), True
 
 
 def _valid_call_ids(messages):
-    """全历史 AI 消息中*合法* tool_call 的 id 集合（id、name 均非空）。"""
+    """全历史 AI 消息中*合法* tool_call 的 id 集合（id、name 均为非空字符串）。"""
     ids = set()
     for msg in messages:
         if isinstance(msg, AIMessage):
             for tc in msg.tool_calls:
-                if isinstance(tc, dict) and tc.get("id") and tc.get("name"):
+                if not _bad_call(tc):
                     ids.add(tc["id"])
     return ids
 
 
-def _rebuild_ai(msg, keep_calls):
-    """重建 AIMessage：保留 id/content/response_metadata，丢弃脏调用。
+def _rebuild_ai(msg, keep_calls, content=None):
+    """重建 AIMessage：保留 id/response_metadata，丢弃脏调用。
 
     同时清掉 additional_kwargs 里可能残留的原始 tool_calls 列表，防御脏数据
-    经其他路径再次混入 OpenAI 请求。
+    经其他路径再次混入 OpenAI 请求。content 非 None 时以归一化后的块列表替换
+    （content part 清洗，与工具调用清洗同一次重建完成）。
     """
     extra = dict(msg.additional_kwargs)
     extra.pop("tool_calls", None)
     return AIMessage(
-        content=msg.content,
+        content=(msg.content if content is None else content),
         additional_kwargs=extra,
         response_metadata=dict(msg.response_metadata),
         id=msg.id,
@@ -76,8 +158,10 @@ def _rebuild_ai(msg, keep_calls):
 def sanitize_messages(messages):
     """清洗消息历史；无需清洗时返回 None（零开销）。
 
-    - 含 ``invalid_tool_calls`` 或空调用的 AIMessage 重建（保留 id/content/合法
+    - 含 ``invalid_tool_calls`` 或空调用的 AIMessage 重建（保留 id/合法
       tool_calls，清空 invalid_tool_calls）；
+    - AIMessage.content 块列表含网关不接受的 part（tool_call/未知类型）→
+      归一化丢弃（text/多模态/thinking 保留），工具语义由 tool_calls 字段承载；
     - ``tool_call_id`` 为空/None 或不在全历史合法调用 id 集合中的 ToolMessage
       移除（合成结果 / 孤儿 / 挂空悬全覆盖）；
     - 其余消息原样保留原顺序与 id。
@@ -88,9 +172,21 @@ def sanitize_messages(messages):
     changed = False
     for msg in messages:
         if isinstance(msg, AIMessage):
-            dirty = bool(msg.invalid_tool_calls) or any(_bad_call(tc) for tc in msg.tool_calls)
+            new_content, content_changed = _normalize_content(msg)
+            dirty = (
+                bool(msg.invalid_tool_calls)
+                or any(_bad_call(tc) for tc in msg.tool_calls)
+                or _raw_calls_dirty(msg)
+                or content_changed
+            )
             if dirty:
-                kept.append(_rebuild_ai(msg, [tc for tc in msg.tool_calls if not _bad_call(tc)]))
+                kept.append(
+                    _rebuild_ai(
+                        msg,
+                        [tc for tc in msg.tool_calls if not _bad_call(tc)],
+                        content=(new_content if content_changed else None),
+                    )
+                )
                 changed = True
             else:
                 kept.append(msg)

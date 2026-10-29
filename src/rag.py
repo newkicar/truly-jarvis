@@ -237,8 +237,17 @@ def make_semantic_search_tool(
 
         与 grep（关键词）互补：grep 找得到精确词，本工具找得到「语义相关但用词不同」的笔记。
         结果含 /vault/ 路径，供 read_file 进一步读取。
+
+        降级（可选依赖缺失）：chromadb 未安装 / 索引不可用时返回可行动的指引文本
+        （不抛异常炸穿工具循环），检索回落 grep/wiki 关键词导航。
         """
-        index = RagIndex(rag_dir, root, base_url=base_url, embed_model=embed_model)
+        try:
+            index = RagIndex(rag_dir, root, base_url=base_url, embed_model=embed_model)
+        except Exception as exc:  # noqa: BLE001 - 可选依赖（chromadb）缺失等一律降级
+            return (
+                f"语义检索不可用（{type(exc).__name__}：{exc}）。"
+                "可 pip 安装 chromadb 启用 RAG 语义索引；当前请改用 grep 关键词 / wiki 导航检索。"
+            )
         try:
             stats = index.refresh()
         except Exception:

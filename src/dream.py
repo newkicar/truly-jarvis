@@ -212,6 +212,12 @@ def run_dream(agent, config: Config, limit: int = 20, tail: int = 100) -> str:
         all_msgs = (head.values or {}).get("messages") or []
         msgs.extend(all_msgs[-tail:])
 
+    # 蒸馏直调模型（不经图 middleware）：先清洗历史脏工具调用（non-string id /
+    # invalid_tool_calls 会让网关 400 "Expected 'id' to be a string."）。
+    from src.sanitize_history import sanitize_messages
+
+    msgs = sanitize_messages(msgs) or msgs
+
     new_items = distill(model, msgs)
     final_items = consolidate(model, new_items, existing)
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
