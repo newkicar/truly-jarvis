@@ -111,6 +111,13 @@ QListWidget::item { color: $muted; padding: 5px 8px; border-radius: 8px; margin:
 QListWidget::item:hover { background-color: $active; color: $text; }
 QListWidget::item:selected { background-color: $active; color: $text; font-weight: 500; }
 
+/* 项目→会话树（工单 04）：与导航同一套表面语言 */
+QTreeWidget { background-color: $ground; border: none; outline: 0; }
+QTreeWidget::item { color: $muted; padding: 4px 6px; border-radius: 6px; margin: 1px 3px; }
+QTreeWidget::item:hover { background-color: $active; color: $text; }
+QTreeWidget::item:selected { background-color: $active; color: $text; font-weight: 500; }
+QTreeWidget#session-list::item { color: $text; }
+
 /* ---- 补全弹层（浮层：白片 + 1px 边）---- */
 QListWidget#completion-popup {
     background-color: $surface; border: 1px solid $border; border-radius: $radius_ctrl px;

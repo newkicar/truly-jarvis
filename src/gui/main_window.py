@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QPushButton,
     QStackedWidget,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -32,12 +34,19 @@ from src.gui.image_widgets import ImageStrip
 from src.gui.input_bar import InputBar
 from src.gui.pane import RENDER_BATCH_MS, ChatPane
 from src.gui.runtime import GuiPresenter
+from src.gui.workspace_controller import StaticWorkspace
+
+_PROJ_ROLE = Qt.ItemDataRole.UserRole + 100
+_TID_ROLE = Qt.ItemDataRole.UserRole + 101
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, presenter: GuiPresenter, bridge: UiBridge, *, llm=None, key_store=None) -> None:
+    def __init__(self, presenter: GuiPresenter, bridge: UiBridge, *, llm=None, key_store=None, workspace=None) -> None:
         QMainWindow.__init__(self)
         self.presenter = presenter
+        # 多项目工作区接口（工单 04）：缺省 = StaticWorkspace（单项目，行为不变）；
+        # gui_main 传入 WorkspaceController（多项目，切项目=关旧建新）
+        self._workspace = workspace or StaticWorkspace(presenter, bridge)
         self.bridge = bridge
         self._llm = llm  # LlmConfig | None（GUI 自配层；None = 走项目 .env）
         self._key_store = key_store
@@ -52,42 +61,30 @@ class MainWindow(QMainWindow):
         from src.gui import theme as _theme
 
         _theme.apply_theme(QApplication.instance(), _theme.load_theme())
-        # 懒建 pane（重记录重建只在首访该会话时发生，启动不预建全部）
+        # 懒建 pane（重记录重建只在首访该会话时发生，启动不预建全部）；
+        # 启动打开「上次活动会话」（工单 05），没有则取最新或新会话
         first = presenter.session_ids()
-        self._switch_to(first[0] if first else presenter.new_session_id())
+        start = self._workspace.pick_start(self._workspace.active_root())
+        self._switch_to(start or (first[0] if first else presenter.new_session_id()))
 
     # ---- 结构
     def _build_ui(self) -> None:
-        self.setWindowTitle(f"Jarvis GUI — {self.presenter.runtime.model_label}")
+        self._update_title()
         central = QWidget()
         root = QHBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # ---- 工单 08：高级菜单（Plan/Act · YOLO · 撤回，默认收起不占主界面）
+        # 工单 08：左侧模式徽标（Plan/Act·YOLO 菜单挪到「高级」，菜单栏末位）
         self.mode_badge = QLabel("")
         self.mode_badge.setObjectName("badge-mode")
-        adv = self.menuBar().addMenu("高级")
-        self.plan_action = adv.addAction("规划模式（Plan：写工具被拦，先规划）")
-        self.plan_action.setCheckable(True)
-        self.plan_action.toggled.connect(self._on_plan_toggled)
-        self.yolo_action = adv.addAction("YOLO（本会话免审批）")
-        self.yolo_action.setCheckable(True)
-        self.yolo_action.toggled.connect(self._on_yolo_toggled)
-        adv.addSeparator()
-        undo_action = adv.addAction("撤回上一轮（消息层）")
-        undo_action.triggered.connect(self._on_undo)
-        self._advanced_menu = adv
 
-        # ---- 工单 09：时间旅行菜单（渲染入口，逻辑全在 commands/presenter）
-        tt = self.menuBar().addMenu("时间旅行")
-        tt_snapshot = tt.addAction("手动快照")
-        tt_snapshot.triggered.connect(self._on_snapshot)
-        tt_snapshots = tt.addAction("快照列表")
-        tt_snapshots.triggered.connect(self._on_snapshots_list)
-        tt_replay = tt.addAction("回放点…（回放 / 开分支 / 压缩）")
-        tt_replay.triggered.connect(self._on_time_travel_dialog)
-        self._tt_menu = tt
+        # ---- 工单 05：打开项目 / 新建项目（多项目工作区，放菜单栏最前）
+        open_menu = self.menuBar().addMenu("打开项目")
+        self._build_open_project_menu(open_menu)
+        new_menu = self.menuBar().addMenu("新建项目")
+        new_act = new_menu.addAction("新建项目…")
+        new_act.triggered.connect(self._new_project_dialog)
 
         # ---- 工单 10：命令菜单 / 主题 / MCP / 定时任务
         cmd = self.menuBar().addMenu("命令")
@@ -116,12 +113,35 @@ class MainWindow(QMainWindow):
         theme_menu.addSeparator()
         theme_menu.addAction("切换明暗", lambda: self._on_theme(_theme.toggle_theme()))
 
+        # ---- 工单 09：时间旅行菜单（移至 主题 之后）
+        tt = self.menuBar().addMenu("时间旅行")
+        tt_snapshot = tt.addAction("手动快照")
+        tt_snapshot.triggered.connect(self._on_snapshot)
+        tt_snapshots = tt.addAction("快照列表")
+        tt_snapshots.triggered.connect(self._on_snapshots_list)
+        tt_replay = tt.addAction("回放点…（回放 / 开分支 / 压缩）")
+        tt_replay.triggered.connect(self._on_time_travel_dialog)
+        self._tt_menu = tt
+
         mcp_menu = self.menuBar().addMenu("MCP 工具")
         self._build_mcp_menu(mcp_menu)
 
         sched_menu = self.menuBar().addMenu("定时任务")
         sched_open = sched_menu.addAction("打开定时任务面板")
         sched_open.triggered.connect(self._on_scheduler_panel)
+
+        # ---- 工单 08：高级菜单（菜单栏末位：Plan/Act · YOLO · 撤回）
+        adv = self.menuBar().addMenu("高级")
+        self.plan_action = adv.addAction("规划模式（Plan：写工具被拦，先规划）")
+        self.plan_action.setCheckable(True)
+        self.plan_action.toggled.connect(self._on_plan_toggled)
+        self.yolo_action = adv.addAction("YOLO（本会话免审批）")
+        self.yolo_action.setCheckable(True)
+        self.yolo_action.toggled.connect(self._on_yolo_toggled)
+        adv.addSeparator()
+        undo_action = adv.addAction("撤回上一轮（消息层）")
+        undo_action.triggered.connect(self._on_undo)
+        self._advanced_menu = adv
 
         left = QFrame()
         left.setFixedWidth(230)
@@ -131,14 +151,20 @@ class MainWindow(QMainWindow):
         title.setObjectName("title-sessions")
         title.setTextFormat(Qt.TextFormat.RichText)
         ll.addWidget(title)
-        self.session_list = QListWidget()
-        self.session_list.setObjectName("session-list")
-        self.session_list.itemClicked.connect(self._on_session_clicked)
-        self.session_list.itemDoubleClicked.connect(self._on_session_double_clicked)
-        # 右键会话条目 → 上下文菜单（分享/下载/重命名/置顶/克隆/归档/删除）
-        self.session_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.session_list.customContextMenuRequested.connect(self._on_session_context)
-        ll.addWidget(self.session_list, stretch=1)
+        self.project_tree = QTreeWidget()
+        self.project_tree.setObjectName("session-list")
+        self.project_tree.setRootIsDecorated(True)  # 项目节点显示 +/− 展开柄
+        self.project_tree.setUniformRowHeights(True)
+        self.project_tree.itemClicked.connect(self._on_tree_item_clicked)
+        self.project_tree.itemDoubleClicked.connect(self._on_tree_item_double_clicked)
+        self.project_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.project_tree.customContextMenuRequested.connect(self._on_tree_context)
+        ll.addWidget(self.project_tree, stretch=1)
+        self._empty_hint = QLabel("还没有项目（用「打开项目 / 新建项目」开始）")
+        self._empty_hint.setObjectName("hint-note")
+        self._empty_hint.setWordWrap(True)
+        self._empty_hint.hide()
+        ll.addWidget(self._empty_hint)
         self.btn_new = QPushButton("＋ 新会话")
         self.btn_new.setObjectName("btn-primary")
         self.btn_new.clicked.connect(lambda: self._switch_to(self.presenter.new_session_id()))
@@ -481,26 +507,19 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(p)
         p.stick = True
         p.snap_to_bottom()
-        self.refresh_sessions()
+        self._workspace.set_last_active(self._workspace.active_root(), tid)
+        self.refresh_tree()
         self.input_bar.edit.setFocus()
         note = "（回合进行中，切走不影响执行）" if self.presenter.gate.is_running(tid) else ""
-        self.status_label.setText(f"会话 {tid}{note}")
+        proj = self._active_project_name()
+        self.status_label.setText(f"{proj} · 会话 {tid}{note}" if proj else f"会话 {tid}{note}")
         self._refresh_mode_badges()
 
-    def _on_session_clicked(self) -> None:
-        it = self.session_list.currentItem()
-        if it is not None:
-            self._switch_to(it.data(Qt.UserRole))
-
-    def refresh_sessions(self) -> None:
-        # 排队的 refresh_sessions 信号可能在 runtime.close() 之后才入事件循环：
-        # DB 查询异常一律吞掉（teardown 时序竞态），保留现有列表返回
-        try:
-            tids = self.presenter.session_ids()
-        except Exception:  # noqa: BLE001
-            return
-        # 归档过滤 + 置顶优先（同组内保持原序；★ 置顶 / 📁 归档 前缀）
+    # ---- 项目树（工单 04：项目→会话；点项目名=切换，+/−=展开；右键各自菜单）
+    def _active_session_rows(self) -> list[tuple[str, bool]]:
+        """活动项目的会话行：置顶优先 + 归档过滤（同旧平铺逻辑）。返回 [(tid, is_active)]。"""
         reg = self.presenter.session_registry
+        tids = self.presenter.session_ids()
         pinned: list[str] = []
         others: list[str] = []
         for tid in tids:
@@ -510,28 +529,141 @@ class MainWindow(QMainWindow):
         ordered = pinned + others
         if self.active_tid and self.active_tid not in ordered:
             ordered = [self.active_tid] + ordered
-        self.session_list.clear()
-        for tid in ordered:
-            label = self.presenter.session_label(tid)
-            mark = "▸ " if tid == self.active_tid else "   "
-            pin = "★ " if reg.is_pinned(tid) else ""
-            arch = "📁 " if reg.is_archived(tid) else ""
-            run = " ⚡" if self.presenter.gate.is_running(tid) else ""
-            it = QListWidgetItem(f"{mark}{pin}{arch}{label}{run}")
-            it.setData(Qt.UserRole, tid)
-            it.setToolTip(tid)
-            self.session_list.addItem(it)
-            if tid == self.active_tid:
-                self.session_list.setCurrentItem(it)
+        return [(tid, tid == self.active_tid) for tid in ordered]
+
+    def _session_row_label(self, tid: str, active: bool, reg, gate) -> str:
+        mark = "▸ " if active else "   "
+        pin = "★ " if reg.is_pinned(tid) else ""
+        arch = "📁 " if reg.is_archived(tid) else ""
+        run = " ⚡" if gate.is_running(tid) else ""
+        return f"{mark}{pin}{arch}{self.presenter.session_label(tid)}{run}"
+
+    def refresh_tree(self) -> None:
+        """重建项目→会话树（活动项目=live 会话，非活动项目=只读会话名）。保留已展开项。"""
+        tree = self.project_tree
+        active = self._workspace.active_root()
+        reg = self.presenter.session_registry
+        gate = self.presenter.gate
+        prev_expanded = {
+            tree.topLevelItem(i).data(0, _PROJ_ROLE)
+            for i in range(tree.topLevelItemCount())
+            if tree.topLevelItem(i).isExpanded()
+        }
+        tree.clear()
+        active_norm = str(Path(str(active))) if active is not None else None
+        for root, name, pinned in self._workspace.projects():
+            r = str(Path(root))
+            pitem = QTreeWidgetItem([f"{'★ ' if pinned else ''}{name}"])
+            pitem.setData(0, _PROJ_ROLE, r)
+            pitem.setToolTip(0, r)
+            tree.addTopLevelItem(pitem)
+            is_active = active_norm is not None and r == active_norm
+            if is_active:
+                for tid, is_act in self._active_session_rows():
+                    leaf = QTreeWidgetItem([self._session_row_label(tid, is_act, reg, gate)])
+                    leaf.setData(0, _TID_ROLE, tid)
+                    leaf.setToolTip(0, tid)
+                    pitem.addChild(leaf)
+            else:
+                for tid, name in self._workspace.sessions_for(root):
+                    leaf = QTreeWidgetItem([name])
+                    leaf.setData(0, _TID_ROLE, tid)
+                    leaf.setToolTip(0, tid)
+                    pitem.addChild(leaf)
+            pitem.setExpanded(is_active or r in prev_expanded)
+        self._select_active_leaf()
+        self._refresh_empty_hint()
+
+    # 兼容旧信号/测试名（bridge refresh_sessions → 重建树）
+    def refresh_sessions(self) -> None:
+        self.refresh_tree()
+
+    def _select_active_leaf(self) -> None:
+        tree = self.project_tree
+        for i in range(tree.topLevelItemCount()):
+            pitem = tree.topLevelItem(i)
+            for j in range(pitem.childCount()):
+                leaf = pitem.child(j)
+                if leaf.data(0, _TID_ROLE) == self.active_tid:
+                    tree.setCurrentItem(leaf)
+                    return
+
+    def session_leaf_texts(self) -> list[str]:
+        """全部会话叶子文本（测试 / 复用）：跨项目按树序。"""
+        out: list[str] = []
+        tree = self.project_tree
+        for i in range(tree.topLevelItemCount()):
+            pitem = tree.topLevelItem(i)
+            for j in range(pitem.childCount()):
+                out.append(pitem.child(j).text(0))
+        return out
+
+    def _teardown_panes(self) -> None:
+        """切项目前清空旧项目的 pane 栈（新项目的 thread 是另一套检查点库）。"""
+        for p in list(self.panes.values()):
+            p.setParent(None)
+        self.panes.clear()
+        while self.stack.count():
+            self.stack.removeWidget(self.stack.widget(0))
+
+    def _confirm_cancel_running(self) -> bool:
+        """切走时有进行中回合 → 确认「切换将取消当前项目的进行中回合」。"""
+        from PySide6.QtWidgets import QMessageBox
+
+        ans = QMessageBox.question(
+            self, "切换项目", "当前项目有回合在运行。切换将取消它，继续？"
+        )
+        return ans == QMessageBox.StandardButton.Yes
+
+    def _do_switch_project(self, root, focus_tid: str | None = None) -> None:
+        """切到项目 root（关旧建新 + 打开 focus_tid / 上次活动 / 新会话）。"""
+        root = Path(str(root))
+        if self._workspace.active_root() is not None and root == Path(str(self._workspace.active_root())):
+            if focus_tid:
+                self._switch_to(focus_tid)
+            return
+        pres = self._workspace.switch_project(root, proceed_if_running=self._confirm_cancel_running)
+        if pres is None:
+            return
+        self.presenter = pres
+        self._teardown_panes()
+        self._update_title()
+        target = focus_tid or self._workspace.pick_start(root) or pres.new_session_id()
+        self._switch_to(target)
+        self.refresh_tree()
+
+    def _on_tree_item_clicked(self, item, _col: int) -> None:
+        if item.parent() is None:  # 项目节点 = 目的地
+            self._do_switch_project(item.data(0, _PROJ_ROLE))
+        else:  # 会话叶子
+            tid = item.data(0, _TID_ROLE)
+            proj = item.parent().data(0, _PROJ_ROLE)
+            if Path(str(proj)) != Path(str(self._workspace.active_root())):
+                self._do_switch_project(proj, focus_tid=tid)
+            else:
+                self._switch_to(tid)
+
+    def _on_tree_item_double_clicked(self, item, _col: int) -> None:
+        # 项目节点：单击已是「切进」目的地，双击不再重复/改名（改名走右键）
+        if item.parent() is None:
+            return
+        self._rename_session_item(item.data(0, _TID_ROLE))
+
+    def _on_tree_context(self, pos) -> None:
+        item = self.project_tree.itemAt(pos)
+        if item is None:
+            return
+        if item.parent() is None:
+            menu = self._build_project_menu(item.data(0, _PROJ_ROLE))
+        else:
+            menu = self._build_session_menu(item.data(0, _TID_ROLE))
+        menu.exec(self.project_tree.mapToGlobal(pos))
 
     def _on_show_archived_toggled(self, on: bool) -> None:
         self._show_archived = on
         self.refresh_sessions()
 
     # ---- 会话改名（工单 05：双击改名即时生效 + 持久化；右键菜单共用）
-    def _on_session_double_clicked(self, item: QListWidgetItem) -> None:
-        self._rename_session_item(item.data(Qt.UserRole))
-
     def _rename_session_item(self, tid: str) -> None:
         from PySide6.QtWidgets import QInputDialog
 
@@ -540,13 +672,114 @@ class MainWindow(QMainWindow):
         if okk and new_title.strip():
             self.presenter.rename_session(tid, new_title.strip())
 
-    # ---- 会话右键菜单（分享/下载/重命名/置顶/克隆/归档/删除）
-    def _on_session_context(self, pos) -> None:
-        it = self.session_list.itemAt(pos)
-        if it is None:
+    # ---- 项目改名 / 移除（工单 04：项目节点双击改名、右键移除=只删登记）
+    def _rename_project_item(self, root) -> None:
+        from PySide6.QtWidgets import QInputDialog
+
+        cur = self._workspace.project_name(Path(str(root)))
+        new_name, okk = QInputDialog.getText(self, "重命名项目", "新名称:", text=cur)
+        if okk and new_name.strip():
+            self._workspace.rename_project(Path(str(root)), new_name.strip())
+            self.refresh_tree()
+
+    def _remove_project_item(self, root) -> None:
+        self._workspace.remove_project(Path(str(root)))  # 只删注册表项，不删项目文件
+        self.refresh_tree()
+
+    # ---- 项目右键菜单（重命名 / 置顶 / 资源管理器打开 / 移除）
+    def _build_project_menu(self, root):
+        from PySide6.QtWidgets import QMenu
+
+        menu = QMenu(self)
+        name = menu.addAction("重命名")
+        name.triggered.connect(lambda: self._rename_project_item(root))
+        pin = menu.addAction("取消置顶" if self._workspace.project_pinned(Path(str(root)))
+                             else "置顶")
+        pin.triggered.connect(lambda: self._workspace.set_project_pinned(
+            Path(str(root)), not self._workspace.project_pinned(Path(str(root)))))
+        explorer = menu.addAction("在资源管理器打开")
+        explorer.triggered.connect(lambda: self._open_project_in_explorer(Path(str(root))))
+        menu.addSeparator()
+        remove = menu.addAction("从列表移除（不删文件）")
+        remove.triggered.connect(lambda: self._remove_project_item(root))
+        return menu
+
+    def _open_project_in_explorer(self, root) -> None:
+        import subprocess
+        import sys
+
+        p = str(Path(str(root)))
+        if sys.platform.startswith("win"):
+            import os
+
+            os.startfile(p)  # noqa: S606 — 本地资源管理器
+        else:  # 非 Windows（仓库主目标为 Windows）：无 shell 拼接，避免注入
+            opener = "open" if sys.platform == "darwin" else "xdg-open"
+            subprocess.run([opener, p], check=False)
+
+    # ---- 工单 05：打开项目 / 新建项目 菜单
+    def _build_open_project_menu(self, menu) -> None:
+        menu.aboutToShow.connect(self._populate_open_menu)
+        self._populate_open_menu(menu)
+
+    def _populate_open_menu(self, menu) -> None:
+        menu.clear()
+        for root, name in self._workspace.recent():
+            act = menu.addAction(str(name))
+            act.triggered.connect(lambda _on=False, r=root: self._do_switch_project(r))
+        if menu.actions():
+            menu.addSeparator()
+        open_act = menu.addAction("打开文件夹…")
+        open_act.triggered.connect(self._open_project_dialog)
+
+    def _open_project_dialog(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+
+        chosen = QFileDialog.getExistingDirectory(self, "选择项目文件夹")
+        if chosen:
+            self._open_project(chosen)
+
+    def _open_project(self, chosen) -> None:
+        from src.gui.workspace import resolve_open_root
+
+        d = resolve_open_root(chosen)
+        if d.needs_init and not self._confirm_init(d.root):
             return
-        menu = self._build_session_menu(it.data(Qt.UserRole))
-        menu.exec(self.session_list.mapToGlobal(pos))
+        root = self._workspace.open_dir(chosen)  # 解析 + 骨架 + 登记
+        self._do_switch_project(root)
+
+    def _confirm_init(self, root) -> bool:
+        from PySide6.QtWidgets import QMessageBox
+
+        ans = QMessageBox.question(
+            self, "初始化项目", f"此目录还不是 JARVIS 项目，要初始化它吗？\n{root}"
+        )
+        return ans == QMessageBox.StandardButton.Yes
+
+    def _new_project_dialog(self) -> None:
+        from PySide6.QtWidgets import QFileDialog, QInputDialog
+
+        parent = QFileDialog.getExistingDirectory(self, "选择项目父目录")
+        if not parent:
+            return
+        name, ok = QInputDialog.getText(self, "新建项目", "项目名:")
+        if not ok or not name.strip():
+            return
+        root = self._workspace.new_dir(name.strip(), parent)
+        self._do_switch_project(root)
+
+    # ---- 工单 05：标题 / 状态 显示活动项目名
+    def _active_project_name(self) -> str:
+        root = self._workspace.active_root()
+        return self._workspace.project_name(root) if root is not None else ""
+
+    def _update_title(self) -> None:
+        name = self._active_project_name()
+        self.setWindowTitle(f"JARVIS — {name}" if name else "JARVIS")
+
+    def _refresh_empty_hint(self) -> None:
+        if hasattr(self, "_empty_hint"):
+            self._empty_hint.setVisible(not self._workspace.projects())
 
     def _build_session_menu(self, tid: str):
         from PySide6.QtWidgets import QMenu

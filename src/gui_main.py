@@ -85,34 +85,46 @@ def main(argv: list[str] | None = None) -> int:
         model = llm.to_chat_model()
         label = llm.model_id
 
-    from src.gui.runtime import build_runtime
-
-    runtime, gate = build_runtime(
-        config,
-        model=model,
-        enable_mcp=enable_mcp,
-        enable_scheduled=enable_scheduled,
-        label=label or config.model_id,
-    )
+    from pathlib import Path
 
     from PySide6.QtWidgets import QApplication
 
     from src.gui.events import UiBridge
     from src.gui.main_window import MainWindow
-    from src.gui.presenter_wiring import wire_presenter
+    from src.gui.project_registry import ProjectRegistry, default_registry_path
+    from src.gui.workspace_controller import WorkspaceController
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
     bridge = UiBridge()
-    presenter = wire_presenter(runtime, bridge, app=app)
+
+    # 多项目工作区（工单 05）：全局注册表 + 切项目控制器。启动 = 打开最近项目，
+    # 首次（空注册表）= 登记并打开启动目录对应的项目。
+    registry = ProjectRegistry(default_registry_path())
+    launch = registry.pick_launch()
+    start_root = Path(str(launch["path"])) if launch else Path(config.project_root)
+    if not launch:
+        registry.add(start_root)
+
+    def _make_runtime(root):
+        from src.gui.runtime import build_runtime
+
+        cfg = load_config(project_root=Path(root), env_overrides=overrides)
+        rt, _gate = build_runtime(
+            cfg, model=model, enable_mcp=enable_mcp,
+            enable_scheduled=enable_scheduled, label=label or cfg.model_id,
+        )
+        return rt
+
+    controller = WorkspaceController(registry, _make_runtime, bridge)
+    presenter = controller.switch_project(start_root)
     key_store = llm_config.make_key_store() if llm is not None else None
-    win = MainWindow(presenter, bridge, llm=llm, key_store=key_store)
+    win = MainWindow(presenter, bridge, llm=llm, key_store=key_store, workspace=controller)
     win.show()
 
     try:
         rc = app.exec()
     finally:
-        gate.shutdown()
-        runtime.close()
+        controller.shutdown()
     return int(rc or 0)
 
 

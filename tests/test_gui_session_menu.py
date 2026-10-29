@@ -139,7 +139,7 @@ def test_menu_actions_full_cycle(qapp, monkeypatch):
     p.pin_session(tid, True)
     win.refresh_sessions()
     qapp.processEvents()
-    items = [win.session_list.item(i).text() for i in range(win.session_list.count())]
+    items = win.session_leaf_texts()
     assert any("★" in t and "原会话" in t for t in items)
     assert "★" in items[0]
 
@@ -148,13 +148,13 @@ def test_menu_actions_full_cycle(qapp, monkeypatch):
     p.archive_session(tid2, True)
     win.refresh_sessions()
     qapp.processEvents()
-    labels = [win.session_list.item(i).text() for i in range(win.session_list.count())]
+    labels = win.session_leaf_texts()
     assert not any("待归档" in t for t in labels)
     # 「显示已归档会话」切回 → 出现且带 📁
     win._show_archived = True
     win.refresh_sessions()
     qapp.processEvents()
-    labels = [win.session_list.item(i).text() for i in range(win.session_list.count())]
+    labels = win.session_leaf_texts()
     assert any("📁" in t and "待归档" in t for t in labels)
 
     # 克隆 → 新会话出现在列表（-副本；真实流程中副本已在检查点，故钉入 session_ids）
@@ -162,7 +162,7 @@ def test_menu_actions_full_cycle(qapp, monkeypatch):
     monkeypatch.setattr(p, "session_ids", lambda: [tid, tid2, new_tid])
     win.refresh_sessions()
     qapp.processEvents()
-    labels = [win.session_list.item(i).text() for i in range(win.session_list.count())]
+    labels = win.session_leaf_texts()
     assert any("原会话-副本" in t for t in labels)
 
     # 删除 → 列表移除
@@ -170,7 +170,7 @@ def test_menu_actions_full_cycle(qapp, monkeypatch):
     monkeypatch.setattr(p, "session_ids", lambda: [tid, new_tid])
     win.refresh_sessions()
     qapp.processEvents()
-    labels = [win.session_list.item(i).text() for i in range(win.session_list.count())]
+    labels = win.session_leaf_texts()
     assert not any("待归档" in t for t in labels)
 
 
