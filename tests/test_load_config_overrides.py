@@ -14,6 +14,24 @@ from src.config import load_config
 from tests.gui_fakes import TEST_ROOT, cleanup_home, new_home
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_install_root(monkeypatch):
+    """隔离 load_config 的 install_root()/.env 兜底路径。
+
+    本机开发机仓库根有真实 .env（gitignore 覆盖，CI 全新检出没有），
+    兜底命中会让「无 .env 才 KeyError」的断言在本机失真；此处钉死到
+    空目录，使本文件行为 = 无 .env 的全新环境（CI 等价）。
+    """
+    empty_root = TEST_ROOT / "install-root-empty"
+    empty_root.mkdir(exist_ok=True)
+    # resolve_env_file / resolve_jarvis_json 走 project_paths 自身命名空间，
+    # load_config 兜底走 config 绑定 —— 两处都钉死。
+    monkeypatch.setattr("src.project_paths.install_root", lambda: empty_root)
+    monkeypatch.setattr("src.config.install_root", lambda: empty_root)
+    yield
+
+
+
 def test_overrides_fill_required_keys_without_env_file():
     home = new_home()
     try:
