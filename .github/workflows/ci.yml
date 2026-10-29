@@ -14,6 +14,13 @@ jobs:
       matrix:
         python-version: ["3.12"]
 
+    # GUI (PySide6) tests must run offscreen on headless ubuntu runners.
+    # 4 gui test files do not set QT_QPA_PLATFORM themselves (they rely on
+    # pytest collection order to set it globally, which is fragile). This
+    # job-level env is the explicit, order-independent backstop.
+    env:
+      QT_QPA_PLATFORM: offscreen
+
     steps:
       - uses: actions/checkout@v4
 
