@@ -34,6 +34,38 @@ def _console_encoding() -> str | None:
 
 _IS_WINDOWS = os.name == "nt"
 # 测试 monkeypatch 目标：直接改本模块属性（见 tests/test_shell_backend.py）。
+# _IS_POSIX：测试 monkeypatch 目标，同 _IS_WINDOWS（见 tests/test_shell_backend.py）。
+_IS_POSIX = os.name == "posix"
+
+
+def _posix_target_exists(key: str) -> bool:
+    """POSIX 重锚定目标路径是否已存在（作 monkeypatch 目标，保证跨平台测试确定性）。"""
+    return Path(key).exists()
+
+
+def resolve_virtual_mode_false_path(
+    key: str,
+    cwd: Path,
+    *,
+    is_posix: bool,
+    target_exists: bool,
+) -> Path:
+    """纯函数：把 virtual_mode=False 的文件工具 key 解析为真实磁盘路径。
+
+    deepagents FilesystemMiddleware.validate_path 会把相对路径补前缀 / 再调 backend，
+    故 POSIX 下模型 write_file('hello.txt') 到达 backend 是 write('/hello.txt')：
+    - POSIX 且目标不存在：视为补了 / 的相对写，重锚到 cwd
+      （修非 root 用户 PermissionError 与 CI root 真写文件系统根的问题）；
+    - POSIX 且目标已存在：原样返回，不偷用户真实绝对路径；
+    - Windows：无盘符 /foo 落 cwd（保持原行为）；跨盘符绝对路径原样返回。
+    """
+    p = Path(key)
+    if p.is_absolute():
+        if is_posix and not target_exists:
+            return (cwd / str(p).lstrip("/\\")).resolve()
+        return p
+    rel = str(p).lstrip("/\\")
+    return (cwd / rel).resolve()
 
 
 class InheritedEnvShellBackend(LocalShellBackend):
@@ -67,19 +99,15 @@ class InheritedEnvShellBackend(LocalShellBackend):
         self._virtual_path_re = re.compile(rf"(?<![:\w])/(?:{alt})(?![\w])", re.IGNORECASE)
 
     def _resolve_path(self, key: str) -> Path:
-        """覆写 virtual_mode=False 分支：无盘符绝对路径（/foo）落到 cwd 下。
+        """覆写 virtual_mode=False 的路径解析（规则见 resolve_virtual_mode_false_path）。
 
-        Windows 下 Path("/foo").is_absolute() 为 False，但 Path("/foo").root
-        为 "\\"，导致 cwd / Path("/foo") 锚定到盘符根（D:\\foo）而非 cwd\\foo。
-        本方法在非真正绝对路径时剥离前导分隔符，使其解析为 cwd 的子路径。
-
-        跨盘符真正绝对路径（D:\\foo）不受影响。
+            POSIX：deepagents validate_path 给相对写补的 /，目标不存在时重锚到 cwd；
+            已存在的目标绝对路径原样返回。Windows：无盘符/相对路径行为不变；跨盘符绝对路径不受影响。
         """
-        path = Path(key)
-        if path.is_absolute():
-            return path
-        rel = str(path).lstrip("/\\")
-        return (self.cwd / rel).resolve()
+        target_exists = _posix_target_exists(key) if _IS_POSIX else False
+        return resolve_virtual_mode_false_path(
+            key, self.cwd, is_posix=_IS_POSIX, target_exists=target_exists
+        )
 
     def _virtual_prefix_error(self, command: str) -> ExecuteResponse | None:
         m = self._virtual_path_re.search(command)
@@ -199,4 +227,4 @@ class InheritedEnvShellBackend(LocalShellBackend):
         )
 
 
-__all__ = ["InheritedEnvShellBackend"]
+__all__ = ["InheritedEnvShellBackend", "resolve_virtual_mode_false_path"]

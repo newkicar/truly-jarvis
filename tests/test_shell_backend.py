@@ -1,8 +1,10 @@
 """InheritedEnvShellBackend 测试：环境继承 + 解码容错 + 基本执行。"""
 import sys
+from pathlib import Path
 
 import pytest
 
+import src.shell_backend as sb
 from src.shell_backend import InheritedEnvShellBackend
 
 
@@ -273,3 +275,76 @@ def test_posix_multiline_command_allowed(monkeypatch):
     res = b.execute(multi)
     assert res.exit_code == 0
     assert seen == [multi]
+
+
+# ---------------------------------------------------------------- POSIX 相对路径重锚定（deepagents 给相对路径补 /）
+
+
+def _scratch_base():
+    """自建 backend 根目录（项目纪律：新测试不用 tmp_path 夹具）。"""
+    base = Path(__file__).resolve().parent.parent / ".scratch" / "rvmf-test"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+def test_rvmf_relative_anchors_to_cwd():
+    """相对路径锚定 cwd（平台无关）。"""
+    base = _scratch_base()
+    fn = sb.resolve_virtual_mode_false_path
+    for is_posix in (True, False):
+        assert fn("sub/x.txt", base, is_posix=is_posix, target_exists=False) == base / "sub" / "x.txt"
+
+
+def test_rvmf_posix_fake_relative_reanchored():
+    """POSIX + 目标不存在：补 / 的相对写重锚到 cwd（双平台确定性）。"""
+    base = _scratch_base()
+    fn = sb.resolve_virtual_mode_false_path
+    assert fn("/hello.txt", base, is_posix=True, target_exists=False) == base / "hello.txt"
+
+
+def test_rvmf_existing_absolute_unchanged():
+    """目标已存在原样返回：is_posix=True 不偷真实路径；is_posix=False 恒放行绝对路径。"""
+    real = Path(__file__).resolve()
+    base = _scratch_base()
+    fn = sb.resolve_virtual_mode_false_path
+    assert fn(str(real), base, is_posix=True, target_exists=True) == real
+    assert fn(str(real), base, is_posix=False, target_exists=False) == real
+
+
+def test_rvmf_missing_absolute_windows_semantics():
+    """Windows 语义（is_posix=False）：不存在的盘符绝对路径原样返回（Windows 分支不重锚）。"""
+    import sys
+    if sys.platform != "win32":
+        pytest.skip("Windows-only: POSIX 下 /foo 是真绝对路径，分支语义不同")
+    base = _scratch_base()
+    missing = base / "definitely-not-exist-xyz"
+    assert not missing.exists()
+    fn = sb.resolve_virtual_mode_false_path
+    assert fn(str(missing), base, is_posix=False, target_exists=False) == missing
+
+
+def test_backend_resolve_path_posix_branch(monkeypatch):
+    """端到端：_resolve_path POSIX 分支——不存在的 /-前缀路径重锚到 backend 根；已存在绝对路径原样。"""
+    base = _scratch_base()
+    b = sb.InheritedEnvShellBackend(root_dir=str(base), virtual_mode=False)
+    monkeypatch.setattr(sb, "_IS_POSIX", True)
+    real = Path(__file__).resolve()
+    monkeypatch.setattr(sb, "_posix_target_exists", lambda key: key == str(real))
+
+    assert b._resolve_path("/hello.txt") == base / "hello.txt", "不存在的 /-前缀路径应重锚到 backend 根"
+    assert b._resolve_path(str(real)) == real, "已存在绝对路径应原样返回"
+
+
+def test_backend_resolve_path_windows_branch(monkeypatch):
+    """端到端：_resolve_path Windows 分支——无盘符/相对路径行为不变。"""
+    import sys
+    if sys.platform != "win32":
+        pytest.skip("Windows-only")
+    base = _scratch_base()
+    b = sb.InheritedEnvShellBackend(root_dir=str(base), virtual_mode=False)
+    monkeypatch.setattr(sb, "_IS_POSIX", False)
+    real = Path(__file__).resolve()
+
+    assert b._resolve_path("/game") == base / "game", "无盘符绝对路径落根（原行为）"
+    assert b._resolve_path("sub/x") == base / "sub" / "x", "相对路径以根为基准（原行为）"
+    assert b._resolve_path(str(real)) == real, '真正绝对路径原样返回'
