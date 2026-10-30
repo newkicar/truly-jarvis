@@ -6,6 +6,7 @@ import pytest
 from tests.conftest import make_fake_config
 from src.config_agents import build_config_subagents
 from src.resilience import ToolErrorBoundaryMiddleware
+from src.sanitize_history import SanitizeHistoryMiddleware
 from src.permissions import (
     PermissionDenyMiddleware,
     build_permission_deny_middleware,
@@ -34,10 +35,12 @@ def test_build_config_subagents_appends_valid_agent(deny_mw):
     assert specs[0]["name"] == "reviewer"
     assert specs[0]["description"] == "只读代码审查"
     assert "审查员" in specs[0]["system_prompt"]
-    # 契约：ToolErrorBoundary 在最外层（异常→数据），deny 在内层
-    assert len(specs[0]["middleware"]) == 2
-    assert isinstance(specs[0]["middleware"][0], ToolErrorBoundaryMiddleware)
-    assert specs[0]["middleware"][1] is deny_mw
+    # 契约：ToolErrorBoundary 在最外层（异常→数据），deny 在内层，sanitize 殿后（400 自愈）
+    mws = specs[0]["middleware"]
+    assert len(mws) == 3
+    assert isinstance(mws[0], ToolErrorBoundaryMiddleware)
+    assert mws[1] is deny_mw
+    assert isinstance(mws[2], SanitizeHistoryMiddleware)
 
 
 def test_build_config_subagents_skips_reserved_names(deny_mw):

@@ -8,12 +8,16 @@ from src.permissions import (
     build_permission_interrupts,
 )
 from src.resilience import ToolErrorBoundaryMiddleware
+from src.sanitize_history import SanitizeHistoryMiddleware
 
 log = logging.getLogger(__name__)
 
 RESERVED_AGENT_NAMES = frozenset({"researcher", "knowledge_keeper", "general-purpose"})
 
 _ERROR_BOUNDARY = ToolErrorBoundaryMiddleware()
+# 400 自愈：自定义子代理会话内多轮回传历史同样可能撞网关脏数据（"Expected 'id'
+# to be a string." 同族），无状态中间件共享安全。
+_SANITIZE = SanitizeHistoryMiddleware()
 
 
 def build_config_subagents(
@@ -43,7 +47,7 @@ def build_config_subagents(
             log.warning("跳过 agents.%s：缺少 description 或 system_prompt", name)
             continue
 
-        middleware: list = [_ERROR_BOUNDARY, default_deny_middleware]
+        middleware: list = [_ERROR_BOUNDARY, default_deny_middleware, _SANITIZE]
         spec: dict[str, object] = {
             "name": name,
             "description": description,
@@ -55,7 +59,7 @@ def build_config_subagents(
         if isinstance(perms, dict) and perms:
             interrupt_on, agent_state = build_permission_interrupts(perms)
             spec["interrupt_on"] = interrupt_on
-            spec["middleware"] = [_ERROR_BOUNDARY, build_permission_deny_middleware(agent_state)]
+            spec["middleware"] = [_ERROR_BOUNDARY, build_permission_deny_middleware(agent_state), _SANITIZE]
 
         specs.append(spec)
     return specs

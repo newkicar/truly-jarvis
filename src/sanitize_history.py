@@ -25,7 +25,10 @@ Bug 背景（历史中两类 400 触发源，都需成对清洗）：
      "Unsupported chat content part type: 'tool_call'."（vLLM）/ 同族 "Expected
      'id' to be a string."（Rust 代理）；
     - 工具调用语义由 ``.tool_calls`` 字段承载，content 里的 tool_call 块纯冗余
-      → 丢弃；text/多模态/thinking 块保留（thinking 块 id=None/int 实证 200）。
+      → 丢弃；text/多模态/thinking 块保留；
+    - 保留块里的 ``id`` 同样受网关严格 serde 校验："thinking"/"refusal" 块的
+      ``id`` 为 int/None 型会被同族网关拒收（"Expected 'id' to be a string."
+      与该 400 同族）→ 剥离非字符串 id 键（防御性，合法字符串 id 不动）。
 
 处置：``before_model``（每次模型调用前都会跑，resume 路径同样覆盖）检测含
 invalid_tool_calls 或空调用的 AIMessage，重建之（保留 id/content，只留合法调用）；
@@ -107,8 +110,12 @@ def _normalize_content(msg: AIMessage) -> tuple[Any, bool]:
     """归一化 AIMessage.content：丢弃网关不接受的 content part（tool_call/未知类型）。
 
     工具调用语义已由 ``.tool_calls`` 字段承载（网关按 tool_calls 校验），
-    content 里的 tool_call 块纯冗余且致 400；text/多模态/thinking 块保留
-    （thinking 块 id=None/int 实证 200，不动）。返回 (新 content, 是否变化)。
+    content 里的 tool_call 块纯冗余且致 400；text/多模态/thinking 块保留。
+    另：保留块若带非字符串 ``id``（thinking/refusal 的 id=None/int，本网关流式
+    响应常见）→ 剥离该键。Rust 代理对 content part 的 ``id`` 做严格 serde 校验，
+    非字符串 id 原样回传即 400 "Expected 'id' to be a string."（旧 go 网关实证 200
+    的假设在 Rust 代理上不再成立；thinking id 无工具回传语义，剥离无副作用）。
+    返回 (新 content, 是否变化)。
     """
     c = msg.content
     if not isinstance(c, list):
@@ -116,10 +123,19 @@ def _normalize_content(msg: AIMessage) -> tuple[Any, bool]:
     kept = []
     changed = False
     for b in c:
-        if isinstance(b, str) or (isinstance(b, dict) and b.get("type") in _KEEP_CONTENT_TYPES):
+        if isinstance(b, str):
             kept.append(b)
-        else:
+            continue
+        if not (isinstance(b, dict) and b.get("type") in _KEEP_CONTENT_TYPES):
             changed = True
+            continue
+        if "id" in b and not (isinstance(b.get("id"), str) and b["id"]):
+            nb = dict(b)
+            nb.pop("id", None)
+            kept.append(nb)
+            changed = True
+        else:
+            kept.append(b)
     if not changed:
         return c, False
     return (kept if kept else ""), True

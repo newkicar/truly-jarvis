@@ -23,6 +23,11 @@ def format_agent_error(exc: BaseException) -> str:
     msg = str(exc).replace("\n", " ")
     if len(msg) > 400:
         msg = msg[:400] + "…"
+    if "Expected 'id' to be a string" in msg or "Unsupported content part" in msg or "must be valid JSON" in msg:
+        return (
+            f"API 请求失败（历史消息含网关不接受的内容块，已自动清洗）：{msg}\n"
+            "下一轮会自动重试自愈；若反复出现：开新会话（Ctrl+N）或 /delete-session 清掉当前会话。"
+        )
     if "BadRequest" in name or "400" in msg:
         return (
             f"API 请求失败：{msg}\n"

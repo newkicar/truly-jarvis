@@ -5,9 +5,14 @@ researcher 定义见 .scratch/javis-implementation/issues/04-researcher-prompt.m
 """
 from src.inbox_snapshot_middleware import InboxSnapshotMiddleware
 from src.resilience import NoProgressGuardMiddleware, StagnationGuardMiddleware, ToolErrorBoundaryMiddleware
+from src.sanitize_history import SanitizeHistoryMiddleware
 from src.vault_guard import VaultWriteGuardMiddleware
 
 _ERROR_BOUNDARY = ToolErrorBoundaryMiddleware()
+# 400 自愈（子代理会话内多轮模型调用同样回传历史 content/tool_calls；
+# 网关脏 id/content part 在子代理内同样会 400，主代理的 sanitize 覆盖不到子代理
+# 子图——每实例独立、无状态，共享安全）。
+_SANITIZE = SanitizeHistoryMiddleware()
 
 RESEARCHER_PROMPT = """你是 JARVIS 的 researcher，负责「搜索互联网 + 检索本地知识库 → 过滤无用信息 → 带来源总结」。
 
@@ -60,15 +65,16 @@ def build_researcher(search_tools=(), wiki_tools=(), rag_tool=None, deny_middlew
     tools = [*search_tools, *wiki_tools]
     if rag_tool is not None:
         tools.append(rag_tool)
+    mw = [_ERROR_BOUNDARY, StagnationGuardMiddleware(), NoProgressGuardMiddleware(), _SANITIZE]
     spec: dict[str, object] = {
         "name": "researcher",
         "description": RESEARCHER_DESCRIPTION,
         "system_prompt": RESEARCHER_PROMPT,
         "tools": tools,
-        "middleware": [_ERROR_BOUNDARY, StagnationGuardMiddleware(), NoProgressGuardMiddleware()],
+        "middleware": mw,
     }
     if deny_middleware is not None:
-        spec["middleware"] = [_ERROR_BOUNDARY, StagnationGuardMiddleware(), NoProgressGuardMiddleware(), deny_middleware]
+        spec["middleware"] = [_ERROR_BOUNDARY, StagnationGuardMiddleware(), NoProgressGuardMiddleware(), _SANITIZE, deny_middleware]
     return spec  # type: ignore[return-value]
 
 
@@ -113,6 +119,7 @@ def build_knowledge_keeper(deny_middleware=None, project_root=None, vault_path=N
     ]
     if project_root is not None and vault_path is not None:
         middlewares.append(InboxSnapshotMiddleware(project_root, vault_path))
+    middlewares.append(_SANITIZE)
     if deny_middleware is not None:
         middlewares.insert(0, deny_middleware)
     middlewares.insert(0, _ERROR_BOUNDARY)

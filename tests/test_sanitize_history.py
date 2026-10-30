@@ -391,16 +391,38 @@ def test_sanitize_messages_drops_unsupported_content_parts():
 
 
 def test_sanitize_messages_keeps_multimodal_and_thinking_parts():
-    """合法 content 块（image/thinking/text）零改动（None = 不动历史）。"""
+    """合法 content 块（image/text + 字符串 id 的 thinking）零改动（None = 不动历史）。"""
     ai = AIMessage(
         content=[
             {"type": "image_url", "image_url": {"url": "data:image/png;base64,x"}},
-            {"type": "thinking", "thinking": "hmm", "id": None},
+            {"type": "thinking", "thinking": "hmm", "id": "th_1"},
             {"type": "text", "text": "ok"},
         ],
         id="a_mm",
     )
     assert sanitize_messages([ai]) is None
+
+
+def test_sanitize_messages_strips_non_string_thinking_id():
+    """thinking/refusal 块 id=None/int → Rust 代理 400 "Expected 'id' to be a string."：
+    剥离非字符串 id 键（块本体保留），随整表重写持久化一次自愈。"""
+    ai = AIMessage(
+        content=[
+            {"type": "thinking", "thinking": "hmm", "id": None},
+            {"type": "thinking", "thinking": "more", "id": 7},
+            {"type": "text", "text": "ok"},
+        ],
+        id="a_think_id",
+    )
+    out = sanitize_messages([ai])
+    assert out is not None
+    fixed = out[0]
+    blocks = fixed.content
+    assert [b.get("type") for b in blocks] == ["thinking", "thinking", "text"]
+    assert all("id" not in b for b in blocks if b.get("type") == "thinking")
+    assert blocks[0]["thinking"] == "hmm"  # 块内容保留
+    # 持久化后二次运行零开销（已剥离 id 的 thinking 合法）
+    assert sanitize_messages(list(out)) is None
 
 
 def test_sanitize_messages_all_unsupported_parts_become_empty_content():

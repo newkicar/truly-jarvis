@@ -596,3 +596,18 @@ def test_drain_watchdog_requests_before_tool_end_item_arrives():
     # 无看门狗：取消（0.3s）后首次 drain 请求在首个 item 到达时（模型 2s 延迟之后，
     # 距取消 >1.0s）；有看门狗：取消命中后 ~50ms 内即请求 drain。
     assert req["first_at"] - t0["cancel"] < 1.0
+
+
+def test_format_agent_error_id_string_branch():
+    """网关 "Expected 'id' to be a string." / content part 类 400 → 专门指引
+    （已自动清洗 + 新会话兜底），不再裸吐 BadRequest 通用文案。"""
+    from src.streaming import format_agent_error
+
+    class Fake400(Exception):
+        pass
+
+    out = format_agent_error(Fake400("openai BadRequestError: 400 Expected 'id' to be a string."))
+    assert "已自动清洗" in out
+    assert "/delete-session" in out
+    out2 = format_agent_error(Fake400("Unsupported content part type: 'tool_call'"))
+    assert "已自动清洗" in out2
