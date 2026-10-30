@@ -123,6 +123,8 @@ def test_pick_launch_most_recent_existing_skips_missing():
         a, b = d / "gone", d / "here"
         a.mkdir()
         b.mkdir()
+        # 自足夹具：b 自身带 jarvis.json（不依赖仓库根的未提交文件 → CI 干净检出也过）
+        (b / "jarvis.json").write_text("{}", encoding="utf-8")
         reg.add(a, now=5.0)
         reg.add(b, now=4.0)
         reg.set_pinned(b, True)
