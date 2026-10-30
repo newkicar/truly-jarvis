@@ -50,6 +50,31 @@ def resolve_open_root(chosen_dir: Any, *, up_to: Any | None = None) -> OpenDecis
     return OpenDecision(root=c, needs_init=True)
 
 
+def jarvis_project_root_of(chosen_dir: Any, *, ancestor_levels: int = 4) -> Path | None:
+    """目录本身或上 N 级内有 jarvis.json → 返回该项目根；否则 None（= 不再是 jarvis 项目）。
+
+    启动/切项目的**有效性判定**专用（与 resolve_open_root 的「三分支判定+要初始化」不同）：
+    - 目录不存在 → None；
+    - 其本身或上 ancestor_levels 级内存在 jarvis.json → 该项目根；
+    - 都没有 → None（用户已删除 jarvis 依赖文件 = 不再需要该项目；**不**自动重建）。
+    UNC/网络盘路径不做 .resolve()（避免网络盘探测挂起）；任何 I/O 异常一律 None，
+    永不把「探测失败」误判为有效项目。
+    """
+    try:
+        d = Path(str(chosen_dir)).expanduser()
+        if not d.is_dir():
+            return None
+        for _ in range(ancestor_levels + 1):
+            if (d / JARVIS_JSON).is_file():
+                return d
+            if d.parent == d:  # 已到文件系统顶
+                break
+            d = d.parent
+        return None
+    except OSError:
+        return None
+
+
 def init_project(root: Any) -> None:
     """幂等骨架：缺 jarvis.json 才写默认（不覆盖已有）；建 schedules/ 目录。"""
     from src.project_init import JARVIS_JSON_TEMPLATE

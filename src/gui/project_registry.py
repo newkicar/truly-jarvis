@@ -142,9 +142,15 @@ class ProjectRegistry:
         return sorted(self.entries(), key=key)
 
     def pick_launch(self) -> dict | None:
-        """取 ordered() 里第一个路径仍存在的条目；无则 None（上层落空状态）。"""
+        """取 ordered() 里第一个「路径仍存在 且 仍是 jarvis 项目」的条目；无则 None（上层落空状态）。
+
+        陈旧条目 = 目录还在但 jarvis.json 等依赖文件已被删除（用户不再使用 jarvis）→
+        **跳过**（不删除条目、不自动重建文件），继续找下一个有效条目；全无效 → None。
+        """
+        from src.gui.workspace import jarvis_project_root_of  # 函数内 import：保持 registry 模块独立可 import
+
         for e in self.ordered():
             p = Path(str(e.get("path")))
-            if p.exists():
+            if p.exists() and jarvis_project_root_of(p) is not None:
                 return e
         return None

@@ -63,9 +63,15 @@ class MainWindow(QMainWindow):
         _theme.apply_theme(QApplication.instance(), _theme.load_theme())
         # 懒建 pane（重记录重建只在首访该会话时发生，启动不预建全部）；
         # 启动打开「上次活动会话」（工单 05），没有则取最新或新会话
-        first = presenter.session_ids()
-        start = self._workspace.pick_start(self._workspace.active_root())
-        self._switch_to(start or (first[0] if first else presenter.new_session_id()))
+        # 空态（presenter=None：jarvis 依赖文件已删/目录已移）：不崩、不自动重建文件；
+        # 禁用输入区，等用户手动「打开项目 / 新建项目」关联
+        if presenter is not None:
+            first = presenter.session_ids()
+            start = self._workspace.pick_start(self._workspace.active_root())
+            self._switch_to(start or (first[0] if first else presenter.new_session_id()))
+        else:
+            self.input_bar.edit.setEnabled(False)
+            self.input_bar.btn_send.setEnabled(False)
 
     # ---- 结构
     def _build_ui(self) -> None:
@@ -167,7 +173,7 @@ class MainWindow(QMainWindow):
         ll.addWidget(self._empty_hint)
         self.btn_new = QPushButton("＋ 新会话")
         self.btn_new.setObjectName("btn-primary")
-        self.btn_new.clicked.connect(lambda: self._switch_to(self.presenter.new_session_id()))
+        self.btn_new.clicked.connect(self._on_new_session_clicked)
         ll.addWidget(self.btn_new)
         self.running_badge = QLabel("")
         self.running_badge.setObjectName("badge-running")
@@ -221,16 +227,29 @@ class MainWindow(QMainWindow):
         self.input_bar.set_esc_hook(self._completion_esc_dismiss)
         self._skills_cache: list = [0.0, None]  # [ts, catalog]，TTL 10s；None=未扫过
 
+    def _on_new_session_clicked(self) -> None:
+        """新会话按钮：空态（无关联项目）时只提示，不崩。"""
+        if self.presenter is None:
+            self.status_label.setText("还没有关联项目，请先「打开项目 / 新建项目」")
+            return
+        self._switch_to(self.presenter.new_session_id())
+
     # ---- 工单 08：高级模式（Plan/Act 全局 · YOLO 线程级 · 撤回消息层）
     def _on_plan_toggled(self, on: bool) -> None:
         from src import plan_mode
 
+        if self.presenter is None:
+            self.plan_action.setChecked(False)
+            return
         plan_mode.set_mode(self.presenter.runtime.permission_state, "plan" if on else "act")
         self._refresh_mode_badges()
 
     def _on_yolo_toggled(self, on: bool) -> None:
         from src import permissions
 
+        if self.presenter is None:
+            self.yolo_action.setChecked(False)
+            return
         state = self.presenter.runtime.permission_state
         tid = self.active_tid or ""
         if on:
@@ -356,11 +375,18 @@ class MainWindow(QMainWindow):
         self.presenter.run_command(_run, tid)
 
     def _on_scheduler_panel(self) -> None:
+        if self.presenter is None:
+            self.status_label.setText("\u8fd8\u6ca1\u6709\u5173\u8054\u9879\u76ee\uff0c\u65e0\u6cd5\u6253\u5f00\u5b9a\u65f6\u4efb\u52a1\u9762\u677f")
+            return
         from src.gui.scheduler_panel import SchedulerPanel
 
         SchedulerPanel(self.presenter, self).exec()
 
     def _build_mcp_menu(self, menu) -> None:
+        if self.presenter is None:
+            act = menu.addAction("\uff08\u5c1a\u672a\u5173\u8054\u9879\u76ee\uff0cMCP \u672a\u52a0\u8f7d\uff09")
+            act.setEnabled(False)
+            return
         cfg = self.presenter.runtime.config
         servers = cfg.mcps or {}
         if not servers:
@@ -392,6 +418,8 @@ class MainWindow(QMainWindow):
     def _skills_cached(self) -> list:
         import time
 
+        if self.presenter is None:
+            return []
         now = time.monotonic()
         ts, cached = self._skills_cache
         if cached is not None and now - ts < 10.0:
@@ -405,6 +433,9 @@ class MainWindow(QMainWindow):
 
         from src.gui.completion import has_query_no_match
 
+        if self.presenter is None:
+            self.completion_popup.hide()
+            return
         skills = self._skills_cached()
         state = resolve_for_input(
             self.input_bar.edit,
@@ -542,8 +573,8 @@ class MainWindow(QMainWindow):
         """重建项目→会话树（活动项目=live 会话，非活动项目=只读会话名）。保留已展开项。"""
         tree = self.project_tree
         active = self._workspace.active_root()
-        reg = self.presenter.session_registry
-        gate = self.presenter.gate
+        reg = self.presenter.session_registry if self.presenter is not None else None
+        gate = self.presenter.gate if self.presenter is not None else None
         prev_expanded = {
             tree.topLevelItem(i).data(0, _PROJ_ROLE)
             for i in range(tree.topLevelItemCount())
@@ -626,6 +657,9 @@ class MainWindow(QMainWindow):
         if pres is None:
             return
         self.presenter = pres
+        # 空态恢复：刚无关联项目时（启动落空态）切项目后重新启用输入区
+        self.input_bar.edit.setEnabled(True)
+        self.input_bar.btn_send.setEnabled(True)
         self._teardown_panes()
         self._update_title()
         target = focus_tid or self._workspace.pick_start(root) or pres.new_session_id()
@@ -779,7 +813,8 @@ class MainWindow(QMainWindow):
 
     def _refresh_empty_hint(self) -> None:
         if hasattr(self, "_empty_hint"):
-            self._empty_hint.setVisible(not self._workspace.projects())
+            # 空态（无关联项目）或注册表无有效项目：都显示提示
+            self._empty_hint.setVisible(self.presenter is None or not self._workspace.projects())
 
     def _build_session_menu(self, tid: str):
         from PySide6.QtWidgets import QMenu
@@ -883,6 +918,9 @@ class MainWindow(QMainWindow):
 
     # ---- 发送 / 回合
     def _submit(self) -> None:
+        if self.presenter is None:
+            self.status_label.setText("还没有关联项目，请先「打开项目 / 新建项目」")
+            return
         # InputBar 已清空编辑框并 emit 原始多行文本（含换行，走 build_submission）
         raw = self._last_input_text
         payload, note = commands.build_submission(

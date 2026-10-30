@@ -14,6 +14,8 @@ from typing import Any
 
 from src.gui.workspace import (
     WorkspaceManager,
+    init_project,
+    jarvis_project_root_of,
     list_sessions_readonly,
     new_project,
     open_project,
@@ -167,6 +169,14 @@ class WorkspaceController:
 
     # ---- 切换
     def switch_project(self, root: Any, *, proceed_if_running=None) -> Any:
+        # 陈旧根（用户点树/打开项目时 jarvis.json 已被删）= 用户发起 → 重建骨架后再切
+        # （与「打开项目/新建项目」菜单语义一致，区别于启动路径的「落空态、绝不自动重建」）。
+        # OSError（网络盘不可达、权限等）→ 不切，返回 None。
+        if jarvis_project_root_of(root) is None:
+            try:
+                init_project(Path(str(root)))
+            except OSError:
+                return None
         res = self._manager.switch_to(root, proceed_if_running=proceed_if_running)
         if res is None:
             return None

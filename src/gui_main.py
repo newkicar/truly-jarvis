@@ -116,7 +116,12 @@ def main(argv: list[str] | None = None) -> int:
         return rt
 
     controller = WorkspaceController(registry, _make_runtime, bridge)
-    presenter = controller.switch_project(start_root)
+    # 启动有效性（陈旧条目场景）：jarvis 依赖文件被删/目录已移 → 落空状态（不崩、不自动重建文件），
+    # 由用户经「打开项目 / 新建项目」手动关联。jarvis.json 在上级（子目录误登记）时回落到该项目根。
+    from src.gui.workspace import jarvis_project_root_of
+
+    valid_root = jarvis_project_root_of(start_root)
+    presenter = controller.switch_project(valid_root) if valid_root is not None else None
     key_store = llm_config.make_key_store() if llm is not None else None
     win = MainWindow(presenter, bridge, llm=llm, key_store=key_store, workspace=controller)
     win.show()
