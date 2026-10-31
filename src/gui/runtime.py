@@ -289,6 +289,36 @@ class GuiPresenter:
         self.gate.request_cancel(tid)
         self.bridge.status.emit(tid, "已取消，正在收尾（当前步骤结束后停止）")
 
+    @staticmethod
+    def _turn_callbacks(b: "GuiBridge", tid: str) -> dict:
+        """共享回调工厂（工单 06 思考块 + 去重）：on_thinking 增量已上屏，
+        则 on_reasoning_end 不重发全文（防网关 finalize 型推理双显）；
+        仅 finalize 型推理（增量未流出）时补发全文。每个消息块结束重置。"""
+        streamed = [False]
+
+        def on_thinking(d: str) -> None:
+            if d:
+                streamed[0] = True
+            b.thinking.emit(tid, d)
+
+        def on_reasoning_end(text: str) -> None:
+            full = (text or "").strip()
+            if full and not streamed[0]:
+                b.thinking.emit(tid, full)
+            streamed[0] = False
+
+        return {
+            "on_message_delta": lambda d: b.message_delta.emit(tid, d),
+            "on_message_end": lambda t: b.message_end.emit(tid, t),
+            "on_tool_call": lambda n, a, e, o=None, depth=0: b.tool_call.emit(
+                tid, n, a, e, o or "", depth
+            ),
+            "on_subagent": lambda n, s, depth=0: b.subagent.emit(tid, n, s, depth),
+            "on_status": lambda s: b.status.emit(tid, s),
+            "on_thinking": on_thinking,
+            "on_reasoning_end": on_reasoning_end,
+        }
+
     # ---- worker（worker 线程；只 emit 信号 + 调 runtime，不碰 widget）
     def _turn_worker(
         self,
@@ -315,17 +345,7 @@ class GuiPresenter:
                         f"已永久放行 {n}（写入 jarvis.json，以后自动放行）"
                     ),
                 ),
-                callbacks={
-                    "on_message_delta": lambda d: b.message_delta.emit(tid, d),
-                    "on_message_end": lambda t: b.message_end.emit(tid, t),
-                    "on_tool_call": lambda n, a, e, o=None, depth=0: b.tool_call.emit(
-                        tid, n, a, e, o or "", depth
-                    ),
-                    "on_subagent": lambda n, s, depth=0: b.subagent.emit(tid, n, s, depth),
-                    "on_status": lambda s: b.status.emit(tid, s),
-                    # 工单 06 共享 seam：思考块（可选第 6 键；CLI/TUI 不传则零行为变化）
-                    "on_thinking": lambda d: b.thinking.emit(tid, d),
-                },
+                callbacks=self._turn_callbacks(b, tid),
                 on_fallback_message=lambda t: b.fallback.emit(tid, t),
                 is_cancelled=lambda: self.gate.is_cancelled(tid),
                 permission_state=rt.permission_state,
@@ -374,16 +394,7 @@ class GuiPresenter:
                     lambda inv: (self._ask_action or self._default_ask)(inv, tid),
                     permission_state=rt.permission_state,
                 ),
-                callbacks={
-                    "on_message_delta": lambda d: b.message_delta.emit(tid, d),
-                    "on_message_end": lambda t: b.message_end.emit(tid, t),
-                    "on_tool_call": lambda n, a, e, o=None, depth=0: b.tool_call.emit(
-                        tid, n, a, e, o or "", depth
-                    ),
-                    "on_subagent": lambda n, s, depth=0: b.subagent.emit(tid, n, s, depth),
-                    "on_status": lambda s: b.status.emit(tid, s),
-                    "on_thinking": lambda d: b.thinking.emit(tid, d),
-                },
+                callbacks=self._turn_callbacks(b, tid),
                 on_fallback_message=lambda t: b.fallback.emit(tid, t),
                 permission_state=rt.permission_state,
                 project_root=rt.config.project_root,
