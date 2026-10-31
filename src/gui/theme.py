@@ -211,6 +211,10 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: $
 
 /* 兼容遗留选择器（无 widget 再设 #hint，保留无害） */
 QLabel#hint { color: $muted; }
+/* ---- 审批卡片左右对比 diff（codex 式 side-by-side）---- */
+QFrame#diff-view { background: transparent; }
+QLabel#diff-head { color: $faint; font-size: 11px; }
+QPlainTextEdit#diff-pane { background-color: $deep; color: $text; border: 1px solid $rule; }
 """)
 
 

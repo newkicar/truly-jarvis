@@ -55,6 +55,8 @@ class ApprovalCard(QFrame):
         on_decision: Callable[[dict], None],
         on_abandon: Callable[[], None],
         parent=None,
+        *,
+        diff: tuple[str, str] | None = None,
     ) -> None:
         super().__init__(parent)
         self._on_decision = on_decision
@@ -82,7 +84,12 @@ class ApprovalCard(QFrame):
             p.setMinimumWidth(0)
             outer.addWidget(p)
 
-        if preview:
+        if diff is not None:
+            # 左右对比 diff（write/edit/delete 文件工具）优先：并排对照，文本预览让位
+            from src.gui import diff_view
+
+            outer.addWidget(diff_view.SideBySideDiff(diff[0], diff[1]))
+        elif preview:
             # 固定高只读编辑框：最小宽塌缩（QLabel 即使断行仍被最长行顶宽），
             # 长 diff 内部滚动；mono 字体 + 可选鼠标选中
             pv = QPlainTextEdit(_soft_break(preview, 48))
@@ -249,6 +256,33 @@ class ApprovalCard(QFrame):
             b.setEnabled(False)
 
 
+def _file_diff(inv, runtime):
+    """write_file/edit_file/delete → (原值, 新值)，供审批卡片左右对比；其他工具或取不到文件 → None（回落文本预览）。"""
+    if inv.name not in ("write_file", "edit_file", "delete"):
+        return None
+    try:
+        from src.tui_format import (
+            proposed_file_content,
+            read_local_file_text,
+            resolve_virtual_path,
+        )
+
+        cfg = runtime.config
+        fp = inv.path or str((inv.args or {}).get("file_path") or (inv.args or {}).get("path") or "")
+        if not (fp and cfg.vault_path and cfg.project_root):
+            return None
+        local = resolve_virtual_path(
+            fp, vault_path=cfg.vault_path, workspace_root=cfg.project_root
+        )
+        before = read_local_file_text(local)
+        after = proposed_file_content(inv, before)
+        if before is None and after == "":
+            return None
+        return before or "", after
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------- owner 侧装配
 
 
@@ -280,7 +314,8 @@ def make_card_ask(runtime, bridge) -> Callable[[Any, str], dict | None]:
             bridge.focus_input.emit()
             cs.event.set()
 
-        payload = (inv, preview, card_id, on_decision, on_abandon)
+        diff = _file_diff(inv, runtime)
+        payload = (inv, preview, card_id, on_decision, on_abandon, diff)
         bridge.create_card.emit(tid, payload, card_id)
         cs.event.wait()
         cards.pop(card_id, None)
@@ -291,5 +326,6 @@ def make_card_ask(runtime, bridge) -> Callable[[Any, str], dict | None]:
 
 def card_widget_from_payload(payload) -> ApprovalCard:
     """UiBridge.create_card 载荷 → ApprovalCard（主线程构造入 pane）。"""
-    inv, preview, _card_id, on_decision, on_abandon = payload
-    return ApprovalCard(inv, preview, on_decision, on_abandon)
+    inv, preview, _card_id, on_decision, on_abandon = payload[:5]
+    diff = payload[5] if payload[5:] else None
+    return ApprovalCard(inv, preview, on_decision, on_abandon, diff=diff)
