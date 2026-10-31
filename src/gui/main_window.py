@@ -931,6 +931,8 @@ class MainWindow(QMainWindow):
             return
         if payload is None:
             return
+        if self._route_slash(payload):
+            return
         images = self.image_strip.paths()
         user_input, user_input_fallback, _ = build_image_submit(payload, images)
         tid = self.active_tid
@@ -945,6 +947,31 @@ class MainWindow(QMainWindow):
         self.status_label.setText(
             "已发送，执行中…" if verdict == "started" else "已排队，回合结束后自动续发"
         )
+
+    # ---- slash 命令路由（工单 07）：输入框 /xxx 走本地命令，不再发给 AI
+    def _route_slash(self, payload: str) -> bool:
+        stripped = payload.lstrip()
+        if not stripped.startswith('/'):
+            return False
+        cfg = self.presenter.runtime.config
+        # 虚拟路径引用（/workspace/、/skills/ 等）仍发模型，不走命令
+        if commands.is_virtual_path_reference(payload, commands.virtual_path_mappings(cfg)):
+            return False
+        first = stripped.split(None, 1)[0]
+        tid = self.active_tid
+        if first == '/use':
+            msg, err = commands.expand_use_command(cfg, payload)
+            if err:
+                self.status_label.setText(err)
+                return True
+            p = self._ensure_pane(tid)
+            p.append_user(payload, None)
+            verdict = self.presenter.start_turn(tid, msg)
+            self.input_bar.set_cancel_enabled(verdict == 'started')
+            self.status_label.setText('使用 skill…')
+            return True
+        self._execute_slash(payload)
+        return True
 
     def _on_input_submit(self, raw: str) -> None:
         self._last_input_text = raw
