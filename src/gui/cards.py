@@ -111,7 +111,7 @@ class ApprovalCard(QFrame):
         note.setObjectName("card-note")
         outer.addWidget(note)
 
-        btns1 = QHBoxLayout()
+        # Q5: single-row 5 buttons (compact QSS + min-width 0 + trailing stretch)
         self.btn_approve = QPushButton("放行")
         self.btn_always = QPushButton("永久放行")
         self.btn_reject = QPushButton("拒绝")
@@ -122,18 +122,13 @@ class ApprovalCard(QFrame):
         self.btn_giveup.setObjectName("btn-danger")
         self.btn_always.setObjectName("btn-ghost")
         self.btn_edit.setObjectName("btn-ghost")
-        # 两行按钮（旧 5 按钮单行最小宽 ~820px 会把面板顶出窄窗口）：
-        # 行 1 = 主操作（放行/永久放行/拒绝），行 2 = 次操作（编辑参数/放弃本轮）
-        for b in (self.btn_approve, self.btn_always, self.btn_reject):
+        btns1 = QHBoxLayout()
+        for b in (self.btn_approve, self.btn_always, self.btn_reject, self.btn_edit, self.btn_giveup):
             b.setMinimumWidth(0)
             btns1.addWidget(b)
-        btns2 = QHBoxLayout()
-        for b in (self.btn_edit, self.btn_giveup):
-            b.setMinimumWidth(0)
-            btns2.addWidget(b)
-        btns2.addStretch(1)
+        btns1.addStretch(1)
         outer.addLayout(btns1)
-        outer.addLayout(btns2)
+        self._btn_row = btns1
         outer.addWidget(self._editor_slot())
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.btn_approve.setFocus()  # 卡片打开即默认焦点（单次 Enter 完成审批）

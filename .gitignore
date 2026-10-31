@@ -56,3 +56,6 @@ scratch/
 
 # taste-skill deal 表（机器生成；token 值已入 theme.py，可再生）
 .taste-skill/
+
+# 本地探针/草稿目录（不入仓库）
+.scratch/

@@ -230,3 +230,33 @@ def test_soft_break_splits_long_tokens():
     assert _soft_break("a" * 100, 30).count("\n") == 3
     assert _soft_break("短", 30) == "短"
     assert _soft_break("行1\n" + "b" * 70, 30) == "行1\n" + "b" * 30 + "\n" + "b" * 30 + "\n" + "b" * 10
+
+
+# ---- Q5: 5 buttons on one row (compact QSS, no two-row split) ----
+def test_buttons_single_row(qtbot):
+    out: list = []
+    card = _card(_inv(), out)
+    qtbot.addWidget(card)
+    row = card._btn_row
+    widgets = [row.itemAt(i).widget() for i in range(row.count())]
+    btns = [w for w in widgets if w is not None]
+    assert len(btns) == 5
+    assert [b.text() for b in btns] == ["放行", "永久放行", "拒绝", "编辑参数", "放弃本轮"]
+    # one trailing stretch item (row no longer split in two)
+    assert row.count() == 6
+
+
+def test_buttons_fit_single_row_360(qtbot):
+    from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
+    out: list = []
+    card = _card(_inv(), out)
+    host = QWidget()
+    host.setLayout(QVBoxLayout())
+    host.layout().addWidget(card)
+    host.setFixedWidth(360)
+    host.show()
+    qtbot.addWidget(host)
+    QApplication.processEvents()
+    for b in (card.btn_approve, card.btn_always, card.btn_reject, card.btn_edit, card.btn_giveup):
+        assert b.isVisible()
+        assert b.width() > 0

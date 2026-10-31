@@ -170,6 +170,9 @@ QLabel#card-key { color: $faint; font-size: 12px; }
 QLabel#card-done { color: $positive; font-weight: bold; }
 QLabel#card-deny { color: $negative; font-weight: bold; }
 
+/* Q5: approval card buttons compact so all 5 fit in one row */
+QFrame#approval-card QPushButton { padding: 2px 6px; font-size: 12px; }
+
 /* ---- 图片附件条 ---- */
 QLabel#image-thumb { border: 1px solid $control; border-radius: 6px; background: $surface; }
 QPushButton#img-remove { color: $faint; background: transparent; border: none; font-size: 11px; }
