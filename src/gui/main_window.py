@@ -10,6 +10,7 @@ import uuid
 from pathlib import Path
 
 from PySide6.QtCore import QPoint, Qt, QTimer
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -224,8 +225,24 @@ class MainWindow(QMainWindow):
         self._completion_timer.timeout.connect(self._refresh_completion_now)
         # Tab/Esc 在输入框侧处理（弹层 NoFocus 不抢键盘；接受/关闭不进弹层）
         self.input_bar.set_tab_hook(self._completion_tab_accept)
-        self.input_bar.set_esc_hook(self._completion_esc_dismiss)
+        self.input_bar.set_esc_hook(self._on_esc_pressed)  # 工单 13：Esc 三级（弹层/取消/撤回）
         self._skills_cache: list = [0.0, None]  # [ts, catalog]，TTL 10s；None=未扫过
+        # 工单 13 — Esc 三级语义（对标 TUI ESC_UNDO_WINDOW=1.5s）：
+        # ① 补全弹层开着→关弹层；② 回合进行中→1.5s 内二 Esc 取消；③ 空闲→1.5s 内二 Esc 撤回一轮。
+        # 单 Esc 永不退 app（TUI 同款约定）。
+        self._esc_run_primed = False
+        self._esc_run_primed_at = 0.0
+        self._esc_undo_primed = False
+        self._esc_undo_primed_at = 0.0
+        self._esc_run_timer = QTimer(self)
+        self._esc_run_timer.setSingleShot(True)
+        self._esc_run_timer.timeout.connect(self._esc_run_disarm)
+        self._esc_undo_timer = QTimer(self)
+        self._esc_undo_timer.setSingleShot(True)
+        self._esc_undo_timer.timeout.connect(self._esc_undo_disarm)
+        # Ctrl+N 新建对话（TUI 键位迁移；_on_new_session_clicked 已含空态守卫）
+        self._sc_new_session = QShortcut(QKeySequence("Ctrl+N"), self)
+        self._sc_new_session.activated.connect(self._on_new_session_clicked)
 
     def _on_new_session_clicked(self) -> None:
         """新会话按钮：空态（无关联项目）时只提示，不崩。"""
@@ -980,6 +997,64 @@ class MainWindow(QMainWindow):
     def _cancel_active(self) -> None:
         if self.active_tid:
             self.presenter.cancel(self.active_tid)
+
+    # ---- 工单 13：Esc 三级（补全弹层 / 运行中取消 / 空闲撤回，对标 TUI 双 Esc 语义）
+    ESC_UNDO_WINDOW = 1.5
+
+    def _esc_run_disarm(self) -> None:
+        self._esc_run_primed = False
+
+    def _esc_undo_disarm(self) -> None:
+        self._esc_undo_primed = False
+
+    def _on_esc_pressed(self) -> bool:
+        """裸 Esc 统一入口（输入框 eventFilter hook + 窗口 keyPressEvent 兜底）。
+
+        True=已消费；False=不处理（原生无操作；单 Esc 永不退 app）。"""
+        import time as _time
+
+        # ① 补全弹层开着 → 先关弹层（原语义不变）
+        if self._completion_esc_dismiss():
+            return True
+        now = _time.monotonic()
+        # ② 回合进行中：1.5s 内二 Esc → 取消
+        if self.active_tid and self.presenter.gate.is_running(self.active_tid):
+            self._esc_undo_disarm()
+            if self._esc_run_primed and now - self._esc_run_primed_at < self.ESC_UNDO_WINDOW:
+                self._esc_run_primed = False
+                self._esc_run_timer.stop()
+                self._cancel_active()
+                self.status_label.setText("已取消")
+                return True
+            self._esc_run_primed = True
+            self._esc_run_primed_at = now
+            self._esc_run_timer.start(int(self.ESC_UNDO_WINDOW * 1000))
+            self.status_label.setText("再按一次 Esc 取消执行")
+            return True
+        # ③ 空闲：1.5s 内二 Esc → 撤回最近一轮（对标 TUI 双 Esc 撤回）
+        if self.active_tid:
+            self._esc_run_disarm()
+            if self._esc_undo_primed and now - self._esc_undo_primed_at < self.ESC_UNDO_WINDOW:
+                self._esc_undo_primed = False
+                self._esc_undo_timer.stop()
+                self._on_undo()
+                self.status_label.setText("已撤回最近一轮")
+                return True
+            self._esc_undo_primed = True
+            self._esc_undo_primed_at = now
+            self._esc_undo_timer.start(int(self.ESC_UNDO_WINDOW * 1000))
+            self.status_label.setText("再按一次 Esc 撤回最近一轮")
+            return True
+        return False
+
+    def keyPressEvent(self, event):  # noqa: N802 — 非输入焦点路径的裸 Esc 兜底
+        from PySide6.QtGui import QKeyEvent
+
+        if isinstance(event, QKeyEvent) and event.key() == Qt.Key_Escape and not event.modifiers():
+            if self._on_esc_pressed():
+                event.accept()
+                return
+        super().keyPressEvent(event)
 
     def _flush_all_dirty(self) -> None:
         for p in self.panes.values():
