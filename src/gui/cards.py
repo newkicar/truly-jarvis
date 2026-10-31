@@ -42,21 +42,7 @@ def _clip(v: Any, n: int) -> str:
     return s if len(s) <= n else s[:n] + "…"
 
 
-def _soft_break(text: str, every: int = 60) -> str:
-    """长无空格 token 每 every 字符强制断行。
-
-    PySide6 6.12 的 QLabel 未暴露 WordWrapMode.BreakWord：不换行长 token 会把
-    QLabel minimumSizeHint 顶到数千 px（600 字 ≈ 7200px 实证）→ 卡片最小宽把
-    会话面板/主窗口撑出屏幕（2026-10-28 报障「审批栏太宽超出界面」）。
-    显式 \\n 断行后 wordWrap 生效、最小宽塌缩到按钮行。
-    """
-    out: list[str] = []
-    for seg in str(text).split("\n"):
-        while len(seg) > every:
-            out.append(seg[:every])
-            seg = seg[every:]
-        out.append(seg)
-    return "\n".join(out)
+_soft_break = md_render.soft_break  # 单点实现收敛到 md_render（语义一致）；test_gui_cards 经此别名导入
 
 
 class ApprovalCard(QFrame):

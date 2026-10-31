@@ -40,10 +40,12 @@ def _detail_html(args_text: str, output_text: str, err: bool, depth: int) -> str
     tok = theme.current_tokens()
     color = tok["negative"] if err else tok["muted"]
     pad = "&nbsp;" * depth * 2
+    args_soft = md_render.soft_break(str(args_text), 80).replace("\n", "<>br")
+    out_soft = md_render.soft_break(out, 80).replace("\n", "<>br")
     return (
         f'<span style="font-family:Consolas,\'Courier New\',monospace; font-size:12px; color:{color};">'
-        f"{pad}<b>args</b><br>{args_text.replace(chr(10), '<br>')}"
-        f"<br><br><b>output</b><br>{out.replace(chr(10), '<br>')}<br>{truncated}</span>"
+        f"{pad}<b>args</b><br>{args_soft}"
+        f"<br><br><b>output</b><br>{out_soft}<br>{truncated}</span>"
     )
 
 
@@ -59,7 +61,9 @@ class ToolLineWidget(QFrame):
         out_preview = str(output or "")
         if len(out_preview) > 160:
             out_preview = out_preview[:160] + "…"
-        summary = f"{'  ' * depth}{mark} {name}({str(args_text)[:120]})"
+        out_preview = md_render.soft_break(out_preview, 48)
+        args_soft = md_render.soft_break(str(args_text)[:120], 48)
+        summary = f"{'  ' * depth}{mark} {name}({args_soft})"
         if out_preview:
             summary += f"  → {out_preview}"
 
@@ -71,6 +75,8 @@ class ToolLineWidget(QFrame):
         row = QHBoxLayout()
         self._summary = QLabel(summary)
         self._summary.setFont(md_render.mono_font())
+        self._summary.setWordWrap(True)
+        self._summary.setMinimumWidth(0)
         self._summary.setObjectName("tool-line")
         self._summary.setProperty("err", "true" if err else "false")
         self._summary.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
@@ -85,6 +91,7 @@ class ToolLineWidget(QFrame):
 
         self._detail = QLabel()
         self._detail.setObjectName("tool-detail")
+        self._detail.setMinimumWidth(0)
         self._detail.setTextFormat(Qt.TextFormat.RichText)
         self._detail.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
         self._detail.setWordWrap(True)
@@ -209,7 +216,7 @@ class ChatPane(QScrollArea):
     def append_user(self, text: str, image_paths: list[str] | None = None) -> None:
         self._close_thinking()
         self._hide_placeholder()
-        l = QLabel(f"[你] {text}")
+        l = QLabel(md_render.soft_break(f"[你] {text}", 80))
         l.setObjectName("bub-user")
         l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
         l.setWordWrap(True)
@@ -262,9 +269,11 @@ class ChatPane(QScrollArea):
 
     def append_subagent(self, name, status, depth=0) -> None:
         self._hide_placeholder()
-        l = QLabel(f"{'  ' * depth}[{name}] {status}")
+        l = QLabel(md_render.soft_break(f"{'  ' * depth}[{name}] {status}", 80))
         l.setObjectName("line-sub")
         l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
+        l.setWordWrap(True)
+        l.setMinimumWidth(0)
         self._insert(l)
         self._follow()
 
