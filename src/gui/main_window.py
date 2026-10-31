@@ -118,7 +118,7 @@ class MainWindow(QMainWindow):
             act.triggered.connect(lambda _on=False, tt=t: self._on_theme(tt))
             self._theme_items[t] = act
         theme_menu.addSeparator()
-        theme_menu.addAction("切换明暗", lambda: self._on_theme(_theme.toggle_theme()))
+        theme_menu.addAction("下一个主题", lambda: self._on_theme(_theme.toggle_theme()))
 
         # ---- 工单 09：时间旅行菜单（移至 主题 之后）
         tt = self.menuBar().addMenu("时间旅行")
