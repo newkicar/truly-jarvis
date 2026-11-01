@@ -42,3 +42,6 @@ class UiBridge(QObject):
     switch_session = Signal(str, str)
     # 任务完成三通道通知载荷（TaskDoneEvent：会话回合/定时任务，含后台项目；queued 信号 worker→主线程安全）
     task_done = Signal(object)
+    # 排队消息重投入门（tid, 原文）→ 主线程把用户气泡补入 pane；气泡仅在回合真正开跑时上屏（gui15 G5）
+    queued_flush = Signal(str, str)
+

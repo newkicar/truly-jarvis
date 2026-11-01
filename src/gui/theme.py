@@ -222,6 +222,10 @@ QLabel#title-sessions { color: $text; font-size: 14px; font-weight: bold; }
 QLabel#status-bar { color: $muted; font-size: 12px; padding: 2px; }
 QLabel#badge-mode { color: $muted; font-size: 11px; }
 QLabel#badge-running { color: $warning; font-size: 11px; }
+QWidget#queue-strip { background-color: $control; border: 1px solid $border; border-radius: 6px; padding: 2px; }
+QLabel#queue-chip { color: $text; font-size: 12px; }
+QPushButton#btn-ghost { color: $muted; background-color: transparent; border: 1px solid $border; border-radius: 4px; padding: 1px 8px; font-size: 11px; }
+QPushButton#btn-ghost:hover { background-color: $active; }
 QLabel#hint-note { color: $faint; font-size: 11px; }
 QLabel#report-label { color: $text; font-size: 12px; }
 

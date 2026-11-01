@@ -431,6 +431,7 @@ class GuiPresenter:
             # FIFO 重投：出队下一条排队消息，重新入门起新回合（工单 03）
             nxt = self.gate.finish(tid)
             if nxt is not None:
+                b.queued_flush.emit(tid, nxt)
                 self.start_turn(tid, nxt)
 
     # ---- 回放（时间旅行，ticket 09）

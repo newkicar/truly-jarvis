@@ -52,6 +52,23 @@ class TurnGate:
         with self._lock:
             return len(self._queues.get(tid) or ())
 
+    def queued_texts(self, tid: str) -> list[str]:
+        """该 thread 排队中的全部消息（FIFO 顺序 list 副本，改动不影响队列本体）。"""
+        with self._lock:
+            return list(self._queues.get(tid) or ())
+
+    def pull_out(self, tid: str, text: str) -> bool:
+        """撤出队列：移除原文精确匹配的第一条。返回是否命中。"""
+        with self._lock:
+            q = self._queues.get(tid)
+            if not q:
+                return False
+            for i, txt in enumerate(q):
+                if txt == text:
+                    del q[i]
+                    return True
+            return False
+
     def is_running(self, tid: str) -> bool:
         with self._lock:
             return tid in self._running

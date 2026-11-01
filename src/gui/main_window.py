@@ -34,6 +34,9 @@ from src.gui.image_strip import build_image_submit, save_clipboard_image_to_temp
 from src.gui.image_widgets import ImageStrip
 from src.gui.input_bar import InputBar
 from src.gui.pane import RENDER_BATCH_MS, ChatPane
+
+
+from src.gui.queue_strip import QueueStrip
 from src.gui.runtime import GuiPresenter
 from src.gui.workspace_controller import StaticWorkspace
 from src.gui.notify_channels import make_hooks
@@ -206,6 +209,10 @@ class MainWindow(QMainWindow):
         self.status_label = QLabel("就绪")
         self.status_label.setObjectName("status-bar")
         ml.addWidget(self.status_label)
+
+        self.queue_strip = QueueStrip()
+        ml.addWidget(self.queue_strip)
+        self.queue_strip.pull_out_requested.connect(self._on_queue_pull_out)
 
         self.image_strip = ImageStrip()
         ml.addWidget(self.image_strip)
@@ -575,6 +582,7 @@ class MainWindow(QMainWindow):
         self._workspace.set_last_active(self._workspace.active_root(), tid)
         self.refresh_tree()
         self.input_bar.edit.setFocus()
+        self._refresh_queue_strip()
         note = "（回合进行中，切走不影响执行）" if self.presenter.gate.is_running(tid) else ""
         # 打开该会话/项目 → 消费其完成标记
         arn = self._workspace.active_root()
@@ -982,17 +990,20 @@ class MainWindow(QMainWindow):
         images = self.image_strip.paths()
         user_input, user_input_fallback, _ = build_image_submit(payload, images)
         tid = self.active_tid
-        p = self._ensure_pane(tid)
-        p.append_user(payload, images or None)
-        if images:
-            self.image_strip.clear()
         verdict = self.presenter.start_turn(
             tid, payload, user_input=user_input, user_input_fallback=user_input_fallback
         )
         self.input_bar.set_cancel_enabled(verdict == "started")
-        self.status_label.setText(
-            "已发送，执行中…" if verdict == "started" else "已排队，回合结束后自动续发"
-        )
+        if verdict == "started":
+            p = self._ensure_pane(tid)
+            p.append_user(payload, images or None)
+            if images:
+                self.image_strip.clear()
+            self.status_label.setText("已发送，执行中…")
+        else:
+            # 排队：用户气泡等回合真正开跑（queued_flush）才进窗，期间固定在队列条
+            self.status_label.setText("已排队，回合结束后自动续发")
+        self._refresh_queue_strip()
 
     # ---- slash 命令路由（工单 07）：输入框 /xxx 走本地命令，不再发给 AI
     def _route_slash(self, payload: str) -> bool:
@@ -1112,6 +1123,7 @@ class MainWindow(QMainWindow):
         b.rebuild_pane.connect(self._rebuild_pane)
         b.switch_session.connect(self._on_switch_session)
         b.task_done.connect(self._on_task_done)
+        b.queued_flush.connect(self._on_queued_flush)
 
     def _on_create_card(self, tid: str, payload, card_id: str) -> None:
         from src.gui.cards import card_widget_from_payload
@@ -1167,6 +1179,7 @@ class MainWindow(QMainWindow):
         if arn is not None:
             self._sess_done.pop((normalize_root_key(arn), tid), None)
         self.refresh_sessions()
+        self._refresh_queue_strip()
 
     def _on_turn_done(self, tid: str, ok: bool) -> None:
         p = self.panes.get(tid)
@@ -1174,6 +1187,7 @@ class MainWindow(QMainWindow):
             p.running = self.presenter.gate.is_running(tid)
         self.input_bar.set_cancel_enabled(bool(self.presenter.gate.running_threads()))
         self.refresh_sessions()
+        self._refresh_queue_strip()
 
     def _on_notify(self, text: str) -> None:
         # 状态栏必须单行：压平多行长文本（/history、命令失败堆栈等），防布局被顶爆
@@ -1189,3 +1203,25 @@ class MainWindow(QMainWindow):
         self._proj_done[rn] = status
         self._notifier.fire(ev)
         self.refresh_tree()
+
+
+    # ---- 待发队列条（gui15 G5）：排队消息固定在输入框上方，回合真正开跑时才入窗
+    def _refresh_queue_strip(self) -> None:
+        items = (
+            self.presenter.gate.queued_texts(self.active_tid)
+            if self.presenter and self.active_tid
+            else []
+        )
+        self.queue_strip.set_items(items)
+
+    def _on_queued_flush(self, tid: str, text: str) -> None:
+        """排队消息重投入门 → 用户气泡此刻才进对话窗。"""
+        self._ensure_pane(tid).append_user(text)
+        self._refresh_queue_strip()
+
+    def _on_queue_pull_out(self, text: str) -> None:
+        if self.presenter and self.active_tid and self.presenter.gate.pull_out(self.active_tid, text):
+            self.input_bar.edit.setPlainText(text)
+            self.input_bar.edit.setFocus()
+            self.status_label.setText("已撤出队列，返回输入框")
+        self._refresh_queue_strip()

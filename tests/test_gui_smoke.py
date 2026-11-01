@@ -149,3 +149,55 @@ def test_cold_replay_restores_tool_records(qapp):
         rt.close()
     finally:
         cleanup_home(home)
+def test_queue_strip_layout(qapp):
+    """工单 G5：待发队列条固定在输入框上方（不在对话窗内，不随滚动跑掉）。
+    断言：① 主窗口挂有 queue_strip，空时隐藏；② 底部布局自上而下顺序
+    status_label < queue_strip < image_strip < input_bar；③ 有排队消息时显示。"""
+    from src.gui.events import UiBridge
+    from src.gui.main_window import MainWindow
+    from src.gui.queue_strip import QueueStrip
+    from src.gui.runtime import GuiPresenter, build_runtime_for_config
+
+    home = new_home()
+    try:
+        rt = build_runtime_for_config(home, model=ScriptedMockModel())
+        bridge = UiBridge()
+        presenter = GuiPresenter(rt, bridge)
+        win = MainWindow(presenter, bridge)
+
+        assert isinstance(win.queue_strip, QueueStrip)
+        win.show()
+        _pump(qapp, 0.2)
+        assert win.queue_strip.isHidden()  # 空队列隐藏
+        assert win.queue_strip.items() == []
+
+        host = win.queue_strip.parentWidget()
+        for w in (win.status_label, win.image_strip, win.input_bar):
+            assert w.parentWidget() is host, "底部区各部件应同属一个布局"
+        lay = host.layout()
+        widgets = []
+        for i in range(lay.count()):
+            w = lay.itemAt(i).widget()
+            if w is not None:
+                widgets.append(w)
+        pos = {}
+        for name, w in (
+            ("status_label", win.status_label),
+            ("queue_strip", win.queue_strip),
+            ("image_strip", win.image_strip),
+            ("input_bar", win.input_bar),
+        ):
+            for k, cand in enumerate(widgets):
+                if cand is w:
+                    pos[name] = k
+                    break
+        assert pos["status_label"] < pos["queue_strip"] < pos["image_strip"] < pos["input_bar"]
+
+        win.queue_strip.set_items(["排队的消息"])
+        _pump(qapp, 0.1)
+        assert not win.queue_strip.isHidden()
+        assert win.queue_strip.items() == ["排队的消息"]
+
+        rt.close()
+    finally:
+        cleanup_home(home)

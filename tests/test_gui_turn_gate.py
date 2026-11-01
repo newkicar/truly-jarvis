@@ -41,3 +41,33 @@ def test_cancel_flag_resets_on_new_turn():
     # 新回合清位
     assert g.try_start("a", "next") == "started"
     assert not g.is_cancelled("a")
+
+
+def test_queued_texts_returns_fifo_copy():
+    g = TurnGate()
+    g.try_start("a", "m1")
+    assert g.queued_texts("a") == []
+    g.try_start("a", "m2")
+    g.try_start("a", "m3")
+    got = g.queued_texts("a")
+    assert got == ["m2", "m3"]
+    got.append("zzz")  # 副本，不动队列本体
+    assert g.queued_texts("a") == ["m2", "m3"]
+    assert g.queued_texts("b") == []
+
+
+def test_pull_out_semantics():
+    g = TurnGate()
+    g.try_start("a", "m1")
+    g.try_start("a", "x")
+    g.try_start("a", "y")
+    # 未排队 / 未命中
+    assert g.pull_out("b", "x") is False
+    assert g.pull_out("a", "nope") is False
+    # 命中移除原文精确匹配
+    assert g.pull_out("a", "x") is True
+    assert g.queued_texts("a") == ["y"]
+    # 空队列
+    assert g.pull_out("a", "y") is True
+    assert g.queued_texts("a") == []
+    assert g.pull_out("a", "y") is False
