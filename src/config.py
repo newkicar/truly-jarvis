@@ -7,6 +7,7 @@
 因此提供自定义解析：同时支持 'KEY:VALUE' 与 'KEY=VALUE'，键名大小写不敏感。
 """
 import json
+import logging
 import os
 import sys
 from dataclasses import dataclass, field
@@ -99,6 +100,8 @@ class Config:
     model_image_input: str = "auto"
     # tui-ux15: 梦境沉淀（dream 段：enabled/cron，缺省 enabled=True、cron='0 3 * * *'）
     dream: dict[str, object] = field(default_factory=dict)
+    # gui15 G2: 自动压缩上下文阈值（token）；>0 时启用 LangChain SummarizationMiddleware
+    auto_compaction: int = 0
 
 
 def parse_env_text(text: str) -> dict[str, str]:
@@ -124,6 +127,10 @@ def parse_env_text(text: str) -> dict[str, str]:
 def parse_env_file(env_file: Path) -> dict[str, str]:
     """从文件读取并解析 .env。"""
     return parse_env_text(env_file.read_text(encoding="utf-8"))
+
+
+class ConfigError(RuntimeError):
+    """配置加载失败（如项目 jarvis.json 损坏）——带可操作的修复指引。"""
 
 
 def _load_json_file(path: Path) -> dict:
@@ -173,7 +180,16 @@ def load_config(
     if missing:
         raise KeyError(f"缺少必需配置项（.env 或 env_overrides）: {', '.join(missing)}")
 
-    data = _load_json_file(json_file)
+    if json_file.is_file():
+        try:
+            data = _load_json_file(json_file)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ConfigError("项目 jarvis.json 解析失败：" + str(json_file) + " 原因：" + str(exc) + " 解决：修正该文件 JSON 语法，或删除 " + str(json_file) + " 以回落全局配置。") from exc
+        if not isinstance(data, dict):
+            raise ConfigError("项目 jarvis.json 顶层必须为对象(dict)，当前 " + type(data).__name__ + "：" + str(json_file) + " 解决：修正为合法 JSON 对象，或删除该文件。")
+    else:
+        data = {}
+        logging.warning("项目 jarvis.json 不存在，回落全局配置+内置默认: %s", json_file)
 
     # 全局配置合并（项目覆盖全局，同 opencode 语义）
     global_cfg_path = resolve_user_jarvis_json()
@@ -182,7 +198,6 @@ def load_config(
             global_data = _load_json_file(global_cfg_path)
             data = _deep_merge(global_data, data)
         except Exception as exc:
-            import logging
             logging.warning("全局配置 %s 解析失败，忽略: %s", global_cfg_path, exc)
     model_cfg = data.get("model", {})
 
@@ -241,6 +256,15 @@ def load_config(
     if not isinstance(dream_cfg, dict):
         dream_cfg = {}
 
+
+    try:
+        auto_compaction = int(data.get("auto_compaction", 0) or 0)
+    except (TypeError, ValueError):
+        logging.warning("auto_compaction 非整数，忽略: %r", data.get("auto_compaction"))
+        auto_compaction = 0
+    if auto_compaction < 0:
+        auto_compaction = 0
+
     cfg = Config(
         project_root=root,
         base_url=base_url,
@@ -262,6 +286,7 @@ def load_config(
         tui=tui_cfg,
         model_image_input=str(model_cfg.get("image_input", "auto")),
         dream=dream_cfg,
+        auto_compaction=auto_compaction,
     )
     ensure_user_home()
     set_runtime_project_root(cfg.project_root)
