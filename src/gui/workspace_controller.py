@@ -2,7 +2,7 @@
 
 MainWindow 只依赖这套接口（不关心单项目还是多项目）：
 - 单项目（旧路径 / 无注册表）= `StaticWorkspace`（包一个固定 presenter，不切项目）。
-- 多项目（工单 05）= `WorkspaceController`（注册表 + WorkspaceManager + runtime 工厂，切项目=关旧建新）。
+- 多项目（工单 05）= `WorkspaceController`（注册表 + WorkspaceManager + runtime 工厂，切项目=复用/新建 entry 置活动，busy 后台续跑）。
 
 MainWindow 通过 `.presenter`（活动项目的 presenter）读数据、通过 `.switch_project`/`.pick_start`
 切项目；会话切换仍走既有的 `_switch_to`。
@@ -23,6 +23,8 @@ from src.gui.workspace import (
     resolve_open_root,
 )
 from src.gui.project_registry import ProjectRegistry
+
+from src.gui.presenter_wiring import wire_presenter
 
 
 class StaticWorkspace:
@@ -111,7 +113,7 @@ class StaticWorkspace:
 class WorkspaceController:
     """多项目工作区（工单 05）：注册表 + WorkspaceManager + runtime 工厂。
 
-    切项目 = 关旧 runtime、为新项目根建新 runtime + presenter、置活动。
+    切项目 = 复用/新建该项目 entry + 置活动（ADR-0010：busy runtime 后台续跑，只关 idle）。
     runtime_factory(root) -> runtime（须有 .close()；真值 = gui_main 用 build_runtime 造）。
     实现 StaticWorkspace 同款接口，MainWindow 对单/多项目一视同仁。
     """
@@ -122,18 +124,9 @@ class WorkspaceController:
         self.bridge = bridge
         self._card_factory = card_factory
         self._presenter = None
-        self._manager = WorkspaceManager(registry, self._build_runtime, is_running=self._has_running)
+        self._manager = WorkspaceManager(registry, self._runtime_factory)  # ADR-0010：每项目 entry 后台续跑
         self._current_root: Path | None = None
 
-    def _build_runtime(self, root):
-        runtime = self._runtime_factory(root)
-        from src.gui.presenter_wiring import wire_presenter
-
-        self._presenter = wire_presenter(
-            runtime, self.bridge, card_factory=self._card_factory if self._card_factory is not None else None
-        )
-        self._current_root = Path(str(root))
-        return runtime
 
     def _has_running(self) -> bool:
         return self._presenter is not None and bool(self._presenter.gate.running_threads())
@@ -158,9 +151,12 @@ class WorkspaceController:
 
     def sessions_for(self, root: Any) -> list[tuple[str, str]]:
         r = Path(str(root))
-        if self._current_root is not None and r == self._current_root:
-            p = self._presenter
-            return [(t, p.session_label(t)) for t in p.session_ids()]
+        e = self._manager.runtimes.get(r)
+        if e is not None and e.presenter is not None and not getattr(e.runtime, "closed", False):
+            try:
+                return [(t, e.presenter.session_label(t)) for t in e.presenter.session_ids()]
+            except Exception:
+                return list_sessions_readonly(r)
         return list_sessions_readonly(r)
 
     def pick_start(self, root: Any) -> str | None:
@@ -177,9 +173,20 @@ class WorkspaceController:
                 init_project(Path(str(root)))
             except OSError:
                 return None
-        res = self._manager.switch_to(root, proceed_if_running=proceed_if_running)
-        if res is None:
-            return None
+        # ADR-0010：切走不再取消后台（busy runtime 保留），switch_to 恒返回目标 runtime；
+        # proceed_if_running kwarg 遗留（新实现忽略）。
+        self._manager.switch_to(root, proceed_if_running=proceed_if_running)
+        e = self._manager.runtimes.get(Path(str(root)))
+        if e is not None and e.presenter is None:
+            try:
+                e.presenter = wire_presenter(
+                    e.runtime, self.bridge,
+                    card_factory=self._card_factory if self._card_factory is not None else None,
+                )
+            except Exception:
+                e.presenter = None
+        self._presenter = e.presenter if e is not None else None
+        self._current_root = Path(e.root) if e is not None else None
         return self._presenter
 
     def set_last_active(self, root: Any, tid: str) -> None:
@@ -220,11 +227,7 @@ class WorkspaceController:
         self.registry.remove(Path(str(root)))
 
     def shutdown(self) -> None:
-        """app 收尾：关当前 runtime（释放 checkpointer 连接 + 停调度器）。"""
-        rt = self._manager.current
-        if rt is None:
-            return
-        gate = getattr(rt, "gate", None)
-        if gate is not None:
-            gate.shutdown()
-        rt.close()
+        """app 收尾：关全部项目 runtime（释放 checkpointer 连接 + 停所有调度器）。"""
+        self._manager.runtimes.close_all()
+        self._presenter = None
+        self._current_root = None

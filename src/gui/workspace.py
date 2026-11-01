@@ -6,7 +6,7 @@
 - open_project / new_project：登记进全局注册表 + 设为活动。
 - list_sessions_readonly：不加载 runtime、只读列出某非活动项目的会话（id+短名）。
 - pick_start_session：切项目后打开哪条会话（上次活动，缺失则新会话）。
-- WorkspaceManager：切项目 = 关旧 runtime、建新、置活动（runtime_factory 可注入以便测试）。
+- WorkspaceManager：切项目 = 复用/新建该项目 entry + 置活动（ADR-0010：busy runtime 后台续跑，只关 idle；runtime_factory 可注入以便测试）。
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from src.project_paths import JARVIS_JSON
+from src.gui.runtime_registry import RuntimeRegistry
 
 # ---------------------------------------------------------------- 打开/新建 内核（工单 02）
 
@@ -157,33 +158,38 @@ def pick_start_session(registry, project_root: Any, available_tids: list[str]) -
 
 
 class WorkspaceManager:
-    """持有全局注册表 + 当前活动 runtime；切项目 = 关旧、建新、置活动。
+    """持有全局注册表 + 多项目 runtime（RuntimeRegistry，ADR-0010：busy 后台续跑）。
 
-    runtime_factory(root) -> runtime（须有 .close()）；可注入以便测试（真值 = build_runtime）。
-    is_running() = 当前项目是否有进行中回合（UI 接当前 presenter 的 gate）；
-    proceed_if_running() 由 UI 注入（弹「切换将取消进行中回合」确认，True=继续）。
+    切项目 = 复用/新建该项目 entry + 置活动；busy runtime 后台继续工作、只关 idle（codex 进程模型先例）。
+    runtime_factory(归一 str key) -> runtime（须有 .close()）；可注入以便测试（真值 = build_runtime）。
+    遗留接口（is_running / proceed_if_running）保留为 no-op，兼容旧调用点。
     """
 
     def __init__(self, registry, runtime_factory: Callable, *, is_running: Callable[[], bool] | None = None) -> None:
         self.registry = registry
         self._factory = runtime_factory
-        self._is_running = is_running or (lambda: False)
-        self.current: Any = None
-        self.active_root: Path | None = None
+        self._is_running = is_running or (lambda: False)  # 遗留 no-op：新语义不再取消后台工作
+        self.runtimes = RuntimeRegistry(self._factory, registry=registry)
+
+    @property
+    def current(self) -> Any:
+        """活动项目 entry 的 runtime（无活动 = None）。"""
+        e = self.runtimes.active_entry()
+        return e.runtime if e is not None else None
+
+    @property
+    def active_root(self) -> Path | None:
+        k = self.runtimes.active_key()
+        return Path(k) if k is not None else None
 
     def switch_to(self, root: Any, *, proceed_if_running: Callable[[], bool] | None = None) -> Any:
-        """切到 root。当前有进行中回合且（缺省或）确认不继续 → 返回 None（不切）。"""
-        root = Path(str(root)).expanduser().resolve()
-        if self.current is not None and self._is_running():
-            gate = proceed_if_running if proceed_if_running is not None else (lambda: True)
-            if not gate():
-                return None
-        if self.current is not None:
-            self.current.close()
-        self.current = self._factory(root)
-        self.active_root = root
-        self.registry.set_active(root)
-        return self.current
+        """切到 root：复用/新建该项目 entry 并置活动；busy runtime 后台保留，idle 关掉。
+
+        恒返回目标项目的 runtime（非 None）。`proceed_if_running` 为遗留 kwarg（新实现忽略）。
+        """
+        e = self.runtimes.activate(root)
+        self.runtimes.close_idle()
+        return e.runtime
 
     def active(self) -> Path | None:
         return self.active_root

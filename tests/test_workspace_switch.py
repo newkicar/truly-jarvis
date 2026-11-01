@@ -12,6 +12,7 @@ import uuid
 from pathlib import Path
 
 from tests.gui_fakes import TEST_ROOT
+from types import SimpleNamespace
 
 
 def _home() -> "tuple":
@@ -111,20 +112,49 @@ def test_switch_closes_old_builds_new_sets_active():
         clean()
 
 
-def test_switch_aborted_when_running_and_confirm_declines():
+def test_switch_keeps_busy_runtime_alive_and_reuses_entry():
+    """ADR-0010：busy runtime 切走不关（后台续跑）；切回复用同 entry 零重建；idle 才关。"""
     d, clean = _home()
     try:
         reg = ProjectRegistry(d / "projects.json")
-        a, b = d / "a", d / "b"
-        a.mkdir(); b.mkdir()
+        a, b, c = d / "a", d / "b", d / "c"
+        a.mkdir(); b.mkdir(); c.mkdir()
         reg.add(a, now=1.0)
-        wm = WorkspaceManager(reg, lambda r: _FakeRT(Path(r).name), is_running=lambda: True)
-        rt = wm.switch_to(a)
-        assert wm.current is rt and wm.current.tag == "a"
-        aborted = wm.switch_to(b, proceed_if_running=lambda: False)  # 有进行中回合且拒绝
-        assert aborted is None and wm.current is rt and wm.active_root == a.resolve()
-        ok = wm.switch_to(b, proceed_if_running=lambda: True)
-        assert ok is not None and ok.tag == "b" and wm.current is ok
-        assert rt.closed is True
+        factory_calls: list = []
+
+        class BusyRT:
+            """gate.enabled=True = 调度器开着 → busy（后台保留）。c 例外 = idle。"""
+            def __init__(self, tag):
+                self.tag = tag
+                self.closed = False
+                self.gate = SimpleNamespace(enabled=True, shutdown=lambda: None)
+
+            def close(self):
+                self.closed = True
+
+        def factory(root):
+            factory_calls.append(str(root))
+            tag = Path(root).name
+            rt = BusyRT(tag)
+            if tag == "c":
+                rt.gate = SimpleNamespace(enabled=False, shutdown=lambda: None)  # c 是 idle
+            return rt
+
+        wm = WorkspaceManager(reg, factory)
+        rt_a = wm.switch_to(a)
+        assert rt_a.tag == "a" and len(factory_calls) == 1
+        rt_b = wm.switch_to(b)
+        assert rt_b.tag == "b" and len(factory_calls) == 2
+        assert rt_a.closed is False and rt_b.closed is False  # busy 切走不关
+        assert reg.active() == str(b.resolve())
+        rt_c = wm.switch_to(c)
+        assert rt_c.tag == "c" and len(factory_calls) == 3
+        assert rt_a.closed is False and rt_b.closed is False  # busy 保留
+        # 遗留 kwarg 不再中止切换；切回复用同一 entry（零重建）
+        back_a = wm.switch_to(a, proceed_if_running=lambda: False)
+        assert back_a is rt_a  # 原 entry，不是新建
+        assert rt_c.closed is True  # 非活动 idle(c) 被关
+        assert rt_a.closed is False and rt_b.closed is False  # busy 保留
+        assert len(factory_calls) == 3  # 复用 a 未再调 factory
     finally:
         clean()
