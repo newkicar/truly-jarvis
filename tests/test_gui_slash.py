@@ -121,3 +121,117 @@ def test_virtual_path_reference_stays_model(qapp, monkeypatch):
     win._on_input_submit("/workspace/a.txt")
     assert ("turn", "t-1", "/workspace/a.txt") in record
     assert not [r for r in record if r[0] == "slash"]
+
+
+# ---- /help 与 /exit 特判 + 命令菜单同路由 + 全命令零「未知命令」回归
+
+
+def _win_live(qapp, monkeypatch, record: list) -> MainWindow:
+    """全链路活路由：不 mock _execute_slash；dispatch 同步执行、结果入 record（探针同款接线）。"""
+    rt = _fake_runtime()
+    p = GuiPresenter(rt, UiBridge())
+    win = MainWindow(p, p.bridge)
+    win.active_tid = "t-1"
+
+    def sync_run_command(fn, tid):
+        try:
+            result = fn()
+        except Exception as exc:
+            result = f"命令失败: {exc}"
+        record.append(result or "")
+
+    monkeypatch.setattr(p, "run_command", lambda fn, tid: sync_run_command(fn, tid))
+    monkeypatch.setattr(
+        p, "start_turn", lambda tid, text, **kw: record.append(text) or "started"
+    )
+    monkeypatch.setattr(win, "_on_doctor", lambda: record.append("(doctor)"))
+    # /init 会确定性生成 JARVIS.md：测试不落真实文件
+    monkeypatch.setattr(commands, "init_project", lambda: "INIT_MATCHED")
+    return win
+
+
+def test_help_routes_to_dialog(qapp, monkeypatch):
+    record: list = []
+    win = _win(qapp, monkeypatch, record)
+    shown: list = []
+    monkeypatch.setattr(win, "_show_text", lambda title, text: shown.append((title, text)))
+    win._on_input_submit("/help")
+    assert len(shown) == 1
+    title, body = shown[0]
+    assert "命令帮助" in title
+    assert "/sessions" in body
+    assert not [r for r in record if isinstance(r, tuple) and r[0] == "slash"]
+
+
+def test_exit_closes_window(qapp, monkeypatch):
+    record: list = []
+    win = _win(qapp, monkeypatch, record)
+    closed: list = []
+    monkeypatch.setattr(win, "close", lambda: closed.append(1))
+    win._on_input_submit("/exit")
+    assert closed
+    assert "正在退出" in win.status_label.text()
+    assert not [r for r in record if isinstance(r, tuple) and r[0] == "slash"]
+
+
+def test_command_menu_routes_like_input(qapp, monkeypatch):
+    """「命令」菜单 /xxx 走同 _route_slash 路由（/help 对话框、/exit 关窗、/doctor 卡片）。"""
+    from PySide6.QtWidgets import QMenu
+
+    record: list = []
+    win = _win(qapp, monkeypatch, record)
+    shown: list = []
+    closed: list = []
+    monkeypatch.setattr(win, "_show_text", lambda title, text: shown.append((title, text)))
+    monkeypatch.setattr(win, "close", lambda: closed.append(1))
+    monkeypatch.setattr(win, "_on_doctor", lambda: record.append("(doctor)"))
+    menu = QMenu(win)
+    win._build_command_menu(menu)
+    by_usage = {a.text(): a for a in menu.actions()}
+
+    by_usage["/help"].trigger()
+    assert shown and "命令帮助" in shown[0][0]
+
+    by_usage["/exit"].trigger()
+    assert closed
+
+    by_usage["/doctor"].trigger()
+    assert "(doctor)" in record
+    assert not [r for r in record if isinstance(r, tuple) and r[0] == "slash"]
+
+    by_usage["/sessions"].trigger()
+    assert ("slash", "/sessions") in record
+
+
+def test_route_slash_guard_without_presenter(qapp):
+    win = MainWindow.__new__(MainWindow)
+    from PySide6.QtWidgets import QLabel
+
+    win.presenter = None
+    win.status_label = QLabel()
+    assert win._route_slash("/sessions") is True
+    assert "还没有关联项目" in win.status_label.text()
+
+
+def test_all_slash_commands_no_unknown(qapp, monkeypatch):
+    """回归：SLASH_COMMANDS 全部命令走真实 GUI 路由，零「未知命令」。"""
+    from src.slash_completion import SLASH_COMMANDS
+
+    argv = {
+        "/yolo": "/yolo on",
+        "/replay": "/replay abc123",
+        "/fork": "/fork abc123",
+        "/rollback": "/rollback abc123",
+    }
+    record: list = []
+    win = _win_live(qapp, monkeypatch, record)
+    shown: list = []
+    monkeypatch.setattr(win, "_show_text", lambda t, x: shown.append((t, x)))
+    bad: list = []
+    for c in SLASH_COMMANDS:
+        record.clear()
+        raw = argv.get(c.name, c.name)
+        win._on_input_submit(raw)
+        if any("未知命令" in str(item) for item in record):
+            bad.append(c.name)
+    assert not bad, f"落入未知命令的命令: {bad}"

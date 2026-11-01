@@ -347,7 +347,7 @@ class MainWindow(QMainWindow):
             act = menu.addAction(c.usage)
             act.setToolTip(c.summary)
             usage = c.usage
-            act.triggered.connect(lambda _on=False, u=usage: self._execute_slash(u))
+            act.triggered.connect(lambda _on=False, u=usage: self._route_slash(u))
 
     def _on_filter_commands(self) -> None:
         from PySide6.QtWidgets import QInputDialog
@@ -1010,12 +1010,25 @@ class MainWindow(QMainWindow):
         stripped = payload.lstrip()
         if not stripped.startswith('/'):
             return False
+        # 空态守卫（同 _submit）：未关联项目时 /xxx 不进 dispatch
+        if self.presenter is None:
+            self.status_label.setText("还没有关联项目，请先「打开项目 / 新建项目」")
+            return True
         cfg = self.presenter.runtime.config
         # 虚拟路径引用（/workspace/、/skills/ 等）仍发模型，不走命令
         if commands.is_virtual_path_reference(payload, commands.virtual_path_mappings(cfg)):
             return False
         first = stripped.split(None, 1)[0]
         tid = self.active_tid
+        if first == '/help':
+            # GUI 专属：dispatch 命令表不含 /help（CLI/TUI 在分发前特判），走对话框（可滚动/可选中），不进状态栏
+            self._show_text("命令帮助", commands.GUI_HELP)
+            return True
+        if first == '/exit':
+            # 关窗退出；gui_main.main 的 finally 里 controller.shutdown() 兜底清理（checkpointer DB + 调度器）
+            self.status_label.setText("正在退出…")
+            self.close()
+            return True
         if first == '/use':
             msg, err = commands.expand_use_command(cfg, payload)
             if err:
