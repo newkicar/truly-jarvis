@@ -357,3 +357,17 @@ def test_make_scheduler_threads_on_done(tmp_path):
             sched.shutdown(wait=False)
         except Exception:
             pass
+
+
+def test_make_scheduler_default_on_done_none(tmp_path):
+    """on_done 缺省 None（CLI/TUI 不传 hook → 零开销回归）。"""
+    cfg = make_fake_config(tmp_path)
+    _write_schedule(cfg.schedules_dir, "a.json", {"id": "a", "task": "t", "cron": "0 8 * * *"})
+    sched = scheduler.make_scheduler(object(), cfg)
+    try:
+        assert sched.get_job("javis-a").args[3] is None
+    finally:
+        try:
+            sched.shutdown(wait=False)
+        except Exception:
+            pass
