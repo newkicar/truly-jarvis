@@ -13,13 +13,18 @@ text=True 无 errors 参数，父进程开 UTF-8 模式时 GBK 控制台输出�
 4. 多行拦截：Windows 下 shell 为 cmd，不支持多行命令（换行被静默截断，
    症状 = exit 0 但无输出）；execute 执行前预拦截并返回可行动指引
    （执行韧性四期四层防线第 1 层，详见 AGENTS.md）。
+5. 进程树跟踪（gui15 条目7）：execute 改 Popen + _ACTIVE_PROCS 注册表；
+   cancel/Esc 调 kill_active() 立即停掉整个进程树（Windows taskkill /T /F、POSIX killpg），
+   对应 execute 返回 <killed> 结果 exit 130（独特标记，不再「等当前步骤跑完才停」）。
 """
 from __future__ import annotations
 
 import os
 import re
+import signal
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +41,63 @@ _IS_WINDOWS = os.name == "nt"
 # 测试 monkeypatch 目标：直接改本模块属性（见 tests/test_shell_backend.py）。
 # _IS_POSIX：测试 monkeypatch 目标，同 _IS_WINDOWS（见 tests/test_shell_backend.py）。
 _IS_POSIX = os.name == "posix"
+
+
+class _TrackedProc:
+    """活跃 execute 进程句柄持有者（pid → holder，线程安全）。"""
+
+    __slots__ = ("proc", "killed")
+
+    def __init__(self, proc: subprocess.Popen) -> None:
+        self.proc = proc
+        self.killed = False
+
+
+_ACTIVE_PROCS: dict[int, _TrackedProc] = {}
+_ACTIVE_LOCK = threading.Lock()
+
+
+def _kill_tree(proc: subprocess.Popen) -> None:
+    """停止进程树：Windows taskkill /T /F；POSIX killpg（Popen start_new_session 进程组）；兜底 proc.kill()。"""
+    if proc.poll() is not None:
+        return
+    if _IS_WINDOWS:
+        subprocess.run(
+            ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+            check=False,
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            timeout=10,
+        )
+        return
+    if _IS_POSIX:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            return
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+    try:
+        proc.kill()
+    except OSError:
+        pass
+
+
+def kill_active() -> int:
+    """立即停止所有进行中的 execute 进程树（cancel/Esc 调用；gui15 条目7）。
+
+    返回实际停止的进程数。被标记的 holder 由 holder.killed 识别，对应 execute
+    返回 <killed> 结果 exit 130（独特标记，非 <no output>，NoProgressGuard/DoomLoop
+    等结果级检测器不误判）。
+    """
+    with _ACTIVE_LOCK:
+        victims: list[subprocess.Popen] = []
+        for holder in _ACTIVE_PROCS.values():
+            if holder.proc.poll() is None:
+                holder.killed = True
+                victims.append(holder.proc)
+    for proc in victims:
+        _kill_tree(proc)
+    return len(victims)
 
 
 def _posix_target_exists(key: str) -> bool:
@@ -170,20 +232,42 @@ class InheritedEnvShellBackend(LocalShellBackend):
             raise ValueError(msg)
 
         try:
-            result = subprocess.run(  # noqa: S602
+            proc = subprocess.Popen(  # noqa: S603
                 command,
-                check=False,
                 shell=True,  # Intentional: LLM-controlled shell execution
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 stdin=subprocess.DEVNULL,
                 text=True,
                 encoding=_console_encoding(),
                 errors="replace",  # GBK/UTF-8 混杂输出不炸管道（deepagents 未传此参）
-                timeout=effective_timeout,
                 env=self._env,
                 cwd=str(self.cwd),
+                start_new_session=_IS_POSIX,  # POSIX 新进程组 → killpg 整树停止；Windows 为 no-op
             )
-        except subprocess.TimeoutExpired:
+        except Exception as e:  # noqa: BLE001
+            return ExecuteResponse(
+                output=f"Error executing command ({type(e).__name__}): {e}",
+                exit_code=1,
+                truncated=False,
+            )
+
+        holder = _TrackedProc(proc)
+        with _ACTIVE_LOCK:
+            _ACTIVE_PROCS[holder.proc.pid] = holder
+        timed_out = False
+        try:
+            try:
+                out, err = holder.proc.communicate(timeout=effective_timeout)
+            except subprocess.TimeoutExpired:
+                _kill_tree(holder.proc)
+                out, err = holder.proc.communicate()  # 停止后排空残余管道
+                timed_out = True
+        finally:
+            with _ACTIVE_LOCK:
+                _ACTIVE_PROCS.pop(holder.proc.pid, None)
+
+        if timed_out:
             if timeout is not None:
                 msg = (
                     f"Error: Command timed out after {effective_timeout} seconds "
@@ -195,18 +279,22 @@ class InheritedEnvShellBackend(LocalShellBackend):
                     "For long-running commands, re-run using the timeout parameter."
                 )
             return ExecuteResponse(output=msg, exit_code=124, truncated=False)
-        except Exception as e:  # noqa: BLE001
+
+        if holder.killed:
             return ExecuteResponse(
-                output=f"Error executing command ({type(e).__name__}): {e}",
-                exit_code=1,
+                output=(
+                    f"<killed> 用户已取消执行（pid={holder.proc.pid}，进程树已停止）；"
+                    "当前步骤已终止，后续步骤已跳过。请基于用户最新输入继续。"
+                ),
+                exit_code=130,
                 truncated=False,
             )
 
         output_parts: list[str] = []
-        if result.stdout:
-            output_parts.append(result.stdout)
-        if result.stderr:
-            stderr_lines = result.stderr.strip().split("\n")
+        if out:
+            output_parts.append(out)
+        if err:
+            stderr_lines = err.strip().split("\n")
             output_parts.extend(f"[stderr] {line}" for line in stderr_lines)
 
         output = "\n".join(output_parts) if output_parts else "<no output>"
@@ -217,14 +305,14 @@ class InheritedEnvShellBackend(LocalShellBackend):
             output += f"\n\n... Output truncated at {self._max_output_bytes} bytes."
             truncated = True
 
-        if result.returncode != 0:
-            output = f"{output.rstrip()}\n\nExit code: {result.returncode}"
+        if holder.proc.returncode != 0:
+            output = f"{output.rstrip()}\n\nExit code: {holder.proc.returncode}"
 
         return ExecuteResponse(
             output=output,
-            exit_code=result.returncode,
+            exit_code=holder.proc.returncode,
             truncated=truncated,
         )
 
 
-__all__ = ["InheritedEnvShellBackend", "resolve_virtual_mode_false_path"]
+__all__ = ["InheritedEnvShellBackend", "kill_active", "resolve_virtual_mode_false_path"]

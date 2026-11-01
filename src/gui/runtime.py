@@ -286,8 +286,11 @@ class GuiPresenter:
         th.start()
 
     def cancel(self, tid: str) -> None:
+        from src import shell_backend as _sb
+
         self.gate.request_cancel(tid)
-        self.bridge.status.emit(tid, "已取消，正在收尾（当前步骤结束后停止）")
+        _sb.kill_active()  # gui15 条目7：立即杀掉 execute 进程树（不再「等当前步骤跑完才停」）
+        self.bridge.status.emit(tid, "已停止")
 
     @staticmethod
     def _turn_callbacks(b: "GuiBridge", tid: str) -> dict:

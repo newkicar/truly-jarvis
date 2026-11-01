@@ -209,13 +209,22 @@ def test_resolve_path_relative_unchanged(tmp_path):
 # ---------------------------------------------------------------- Windows 多行命令拦截（执行韧性四期 L1）
 
 
-class _FakeCompleted:
-    """模拟 subprocess.CompletedProcess（execute 只读 stdout/stderr/returncode）。"""
+class _FakePopen:
+    """模拟 subprocess.Popen（execute 读 pid/poll/communicate/returncode；kill_active 的存活判定靠 poll）。"""
 
-    def __init__(self, command: str):
+    _pid_counter = 1000
+
+    def __init__(self, command, *args, **kwargs):
+        type(self)._pid_counter += 1
+        self._command = command
+        self.pid = type(self)._pid_counter
         self.returncode = 0
-        self.stdout = f"ran: {command!r}\n"
-        self.stderr = ""
+
+    def poll(self):
+        return 0
+
+    def communicate(self, timeout=None):
+        return f"ran: {self._command!r}\n", ""
 
 
 def test_windows_multiline_command_blocked(monkeypatch):
@@ -226,17 +235,17 @@ def test_windows_multiline_command_blocked(monkeypatch):
     monkeypatch.setattr(sb, "_IS_WINDOWS", True)
     called = []
 
-    def fake_run(command, *args, **kwargs):
+    def fake_popen(command, *args, **kwargs):
         called.append(command)
         raise AssertionError("多行命令应被执行前拦截")
 
-    monkeypatch.setattr(sb.subprocess, "run", fake_run)
+    monkeypatch.setattr(sb.subprocess, "Popen", fake_popen)
     res = b.execute('python -c "\nimport sys\nprint(\'hello\')"')
     assert res.exit_code == 1
     assert "多行" in res.output
     assert "落盘" in res.output
     assert "write_file" in res.output
-    assert not called, "多行命令必须执行前拦截，subprocess.run 不应被调用"
+    assert not called, "多行命令必须执行前拦截，subprocess.Popen 不应被调用"
 
 
 def test_windows_single_line_command_allowed(monkeypatch):
@@ -247,11 +256,11 @@ def test_windows_single_line_command_allowed(monkeypatch):
     monkeypatch.setattr(sb, "_IS_WINDOWS", True)
     seen = []
 
-    def fake_run(command, *args, **kwargs):
+    def fake_popen(command, *args, **kwargs):
         seen.append(command)
-        return _FakeCompleted(command)
+        return _FakePopen(command)
 
-    monkeypatch.setattr(sb.subprocess, "run", fake_run)
+    monkeypatch.setattr(sb.subprocess, "Popen", fake_popen)
     res = b.execute("echo hello")
     assert res.exit_code == 0
     assert seen == ["echo hello"]
@@ -266,11 +275,11 @@ def test_posix_multiline_command_allowed(monkeypatch):
     monkeypatch.setattr(sb, "_IS_WINDOWS", False)
     seen = []
 
-    def fake_run(command, *args, **kwargs):
+    def fake_popen(command, *args, **kwargs):
         seen.append(command)
-        return _FakeCompleted(command)
+        return _FakePopen(command)
 
-    monkeypatch.setattr(sb.subprocess, "run", fake_run)
+    monkeypatch.setattr(sb.subprocess, "Popen", fake_popen)
     multi = "echo line1\necho line2"
     res = b.execute(multi)
     assert res.exit_code == 0
@@ -348,3 +357,39 @@ def test_backend_resolve_path_windows_branch(monkeypatch):
     assert b._resolve_path("/game") == base / "game", "无盘符绝对路径落根（原行为）"
     assert b._resolve_path("sub/x") == base / "sub" / "x", "相对路径以根为基准（原行为）"
     assert b._resolve_path(str(real)) == real, '真正绝对路径原样返回'
+
+# ---------------------------------------------------------------- 进程树跟踪 / kill_active（gui15 条目7：cancel 立即停进程树）
+
+
+def test_kill_active_no_active_returns_zero(monkeypatch):
+    """无活跃 execute → kill_active 返回 0。"""
+    import src.shell_backend as sb
+
+    monkeypatch.setattr(sb, "_ACTIVE_PROCS", {})
+    assert sb.kill_active() == 0
+
+
+def test_kill_active_kills_running_command():
+    """kill_active 真停掉进行中的命令树：execute 返回 <killed> 且 exit_code 130。"""
+    import threading
+    import time
+
+    import src.shell_backend as sb
+
+    base = _scratch_base()
+    b = sb.InheritedEnvShellBackend(root_dir=str(base), virtual_mode=False)
+    cmd = "ping -n 5 127.0.0.1" if sys.platform == "win32" else "sleep 5"
+    result: dict = {}
+
+    def run_cmd():
+        result["res"] = b.execute(cmd, timeout=30)
+
+    t = threading.Thread(target=run_cmd, daemon=True)
+    t.start()
+    time.sleep(1.0)  # 等 Popen 注册进 _ACTIVE_PROCS
+    killed = sb.kill_active()
+    t.join(timeout=15)
+    assert not t.is_alive(), "kill_active 后 execute 应已返回（进程树已停）"
+    assert killed >= 1, "运行中的命令应被登记并停止"
+    assert result["res"].exit_code == 130
+    assert "<killed>" in result["res"].output
