@@ -352,6 +352,9 @@ class MainWindow(QMainWindow):
             return False
 
     def _on_doctor(self) -> None:
+        if self.presenter is None:
+            self.status_label.setText("还没有关联项目，请先「打开项目 / 新建项目」")
+            return
         from src.gui import doctor
 
         rt = self.presenter.runtime
@@ -989,6 +992,10 @@ class MainWindow(QMainWindow):
             self.input_bar.set_cancel_enabled(verdict == 'started')
             self.status_label.setText('使用 skill…')
             return True
+        if first == '/doctor':
+            # 自检走对话框（可滚动/可选中），不塞状态栏（多行文本会顶爆布局、把输入框挤出屏）
+            self._on_doctor()
+            return True
         self._execute_slash(payload)
         return True
 
@@ -1141,4 +1148,7 @@ class MainWindow(QMainWindow):
         self.refresh_sessions()
 
     def _on_notify(self, text: str) -> None:
-        self.status_label.setText(text)
+        # 状态栏必须单行：压平多行长文本（/history、命令失败堆栈等），防布局被顶爆
+        self.status_label.setText(
+            text.replace("\r\n", " ").replace("\n", " ")
+        )

@@ -80,6 +80,41 @@ def test_use_unknown_skill_shows_error(qapp, monkeypatch):
     assert not record
 
 
+def test_doctor_routes_to_dialog(qapp, monkeypatch):
+    record: list = []
+    win = _win(qapp, monkeypatch, record)
+    monkeypatch.setattr(win, "_on_doctor", lambda: record.append(("doctor",)))
+    win._on_input_submit("/doctor")
+    assert ("doctor",) in record
+    assert not [r for r in record if r[0] == "slash"]
+
+
+def test_doctor_with_args_routes_to_dialog(qapp, monkeypatch):
+    record: list = []
+    win = _win(qapp, monkeypatch, record)
+    monkeypatch.setattr(win, "_on_doctor", lambda: record.append(("doctor",)))
+    win._on_input_submit("/doctor 完整检查")
+    assert ("doctor",) in record
+    assert not [r for r in record if r[0] == "slash"]
+
+
+def test_notify_flattens_multiline(qapp, monkeypatch):
+    record: list = []
+    win = _win(qapp, monkeypatch, record)
+    win._on_notify("报告\n第二行\r\n第三行")
+    assert win.status_label.text() == "报告 第二行 第三行"
+
+
+def test_doctor_guard_without_presenter(qapp, monkeypatch):
+    win = MainWindow.__new__(MainWindow)
+    # 空态守卫：_presenter None 时只写状态栏不崩溃
+    from PySide6.QtWidgets import QLabel
+    win.presenter = None
+    win.status_label = QLabel()
+    win._on_doctor()
+    assert "还没有关联项目" in win.status_label.text()
+
+
 def test_virtual_path_reference_stays_model(qapp, monkeypatch):
     record: list = []
     win = _win(qapp, monkeypatch, record)

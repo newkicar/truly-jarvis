@@ -154,6 +154,19 @@ def test_doctor_dialog_renders_rows(qapp):
     dlg.close()
 
 
+def test_doctor_dialog_report_selectable(qapp):
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QLabel
+
+    rows = doctor.build_doctor_report(_fake_runtime().config, ollama_reachable=False,
+                                      mcp_tool_count=0, scheduler_running=True)
+    dlg = doctor.make_doctor_dialog(rows, None)
+    label = dlg.findChild(QLabel, "report-label")
+    assert label is not None
+    assert label.textInteractionFlags() & Qt.TextInteractionFlag.TextSelectableByMouse
+    dlg.close()
+
+
 def test_main_window_doctor_menu(qapp, monkeypatch):
     rt = _fake_runtime()
     p = GuiPresenter(rt, UiBridge())

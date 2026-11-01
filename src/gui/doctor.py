@@ -231,6 +231,8 @@ def make_doctor_dialog(rows: list[DoctorRow], parent=None):
     label = QLabel(doctor_report_markup(rows))
     label.setTextFormat(Qt.TextFormat.RichText)
     label.setWordWrap(True)
+    # 报告可拖选复制（输入框路由进来的用户也要选中文字）
+    label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
     label.setObjectName("report-label")
     area.setWidget(label)
     lay.addWidget(area, 1)
