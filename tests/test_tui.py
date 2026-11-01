@@ -18,6 +18,7 @@ from src.tui import (
     ModalTextArea,
     PathCompletionOverlay,
     PermissionModal,
+    ReportModal,
     SessionSidebar,
 )
 from src.tui_log import CopyableRichLog
@@ -1542,3 +1543,51 @@ async def test_compact_gated_in_tui():
         assert agent.updated is not None, "compact 成功应写回状态"
         joined = "".join(l.text for l in pilot.app.query_one(CopyableRichLog).lines)
         assert "已压缩上下文" in joined
+
+
+@pytest.mark.asyncio
+async def test_doctor_command_opens_scrollable_report_modal(monkeypatch):
+    """tui-ux21: /doctor 长诊断报告进可滚动 ReportModal，不写 #messages 日志区。
+
+    报障根因：报告整份写进贴底 RichLog，上半截被顶出视区、新消息一来沉入
+    scrollback；修复后报告进独立可滚动模态，日志区只剩一行「正在执行 /doctor…」；
+    Esc 关闭焦点回输入框，第二次单次 Enter 关模态（默认焦点关闭按钮，tui-ux8 同族）。
+    """
+
+    def fake_dispatch(agent, thread_id, command, sched=None, permission_state=None):
+        assert command == "/doctor"
+        body = "Report" + chr(10) + chr(10).join(f"line-{i:03d}" for i in range(60))
+        return body, None, None
+
+    monkeypatch.setattr(commands, "dispatch_command", fake_dispatch)
+    app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        # 第一次：/doctor 后推出 ReportModal
+        await _type_and_enter(pilot, "/doctor")
+        for _ in range(40):
+            if isinstance(app.screen, ReportModal):
+                break
+            await asyncio.sleep(0.05)
+        assert isinstance(app.screen, ReportModal), "/doctor 后应推出 ReportModal"
+        # 报告正文在模态内、不写日志区
+        content = app.screen.query_one("#report_content", Static)
+        assert "line-042" in str(content.render())
+        log = pilot.app.query_one(CopyableRichLog)
+        joined = "".join(l.text for l in log.lines)
+        assert "line-042" not in joined, "报告正文不应写入 #messages"
+        assert "正在执行 /doctor" in joined
+        # Esc 关模态，焦点回输入框
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, ReportModal)
+        assert pilot.app.focused is pilot.app.query_one("#input", JarvisTextArea)
+        # 第二次：单次 Enter 关模态（默认焦点关闭按钮）
+        await _type_and_enter(pilot, "/doctor")
+        for _ in range(40):
+            if isinstance(app.screen, ReportModal):
+                break
+            await asyncio.sleep(0.05)
+        assert isinstance(app.screen, ReportModal)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert not isinstance(app.screen, ReportModal), "Enter 应能关模态"

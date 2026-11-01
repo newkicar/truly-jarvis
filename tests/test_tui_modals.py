@@ -18,6 +18,7 @@ from src.tui import (
     ModalTextArea,
     PermissionModal,
     PrefixModal,
+    ReportModal,
     modal_edit_result,
 )
 
@@ -269,3 +270,59 @@ async def test_permission_modal_markup_safe_with_unsafe_args() -> None:
         )
 
     await _mount_and_check(PermissionModal(inv), check)
+# ----------------------------------------------------------------------
+# tui-ux21: /doctor ReportModal
+# ----------------------------------------------------------------------
+
+
+def _long_doctor_report() -> str:
+    "100-line doctor report."
+    return chr(10).join(f"line-{i:03d}" for i in range(100))
+
+
+@pytest.mark.asyncio
+async def test_report_modal_long_report_scrolls() -> None:
+    "Long report -> #report_box scrolls (max_scroll_y > 0)."
+    "Root cause: full report in #messages bottom log gets pushed out of view;"
+    "independent scrollable modal keeps the whole report visible."
+
+    async def check(host, pilot) -> None:
+        from textual.containers import VerticalScroll
+
+        box = host.screen.query_one("#report_box", VerticalScroll)
+        assert box.max_scroll_y > 0, str(box.max_scroll_y)
+
+    await _mount_and_check(ReportModal(_long_doctor_report()), check)
+
+
+@pytest.mark.asyncio
+async def test_report_modal_buttons_visible_at_12_rows() -> None:
+    "Short 80x12 screen: close-button row stays fully on screen."
+
+    async def check(host, pilot) -> None:
+        _buttons_within(host, ("btn_report_close",), 12)
+
+    await _mount_and_check(ReportModal(_long_doctor_report()), check, size=(80, 12))
+
+
+@pytest.mark.asyncio
+async def test_report_modal_focus_on_close_button() -> None:
+    "Modal opens with focus on the close button (single Enter closes)."
+
+    async def check(host, pilot) -> None:
+        btn = host.screen.query_one("#btn_report_close", Button)
+        assert pilot.app.focused is btn
+
+    await _mount_and_check(ReportModal("short report"), check)
+
+
+@pytest.mark.asyncio
+async def test_report_modal_markup_safe_with_unsafe_report() -> None:
+    "Report body is untrusted text; Static(markup=False) keeps it verbatim."
+
+    async def check(host, pilot) -> None:
+        st = host.screen.query_one("#report_content")
+        assert "max_column" in str(st.render())
+
+    await _mount_and_check(ReportModal(UNSAFE_CMD + chr(10) + _long_doctor_report()), check)
+

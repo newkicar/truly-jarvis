@@ -672,6 +672,82 @@ class CopyPickerModal(ModalScreen):
         return ""
 
 
+class ReportModal(ModalScreen):
+    """tui-ux21: /doctor 长诊断报告可滚动模态。
+
+    根因：报告整份写进 #messages（CopyableRichLog）时，贴底逻辑把报告上半截
+    顶出视区，滚动条 1 格宽近不可见 + ConPTY 滚轮透传不稳 → 用户「看不见剩余
+    信息」；新消息一来报告沉入 scrollback，感知「消失」。改独立 ModalScreen
+    可滚动视区后：报告完整可见（滚条 + PgUp/PgDn 键盘滚动）、新消息不影响、
+    关闭后日志区只剩一行「正在执行 /doctor…」。
+
+    布局遵循 Modal 布局规约（tui-ux5⑤）：内容容器 80%/auto/max 70% + body
+    可滚动 + 按钮行贴模态底。报告正文为不可信文本（skill 名/路径等），
+    Static(markup=False) 纯文本渲染。
+    """
+
+    BINDINGS = [
+        Binding("escape", "close", "关闭"),
+        Binding("pageup", "scroll_page_up", "上页", show=False),
+        Binding("pagedown", "scroll_page_down", "下页", show=False),
+    ]
+    # tui-ux8 同族：默认焦点落在关闭按钮 → 单次 Enter 即关（免 Tab）
+    AUTO_FOCUS: ClassVar[str] = "#btn_report_close"
+
+    CSS = """
+    ReportModal {
+        align: center middle;
+        background: $surface;
+    }
+    #report_box {
+        width: 80%;
+        height: auto;
+        max-height: 70%;
+        border: thick $primary;
+        background: $panel;
+        padding: 1 2;
+    }
+    #report_title {
+        color: $accent;
+        text-style: bold;
+    }
+    #report_content {
+        width: 100%;
+    }
+    #report_buttons {
+        height: auto;
+        width: 80%;
+        margin-top: 1;
+        align-horizontal: center;
+    }
+    """
+
+    def __init__(self, report: str, *, title: str = "诊断报告") -> None:
+        super().__init__()
+        self.report = report
+        self.title = title
+
+    def compose(self) -> ComposeResult:
+        with VerticalScroll(id="report_box", can_focus=False):
+            yield Label(self.title, id="report_title", markup=False)
+            yield Static(self.report, id="report_content", markup=False)
+        with Horizontal(id="report_buttons"):
+            yield Button("关闭 (Esc)", id="btn_report_close", variant="primary")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn_report_close":
+            self.dismiss()
+
+    def action_close(self) -> None:
+        self.dismiss()
+
+    def action_scroll_page_up(self) -> None:
+        self.query_one("#report_box", VerticalScroll).scroll_page_up()
+
+    def action_scroll_page_down(self) -> None:
+        self.query_one("#report_box", VerticalScroll).scroll_page_down()
+
+
 class PathCompletionOverlay(OptionList):
     """@ / 触发的建议列表（overlay，不抢输入焦点）。"""
 
@@ -1552,6 +1628,12 @@ class JarvisApp(App):
                 self._turn_gate_threads.add(self.thread_id)
                 self._spawn_turn_worker(partial(self._gate_command_worker, text))
                 return
+            if parts[0] == "/doctor":
+                # tui-ux21: /doctor 长诊断报告推可滚动 ReportModal，不写 #messages
+                # （贴底逻辑会把报告上半截顶出视区，新消息一来沉入 scrollback）
+                log.write(system_message_markup("正在执行 /doctor…"))
+                self._spawn_turn_worker(partial(self._run_doctor_worker, text))
+                return
             cmd = parts[0]
             log.write(system_message_markup(f"正在执行 {cmd}…"))
             self._spawn_turn_worker(partial(self._run_command_worker, text))
@@ -1604,6 +1686,32 @@ class JarvisApp(App):
             self._apply_command_result, result, new_thread, self._yolo_notify_text(text)
         )
         self.call_from_thread(self._release_turn_gate, self.thread_id)
+
+    def _run_doctor_worker(self, text: str) -> None:
+        """tui-ux21: /doctor worker（线程）：复用 dispatch_command 内核，完成推 ReportModal。
+
+        只读诊断命令（无模型调用、不进回合门）；异常回落纯文本错误。
+        """
+        try:
+            result, _new_thread, _replay_cid = commands.dispatch_command(
+                self.agent, self.thread_id, text, self.sched,
+                permission_state=self.permission_state,
+            )
+        except Exception as exc:  # noqa: BLE001
+            result = f"命令失败: {exc}"
+        self.call_from_thread(self._apply_doctor_report, result)
+
+    def _apply_doctor_report(self, result: str) -> None:
+        """tui-ux21: 诊断报告推可滚动 ReportModal；关闭后焦点回 #input。
+
+        报告不写 #messages——不被贴底顶出视区（报障根因），
+        也不在新消息时沉入 scrollback。
+        """
+
+        def after_close(_result) -> None:
+            self.query_one("#input", JarvisTextArea).focus()
+
+        self.push_screen(ReportModal(result), after_close)
 
     def _yolo_notify_text(self, text: str) -> str | None:
         """tui-ux12: /yolo on/off 执行后短 banner（幂等同文案）；裸查询/非法参数不弹。"""
