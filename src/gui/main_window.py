@@ -58,7 +58,6 @@ def make_text_dialog(title: str, text: str, parent=None) -> None:
     area.setWidgetResizable(True)
     label = QLabel(text)
     label.setObjectName("report-label")
-    label.setPlainText(text)
     label.setWordWrap(True)
     label.setTextInteractionFlags(Qt.TextSelectableByMouse)
     area.setWidget(label)
@@ -218,6 +217,7 @@ class MainWindow(QMainWindow):
         ll.addWidget(self.btn_new)
         self.running_badge = QLabel("")
         self.running_badge.setObjectName("badge-running")
+        self._running_badge_state = "idle"  # gui15 #1：居临工作状态徽标（idle/running/awaiting/stopped）
         ll.addWidget(self.running_badge)
         ll.addWidget(self.mode_badge)
         root.addWidget(left)
@@ -477,6 +477,9 @@ class MainWindow(QMainWindow):
         for t, act in self._theme_items.items():
             act.setChecked(t == theme)
 
+        self._refresh_mode_badges()
+        self._apply_running_badge(self._running_badge_state)
+
     # ---- 补全（工单 10；2026-10-28 规格：无边框浮层 + 不挡输入框 + 无匹配提示
     #      + 不抢键盘（ToolTip/NoFocus）+ 逐键防抖 + skill 目录 TTL 缓存）
     def _skills_cached(self) -> list:
@@ -565,15 +568,52 @@ class MainWindow(QMainWindow):
         state = self.presenter.runtime.permission_state
         mode = plan_mode.current_mode(state)
         yolo = permissions.yolo_active(state, self.active_tid or "")
-        bits = []
-        bits.append("[Plan]" if mode == "plan" else "[Act]")
+        from src.gui import theme as _theme_mod
+
+        tok = _theme_mod.current_tokens()
+        html = f'<span style="color: {tok["ok"]}; font-weight: bold;">[{"Plan" if mode == "plan" else "Act"}]</span>'
         if yolo:
-            bits.append("[YOLO]")
-        self.mode_badge.setText(" ".join(bits))
+            html += f' <span style="color: {tok["negative"]}; font-weight: bold;">[YOLO]</span>'
+        self.mode_badge.setText(html)
         # 菜单勾选态与真实状态同步（切会话后 YOLO 态随会话变）
         self.yolo_action.blockSignals(True)
         self.yolo_action.setChecked(yolo)
         self.yolo_action.blockSignals(False)
+
+    _BADGE_STATES: dict = {
+        "awaiting": ("等待审批…", "warning"),
+        "running": ("工作中…", "ok"),
+        "stopped": ("已停止", "negative"),
+        "idle": ("", ""),
+    }
+
+    def _refresh_running_badge(self) -> None:
+        tid = self.active_tid or ""
+        p = self.panes.get(tid)
+        if p is not None and p.awaiting_card:
+            state = "awaiting"
+        elif self.presenter.gate.is_running(tid):
+            state = "running"
+        elif p is not None and p.stopped:
+            state = "stopped"
+        else:
+            state = "idle"
+        self._apply_running_badge(state)
+
+    def _apply_running_badge(self, state: str) -> None:
+        self._running_badge_state = state
+        text, tok_key = self._BADGE_STATES.get(state, ("", ""))
+        if not text:
+            self.running_badge.setText("")
+            self.running_badge.setStyleSheet("")
+            return
+        from src.gui import theme as _theme_mod
+
+        tok = _theme_mod.current_tokens()
+        self.running_badge.setText(f"● {text}")
+        self.running_badge.setStyleSheet(
+            f"color: {tok.get(tok_key, tok['text'])}; font-size: 12px; font-weight: bold;"
+        )
 
     # ---- 会话栈
     def _ensure_pane(self, tid: str) -> ChatPane:
@@ -612,6 +652,7 @@ class MainWindow(QMainWindow):
         proj = self._active_project_name()
         self.status_label.setText(f"{proj} · 会话 {tid}{note}" if proj else f"会话 {tid}{note}")
         self._refresh_mode_badges()
+        self._refresh_running_badge()
 
     # ---- 项目树（工单 04：项目→会话；点项目名=切换，+/−=展开；右键各自菜单）
     def _active_session_rows(self) -> list[tuple[str, bool]]:
@@ -1163,10 +1204,16 @@ class MainWindow(QMainWindow):
         if p is None:
             p = self._ensure_pane(tid)
         p.append_card(card_widget_from_payload(payload))
+        p.awaiting_card = True
+        self._refresh_running_badge()
 
     def _on_focus_input(self, tid: str) -> None:
+        p = self.panes.get(tid)
+        if p is not None:
+            p.awaiting_card = False
         self.input_bar.edit.setFocus()
         self._refresh_queue_strip()
+        self._refresh_running_badge()
 
     def _on_delta(self, tid: str, delta: str) -> None:
         p = self.panes.get(tid)
@@ -1199,19 +1246,25 @@ class MainWindow(QMainWindow):
             p.thinking_delta(delta)
 
     def _on_status(self, tid: str, text: str) -> None:
+        p = self.panes.get(tid)
+        if p is not None and text.startswith("已停止"):
+            p.stopped = True
         if tid == self.active_tid:
             self.status_label.setText(text)
+            self._refresh_running_badge()
 
     def _on_turn_started(self, tid: str) -> None:
         p = self.panes.get(tid)
         if p is not None:
             p.running = True
+            p.stopped = False
         self.input_bar.set_cancel_enabled(True)
         arn = self._workspace.active_root()
         if arn is not None:
             self._sess_done.pop((normalize_root_key(arn), tid), None)
         self.refresh_sessions()
         self._refresh_queue_strip()
+        self._refresh_running_badge()
 
     def _on_turn_done(self, tid: str, ok: bool) -> None:
         p = self.panes.get(tid)
@@ -1220,6 +1273,7 @@ class MainWindow(QMainWindow):
         self.input_bar.set_cancel_enabled(bool(self.presenter.gate.running_threads()))
         self.refresh_sessions()
         self._refresh_queue_strip()
+        self._refresh_running_badge()
 
     def _on_notify(self, text: str) -> None:
         # 状态栏必须单行：压平多行长文本（/history、命令失败堆栈等），防布局被顶爆

@@ -150,6 +150,9 @@ class ChatPane(QScrollArea):
         self.tid = tid
         self.stick = True
         self.running = False
+        # gui15 徽标：pane 瞬态——等待审批卡 / 停止标记（main_window._refresh_running_badge 消费）
+        self.awaiting_card = False
+        self.stopped = False
         self.render_strategy = "batch"
         self._ai_label: QLabel | None = None
         self._ai_buf = ""
