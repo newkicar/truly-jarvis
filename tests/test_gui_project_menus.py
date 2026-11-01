@@ -135,6 +135,20 @@ def test_new_project_dialog_calls_new_dir_and_switch(qapp, monkeypatch):
     assert switched  # 触发切换
 
 
+def test_open_project_menu_about_show_emit_no_crash(qapp, monkeypatch):
+    """Item 15 回归：QMenu.aboutToShow 是无参信号。
+
+    旧代码把 1 参槽 `_populate_open_menu(menu)` 直连信号 → 菜单显示（信号触发）时
+    `TypeError: _populate_open_menu() missing 1 required positional argument: 'menu'`，
+    启动即崩。修复 = lambda 包一层。模拟信号发射：旧代码抛 TypeError，新代码通过。
+    """
+    _rt, _p, _ws, win = _win_with_two_projects(qapp, monkeypatch)
+    m = _menu(win, "打开项目")
+    m.aboutToShow.emit()  # 旧代码在此抛 TypeError；新代码正常重填动作
+    texts = [a.text() for a in m.actions() if not a.isSeparator()]
+    assert "A" in texts and "B" in texts
+
+
 def test_title_and_status_show_active_project(qapp, monkeypatch):
     _rt, _p, _ws, win = _win_with_two_projects(qapp, monkeypatch)
     assert win.windowTitle() == "JARVIS — A"

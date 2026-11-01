@@ -770,7 +770,9 @@ class MainWindow(QMainWindow):
 
     # ---- 工单 05：打开项目 / 新建项目 菜单
     def _build_open_project_menu(self, menu) -> None:
-        menu.aboutToShow.connect(self._populate_open_menu)
+        # QMenu.aboutToShow 是无参信号：直接连 1 参槽会在信号触发时
+        # 因缺少 menu 位置参数抛 TypeError（启动即崩），用 lambda 包一层。
+        menu.aboutToShow.connect(lambda: self._populate_open_menu(menu))
         self._populate_open_menu(menu)
 
     def _populate_open_menu(self, menu) -> None:
