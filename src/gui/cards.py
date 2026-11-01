@@ -306,12 +306,12 @@ def make_card_ask(runtime, bridge) -> Callable[[Any, str], dict | None]:
 
         def on_decision(result: dict) -> None:
             cs.result = result
-            bridge.focus_input.emit()
+            bridge.focus_input.emit(tid)
             cs.event.set()
 
         def on_abandon() -> None:
             cs.result = None
-            bridge.focus_input.emit()
+            bridge.focus_input.emit(tid)
             cs.event.set()
 
         diff = _file_diff(inv, runtime)

@@ -34,8 +34,8 @@ class UiBridge(QObject):
     refresh_sessions = Signal()
     # 轻提示（状态行一次性文案）
     notify = Signal(str)
-    # 审批决策完成 → 焦点回输入框（工单 04）
-    focus_input = Signal()
+    # 审批决策完成 → 焦点回输入框（工单 04；G7 携带 tid 撤待审批卡）
+    focus_input = Signal(str)
     # undo 等消息层操作后 → 主线程重建该 thread 的 pane 记录（工单 08）
     rebuild_pane = Signal(str)
     # 分支（fork）出新会话 → 主线程切换（工单 09）：new_tid, note

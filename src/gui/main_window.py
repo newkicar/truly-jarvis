@@ -47,6 +47,29 @@ _PROJ_ROLE = Qt.ItemDataRole.UserRole + 100
 _TID_ROLE = Qt.ItemDataRole.UserRole + 101
 
 
+def make_text_dialog(title: str, text: str, parent=None) -> None:
+    """长文报告对话框（gui15 G7：/help 等命令输出）——可滚动 + 可拖选，不再压状态栏。"""
+    from PySide6.QtWidgets import QDialog, QScrollArea
+
+    dlg = QDialog(parent)
+    dlg.setWindowTitle(title)
+    lay = QVBoxLayout(dlg)
+    area = QScrollArea()
+    area.setWidgetResizable(True)
+    label = QLabel(text)
+    label.setObjectName("report-label")
+    label.setPlainText(text)
+    label.setWordWrap(True)
+    label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+    area.setWidget(label)
+    lay.addWidget(area)
+    btn = QPushButton("关闭")
+    btn.clicked.connect(dlg.accept)
+    lay.addWidget(btn)
+    dlg.resize(720, 460)
+    dlg.exec()
+
+
 class MainWindow(QMainWindow):
     def __init__(self, presenter: GuiPresenter, bridge: UiBridge, *, llm=None, key_store=None, workspace=None) -> None:
         QMainWindow.__init__(self)
@@ -534,12 +557,7 @@ class MainWindow(QMainWindow):
         self.status_label.setText(note or f"已切换到 {new_tid}")
 
     def _show_text(self, title: str, text: str) -> None:
-        from PySide6.QtWidgets import QMessageBox
-
-        box = QMessageBox(self)
-        box.setWindowTitle(title)
-        box.setText(text)
-        box.exec()
+        make_text_dialog(title, text, self)
 
     def _refresh_mode_badges(self) -> None:
         from src import permissions, plan_mode
@@ -1146,8 +1164,9 @@ class MainWindow(QMainWindow):
             p = self._ensure_pane(tid)
         p.append_card(card_widget_from_payload(payload))
 
-    def _on_focus_input(self) -> None:
+    def _on_focus_input(self, tid: str) -> None:
         self.input_bar.edit.setFocus()
+        self._refresh_queue_strip()
 
     def _on_delta(self, tid: str, delta: str) -> None:
         p = self.panes.get(tid)
