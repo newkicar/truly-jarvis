@@ -15,7 +15,9 @@ def test_filter_commands_prefix():
 
 
 def test_filter_commands_empty_returns_all():
-    assert len(filter_commands(query="")) == len(SLASH_COMMANDS)
+    # 空 query = 按数量限制返回整个池（默认 limit=20；具体长度用 limit 升限）
+    assert len(filter_commands(query="")) == min(len(SLASH_COMMANDS), 20)
+    assert len(filter_commands(query="", limit=99)) == len(SLASH_COMMANDS)
 
 
 def test_tui_ux5_entries_present():
