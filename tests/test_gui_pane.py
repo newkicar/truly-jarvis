@@ -174,3 +174,88 @@ def test_rebuilt_empty_history_placeholder_stays(qtbot):
     assert pane._placeholder is None
     pane.rebuild_from_records([])
     assert pane._placeholder is not None
+
+# ---- 批次 3+4：↓回底 / 审批卡强制显形（布局未定型的过期 maximum 竞态 + 强制 reveal）
+def _pane_real_overflow(qtbot, qapp, lines: int = 60):
+    """真实布局溢出（offscreen 定尺寸）——滚动条 range 来自真实布局，非伪造。
+
+    offscreen 布局跨事件迭代收敛（实测 2 轮），用 qtbot.wait 让真实时间过去、布局定型。
+    """
+    p = ChatPane("t1")
+    qtbot.addWidget(p)
+    p.setFixedSize(500, 300)
+    p.show()
+    for i in range(lines):
+        p.append_user(f"line {i}")
+    qtbot.wait(150)
+    assert p.verticalScrollBar().maximum() > 0
+    return p
+
+
+def test_back_pill_real_overflow_click_reaches_bottom(qtbot, qapp):
+    p = _pane_real_overflow(qtbot, qapp)
+    sb = p.verticalScrollBar()
+    sb.setValue(0)
+    p._on_scroll(0)
+    qapp.processEvents()
+    assert p._back_btn.isVisible()
+    p._back_btn.click()
+    qtbot.wait(150)
+    assert sb.value() == sb.maximum() and p.stick
+
+
+def test_back_pill_click_after_content_growth_reaches_true_bottom(qtbot, qapp):
+    """item 4：上翻期间内容持续变多，点 ↓ 必须落到*新的*底，而非旧位置/顶部。"""
+    p = _pane_real_overflow(qtbot, qapp, lines=40)
+    sb = p.verticalScrollBar()
+    max_before = sb.maximum()
+    assert max_before > 0
+    sb.setValue(0)
+    p._on_scroll(0)
+    qapp.processEvents()
+    for i in range(40, 120):
+        p.append_user(f"line {i}")  # stick=False → 普通追加不拖回底
+    p._back_btn.click()
+    qtbot.wait(300)
+    assert sb.maximum() > max_before
+    assert sb.value() == sb.maximum() and p.stick
+
+
+def test_approval_card_force_revealed_when_scrolled_up(qtbot, qapp):
+    """item 3：审批卡 = 强制显形（用户翻看历史时，卡片也必须滚进视野）。"""
+    from PySide6.QtWidgets import QWidget
+
+    p = _pane_with_overflow(qtbot, qapp)
+    p.snap_to_bottom()
+    sb = p.verticalScrollBar()
+    sb.setValue(0)
+    p._on_scroll(0)
+    p.append_card(QWidget())
+    assert p.stick is True
+    assert sb.value() == sb.maximum()
+    assert not p._back_btn.isVisible()
+
+
+def test_plain_content_does_not_yank_scrolled_up_user(qtbot, qapp):
+    """回归护栏：普通消息不把上翻中的用户拖回底（审批卡除外）。"""
+    p = _pane_with_overflow(qtbot, qapp)
+    p.snap_to_bottom()
+    sb = p.verticalScrollBar()
+    sb.setValue(0)
+    p._on_scroll(0)
+    p.append_user("new msg while reading")
+    assert p.stick is False and sb.value() == 0
+    qtbot.wait(150)
+    assert sb.value() == 0
+    assert p._back_btn.isVisible()
+
+
+def test_deferred_snap_respects_user_scroll_up(qtbot, qapp):
+    """延迟再 snap 带 stick 护栏：窗内用户上翻 → 延迟动作不得覆盖其阅读位置。"""
+    p = _pane_with_overflow(qtbot, qapp)
+    p.snap_to_bottom()
+    sb = p.verticalScrollBar()
+    sb.setValue(0)
+    p._on_scroll(0)
+    qtbot.wait(150)
+    assert sb.value() == 0 and p.stick is False

@@ -10,7 +10,7 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
     QFrame,
@@ -156,6 +156,7 @@ class ChatPane(QScrollArea):
         self._dirty = False
         self._thinking_box: ThinkingBox | None = None
         self._back_btn: QPushButton | None = None
+        self._snap_timer: QTimer | None = None
 
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)  # 点击聚焦（四键前提）
         self.setWidgetResizable(True)
@@ -328,7 +329,7 @@ class ChatPane(QScrollArea):
     def append_card(self, card: QWidget) -> None:
         self._hide_placeholder()
         self._insert(card)
-        self._follow()
+        self.snap_to_bottom()  # 审批卡强制显形（单生产调用点）
 
     def rebuild_from_records(self, records: list) -> None:
         """工单 06：从检查点记录重建（user/AI 文本 + 工具行，工具行默认折叠）。"""
@@ -359,6 +360,26 @@ class ChatPane(QScrollArea):
         sb.setValue(sb.maximum())
         self.stick = True
         self._set_pill(False)
+        # 刚追加内容 → 布局未定型 → maximum 可能还是旧值（↓回底/审批卡竞态）：
+        # 50ms 后再吸附一次；若仍在增长则续 arm；用户上翻（stick=False）立即终止。
+        self._resnap_soon()
+
+    def _resnap_soon(self) -> None:
+        if self._snap_timer is None:
+            self._snap_timer = QTimer(self)
+            self._snap_timer.setSingleShot(True)
+            self._snap_timer.setInterval(50)
+            self._snap_timer.timeout.connect(self._deferred_snap)
+        if not self._snap_timer.isActive():
+            self._snap_timer.start()
+
+    def _deferred_snap(self) -> None:
+        sb = self.verticalScrollBar()
+        if not self.stick:
+            return  # 用户上翻 → 绝不覆盖其阅读位置
+        if sb.maximum() > sb.value():
+            sb.setValue(sb.maximum())
+            self._resnap_soon()  # 布局仍在收敛 → 续 arm 至真正底部
 
     def _on_scroll(self, _v: int) -> None:
         bottom = self._at_bottom()
