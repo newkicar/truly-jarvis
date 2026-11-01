@@ -102,6 +102,8 @@ class Config:
     dream: dict[str, object] = field(default_factory=dict)
     # gui15 G2: 自动压缩上下文阈值（token）；>0 时启用 LangChain SummarizationMiddleware
     auto_compaction: int = 0
+    # gui 任务完成三通道通知配置（notifications 段：sound/voice/email/email_cfg，缺省 sound=True 其余关闭）
+    notifications: dict = field(default_factory=dict)
 
 
 def parse_env_text(text: str) -> dict[str, str]:
@@ -265,6 +267,10 @@ def load_config(
     if auto_compaction < 0:
         auto_compaction = 0
 
+    notifications_cfg = data.get("notifications", {})
+    if not isinstance(notifications_cfg, dict):
+        notifications_cfg = {}
+
     cfg = Config(
         project_root=root,
         base_url=base_url,
@@ -287,6 +293,7 @@ def load_config(
         model_image_input=str(model_cfg.get("image_input", "auto")),
         dream=dream_cfg,
         auto_compaction=auto_compaction,
+        notifications=notifications_cfg,
     )
     ensure_user_home()
     set_runtime_project_root(cfg.project_root)

@@ -112,7 +112,7 @@ def test_scheduler_gate_enable_idempotent_single(monkeypatch):
 
     fake = _FakeSched()
 
-    def _make(agent, config):
+    def _make(agent, config, on_done=None):
         calls["n"] += 1
         return fake
 

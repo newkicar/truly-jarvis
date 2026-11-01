@@ -46,6 +46,8 @@ class GuiRuntime:
     saver_ctx: Any = None
     gate: "SchedulerGate" = None
     closed: bool = False  # close() 后 checkpointer 连接已关，DB 查询须降级
+    task_done_hook: Callable | None = None  # 任务完成通知钩子（gui bgnotify；None=不通知，CLI/TUI 零影响）
+    notifier_policy: Any = None  # gui 通知策略（NotificationPolicy；None=缺省 sound 开）
 
     def close(self) -> None:
         self.closed = True
@@ -63,6 +65,8 @@ def build_runtime(
     enable_mcp: bool = False,
     enable_scheduled: bool = False,
     label: str | None = None,
+    task_done_hook: Callable | None = None,
+    notifier_policy: Any = None,
 ) -> tuple[GuiRuntime, "SchedulerGate"]:
     """装配 runtime + 可选 scheduler 门。enable_scheduled=False 时 scheduler 不启动（遗留 d）。"""
     config.checkpoint_db.parent.mkdir(parents=True, exist_ok=True)
@@ -105,7 +109,28 @@ def build_runtime(
         model_label=label or config.model_id,
         saver_ctx=saver_ctx,
     )
-    gate = SchedulerGate(runtime, enabled=enable_scheduled)
+    runtime.task_done_hook = task_done_hook
+    runtime.notifier_policy = notifier_policy
+
+    def _sched_done(task: dict, ok: bool, detail: str) -> None:
+        """定时任务完成 → task_done_hook（通知路径异常吞掉，不影响调度器）。"""
+        if task_done_hook is None:
+            return
+        from src.gui.notify_policy import TaskDoneEvent
+
+        ev = TaskDoneEvent(
+            kind="scheduled",
+            root=str(runtime.config.project_root),
+            thread_id=f"sched-{task.get('id', '?')}",
+            ok=bool(ok),
+            detail=str(detail or ""),
+        )
+        try:
+            task_done_hook(ev)
+        except Exception:
+            pass
+
+    gate = SchedulerGate(runtime, enabled=enable_scheduled, on_task_done=_sched_done)
     runtime.gate = gate
     return runtime, gate
 
@@ -126,13 +151,22 @@ def build_runtime_for_config(home, *, model=None, enable_mcp=False, enable_sched
 class SchedulerGate:
     """定时任务可选门（遗留 d）：enabled=False 时不启动 scheduler，单 scheduler 约束。"""
 
-    def __init__(self, runtime: GuiRuntime, enabled: bool = False) -> None:
+    def __init__(
+        self,
+        runtime: GuiRuntime,
+        enabled: bool = False,
+        *,
+        on_task_done: Callable | None = None,
+    ) -> None:
         self._sched = None
         self._runtime = runtime
+        self._on_task_done = on_task_done
         if enabled:
             from src import scheduler
 
-            self._sched = scheduler.make_scheduler(runtime.agent, runtime.config)
+            self._sched = scheduler.make_scheduler(
+                runtime.agent, runtime.config, on_done=self._on_task_done
+            )
             self._sched.start()
 
     @property
@@ -145,7 +179,9 @@ class SchedulerGate:
             return "scheduler 已在运行（单 scheduler，不会双开）"
         from src import scheduler
 
-        self._sched = scheduler.make_scheduler(self._runtime.agent, self._runtime.config)
+        self._sched = scheduler.make_scheduler(
+            self._runtime.agent, self._runtime.config, on_done=self._on_task_done
+        )
         self._sched.start()
         return "定时任务已启动（scheduler）"
 
@@ -158,7 +194,9 @@ class SchedulerGate:
 
         if self._sched is None:
             return "定时任务未启用（本进程未 --scheduled 启动，无法热重载）"
-        return _sched_mod.reload_schedules(self._sched, self._runtime.agent, self._runtime.config)
+        return _sched_mod.reload_schedules(
+            self._sched, self._runtime.agent, self._runtime.config, on_done=self._on_task_done
+        )
 
     def shutdown(self) -> None:
         if self._sched is not None:
@@ -293,6 +331,27 @@ class GuiPresenter:
         self.bridge.status.emit(tid, "已停止")
 
     @staticmethod
+    def _emit_task_done(rt, tid: str, ok: bool, cancelled: bool = False) -> None:
+        """回合结束（非取消）→ task_done_hook 发 TaskDoneEvent（gui bgnotify；取消=用户有意识操作，不提醒）。"""
+        if cancelled:
+            return
+        hook = getattr(rt, "task_done_hook", None)
+        if hook is None:
+            return
+        from src.gui.notify_policy import TaskDoneEvent
+
+        ev = TaskDoneEvent(
+            kind="chat",
+            root=str(getattr(rt.config, "project_root", "")),
+            thread_id=tid,
+            ok=bool(ok),
+        )
+        try:
+            hook(ev)
+        except Exception:
+            pass
+
+    @staticmethod
     def _turn_callbacks(b: "GuiBridge", tid: str) -> dict:
         """共享回调工厂（工单 06 思考块 + 去重）：on_thinking 增量已上屏，
         则 on_reasoning_end 不重发全文（防网关 finalize 型推理双显）；
@@ -367,6 +426,8 @@ class GuiPresenter:
             b.refresh_sessions.emit()
             # 首轮成功 → 后台 AI 命名（工单 05）
             self._maybe_name(tid, ok)
+            # 任务完成通知（必须在 gate.finish 前读取消位；取消不发）
+            self._emit_task_done(rt, tid, ok, cancelled=self.gate.is_cancelled(tid))
             # FIFO 重投：出队下一条排队消息，重新入门起新回合（工单 03）
             nxt = self.gate.finish(tid)
             if nxt is not None:

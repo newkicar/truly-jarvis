@@ -105,13 +105,23 @@ def main(argv: list[str] | None = None) -> int:
     # 严格空态（工单 05）：空注册表**不**登记 cwd（避免"幽灵项目"）——cwd 仅作活动 runtime，
     # 不进树；侧栏显「还没有项目」引导「打开/新建」。已有注册表时打开最近项目（并会登记/刷新）。
 
+    def _task_done_hook(ev):
+        """任务完成（会话回合/定时任务）→ 主线程信号（三通道通知载荷 TaskDoneEvent）。"""
+        try:
+            bridge.task_done.emit(ev)
+        except Exception:
+            pass
+
     def _make_runtime(root):
+        from src.gui import notify_policy
         from src.gui.runtime import build_runtime
 
         cfg = load_config(project_root=Path(root), env_overrides=overrides)
         rt, _gate = build_runtime(
             cfg, model=model, enable_mcp=enable_mcp,
             enable_scheduled=enable_scheduled, label=label or cfg.model_id,
+            task_done_hook=_task_done_hook,
+            notifier_policy=notify_policy.NotificationPolicy.from_config(cfg.notifications),
         )
         return rt
 

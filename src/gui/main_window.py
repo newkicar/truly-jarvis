@@ -36,6 +36,9 @@ from src.gui.input_bar import InputBar
 from src.gui.pane import RENDER_BATCH_MS, ChatPane
 from src.gui.runtime import GuiPresenter
 from src.gui.workspace_controller import StaticWorkspace
+from src.gui.notify_channels import make_hooks
+from src.gui.notify_policy import TaskNotifier
+from src.gui.runtime_registry import normalize_root_key
 
 _PROJ_ROLE = Qt.ItemDataRole.UserRole + 100
 _TID_ROLE = Qt.ItemDataRole.UserRole + 101
@@ -48,6 +51,11 @@ class MainWindow(QMainWindow):
         # 多项目工作区接口（工单 04）：缺省 = StaticWorkspace（单项目，行为不变）；
         # gui_main 传入 WorkspaceController（多项目，切项目=关旧建新）
         self._workspace = workspace or StaticWorkspace(presenter, bridge)
+        # 后台任务完成标记 + 三通道通知器（gui bgnotify；键=(normalize_root_key(root), tid)）
+        self._sess_done: dict = {}   # (归一 root, tid) -> "ok"/"fail"
+        self._proj_done: dict = {}   # 归一 root -> 最近一次结果
+        self._notifier = TaskNotifier(make_hooks())
+        self._notifier.policy = self._active_policy()
         self.bridge = bridge
         self._llm = llm  # LlmConfig | None（GUI 自配层；None = 走项目 .env）
         self._key_store = key_store
@@ -73,6 +81,12 @@ class MainWindow(QMainWindow):
         else:
             self.input_bar.edit.setEnabled(False)
             self.input_bar.btn_send.setEnabled(False)
+
+    # ---- 任务完成通知
+    def _active_policy(self):
+        pres = self.presenter
+        rt = getattr(pres, "runtime", None)
+        return getattr(rt, "notifier_policy", None) if rt is not None else None
 
     # ---- 结构
     def _build_ui(self) -> None:
@@ -562,6 +576,13 @@ class MainWindow(QMainWindow):
         self.refresh_tree()
         self.input_bar.edit.setFocus()
         note = "（回合进行中，切走不影响执行）" if self.presenter.gate.is_running(tid) else ""
+        # 打开该会话/项目 → 消费其完成标记
+        arn = self._workspace.active_root()
+        rn = normalize_root_key(arn) if arn is not None else None
+        if rn is not None:
+            for k in [k for k in self._sess_done if k[0] == rn]:
+                self._sess_done.pop(k, None)
+            self._proj_done.pop(rn, None)
         proj = self._active_project_name()
         self.status_label.setText(f"{proj} · 会话 {tid}{note}" if proj else f"会话 {tid}{note}")
         self._refresh_mode_badges()
@@ -582,12 +603,12 @@ class MainWindow(QMainWindow):
             ordered = [self.active_tid] + ordered
         return [(tid, tid == self.active_tid) for tid in ordered]
 
-    def _session_row_label(self, tid: str, active: bool, reg, gate) -> str:
+    def _session_row_label(self, tid: str, active: bool, reg, gate, done_mark: str = "") -> str:
         mark = "▸ " if active else "   "
         pin = "★ " if reg.is_pinned(tid) else ""
         arch = "📁 " if reg.is_archived(tid) else ""
         run = " ⚡" if gate.is_running(tid) else ""
-        return f"{mark}{pin}{arch}{self.presenter.session_label(tid)}{run}"
+        return f"{mark}{done_mark}{pin}{arch}{self.presenter.session_label(tid)}{run}"
 
     def refresh_tree(self) -> None:
         """重建项目→会话树（活动项目=live 会话，非活动项目=只读会话名）。保留已展开项。"""
@@ -602,22 +623,29 @@ class MainWindow(QMainWindow):
         }
         tree.clear()
         active_norm = str(Path(str(active))) if active is not None else None
+        active_rn = normalize_root_key(active) if active is not None else None
         for root, name, pinned in self._workspace.projects():
             r = str(Path(root))
-            pitem = QTreeWidgetItem([f"{'★ ' if pinned else ''}{name}"])
+            rp_norm = normalize_root_key(root)
+            proj_mark = {"ok": " ●", "fail": " ✗"}.get(self._proj_done.get(rp_norm), "")
+            pitem = QTreeWidgetItem([f"{'★ ' if pinned else ''}{name}{proj_mark}"])
             pitem.setData(0, _PROJ_ROLE, r)
             pitem.setToolTip(0, r)
             tree.addTopLevelItem(pitem)
             is_active = active_norm is not None and r == active_norm
             if is_active:
                 for tid, is_act in self._active_session_rows():
-                    leaf = QTreeWidgetItem([self._session_row_label(tid, is_act, reg, gate)])
+                    s_mark = {"ok": "● ", "fail": "✗ "}.get(
+                        self._sess_done.get((active_rn, tid), "") if active_rn is not None else "", ""
+                    )
+                    leaf = QTreeWidgetItem([self._session_row_label(tid, is_act, reg, gate, done_mark=s_mark)])
                     leaf.setData(0, _TID_ROLE, tid)
                     leaf.setToolTip(0, tid)
                     pitem.addChild(leaf)
             else:
                 for tid, name in self._workspace.sessions_for(root):
-                    leaf = QTreeWidgetItem([name])
+                    s_mark = {"ok": "● ", "fail": "✗ "}.get(self._sess_done.get((rp_norm, tid), ""), "")
+                    leaf = QTreeWidgetItem([f"{s_mark}{name}"])
                     leaf.setData(0, _TID_ROLE, tid)
                     leaf.setToolTip(0, tid)
                     pitem.addChild(leaf)
@@ -657,26 +685,22 @@ class MainWindow(QMainWindow):
         while self.stack.count():
             self.stack.removeWidget(self.stack.widget(0))
 
-    def _confirm_cancel_running(self) -> bool:
-        """切走时有进行中回合 → 确认「切换将取消当前项目的进行中回合」。"""
-        from PySide6.QtWidgets import QMessageBox
-
-        ans = QMessageBox.question(
-            self, "切换项目", "当前项目有回合在运行。切换将取消它，继续？"
-        )
-        return ans == QMessageBox.StandardButton.Yes
-
     def _do_switch_project(self, root, focus_tid: str | None = None) -> None:
         """切到项目 root（关旧建新 + 打开 focus_tid / 上次活动 / 新会话）。"""
         root = Path(str(root))
+        rp_norm = normalize_root_key(root)
+        for k in [k for k in self._sess_done if k[0] == rp_norm]:
+            self._sess_done.pop(k, None)
+        self._proj_done.pop(rp_norm, None)
         if self._workspace.active_root() is not None and root == Path(str(self._workspace.active_root())):
             if focus_tid:
                 self._switch_to(focus_tid)
             return
-        pres = self._workspace.switch_project(root, proceed_if_running=self._confirm_cancel_running)
+        pres = self._workspace.switch_project(root)
         if pres is None:
             return
         self.presenter = pres
+        self._notifier.policy = self._active_policy()
         # 空态恢复：刚无关联项目时（启动落空态）切项目后重新启用输入区
         self.input_bar.edit.setEnabled(True)
         self.input_bar.btn_send.setEnabled(True)
@@ -1087,6 +1111,7 @@ class MainWindow(QMainWindow):
         b.focus_input.connect(self._on_focus_input)
         b.rebuild_pane.connect(self._rebuild_pane)
         b.switch_session.connect(self._on_switch_session)
+        b.task_done.connect(self._on_task_done)
 
     def _on_create_card(self, tid: str, payload, card_id: str) -> None:
         from src.gui.cards import card_widget_from_payload
@@ -1138,6 +1163,9 @@ class MainWindow(QMainWindow):
         if p is not None:
             p.running = True
         self.input_bar.set_cancel_enabled(True)
+        arn = self._workspace.active_root()
+        if arn is not None:
+            self._sess_done.pop((normalize_root_key(arn), tid), None)
         self.refresh_sessions()
 
     def _on_turn_done(self, tid: str, ok: bool) -> None:
@@ -1152,3 +1180,12 @@ class MainWindow(QMainWindow):
         self.status_label.setText(
             text.replace("\r\n", " ").replace("\n", " ")
         )
+
+    def _on_task_done(self, ev) -> None:
+        """任务完成（会话回合/定时任务，含后台项目）→ 树标记 + 三通道通知（主线程 queued 信号端）。"""
+        rn = normalize_root_key(ev.root)
+        status = "ok" if ev.ok else "fail"
+        self._sess_done[(rn, ev.thread_id)] = status
+        self._proj_done[rn] = status
+        self._notifier.fire(ev)
+        self.refresh_tree()

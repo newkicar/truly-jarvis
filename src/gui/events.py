@@ -40,3 +40,5 @@ class UiBridge(QObject):
     rebuild_pane = Signal(str)
     # 分支（fork）出新会话 → 主线程切换（工单 09）：new_tid, note
     switch_session = Signal(str, str)
+    # 任务完成三通道通知载荷（TaskDoneEvent：会话回合/定时任务，含后台项目；queued 信号 worker→主线程安全）
+    task_done = Signal(object)

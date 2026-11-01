@@ -111,7 +111,7 @@ def resolve_save_path(config: Config, save_path: str) -> Path:
     return (config.project_root / save_path).resolve()
 
 
-def _run_task(agent, config: Config, task: dict):
+def _run_task(agent, config: Config, task: dict, on_done=None):
     """执行单个定时任务：跑 agent 研究 → 写结果到 save_path。
 
     失败绝不静默：打印 traceback 到 stderr、在 save_path 写 .error.md 标记，
@@ -159,6 +159,11 @@ def _run_task(agent, config: Config, task: dict):
             f"任务：{task.get('task', '')}\n\n```\n{err}\n```\n",
             encoding="utf-8",
         )
+        if on_done is not None:
+            try:
+                on_done(task, False, str(err_file))
+            except Exception:  # 通知钩子失败不影响任务异常传播
+                pass
         raise
 
     file_path = save_path / f"{task['id']}-{stamp}.md"
@@ -178,6 +183,12 @@ def _run_task(agent, config: Config, task: dict):
 
     _cleanup_thread(agent, task["id"])
 
+    if on_done is not None:
+        try:
+            on_done(task, True, str(file_path))
+        except Exception:  # 通知钩子失败不影响任务结果
+            pass
+
 
 def _cleanup_thread(agent, task_id: str):
     """删除定时任务自己的 checkpoint 线程，避免累积污染 /sessions 与 checkpoints 表。
@@ -193,7 +204,7 @@ def _cleanup_thread(agent, task_id: str):
         pass
 
 
-def register_jobs(scheduler: BackgroundScheduler, agent, config: Config) -> list[str]:
+def register_jobs(scheduler: BackgroundScheduler, agent, config: Config, on_done=None) -> list[str]:
     """读取 schedules/*.json 并为每个 enabled 任务注册/替换 job，返回易读清单。
 
     replace_existing=True：重载时同名 job 直接替换，天然覆盖旧 cron。
@@ -204,7 +215,7 @@ def register_jobs(scheduler: BackgroundScheduler, agent, config: Config) -> list
         scheduler.add_job(
             _run_task,
             CronTrigger.from_crontab(cron),
-            args=[agent, config, task],
+            args=[agent, config, task, on_done],
             id=f"javis-{task['id']}",
             replace_existing=True,
         )
@@ -246,15 +257,15 @@ def register_dream_job(scheduler: BackgroundScheduler, agent, config: Config) ->
     return f"dream({describe_cron(cron)})"
 
 
-def make_scheduler(agent, config: Config) -> BackgroundScheduler:
+def make_scheduler(agent, config: Config, on_done=None) -> BackgroundScheduler:
     """装配调度器：为每个 enabled 任务注册 CronTrigger + 梦境沉淀任务。"""
     scheduler = BackgroundScheduler()
-    register_jobs(scheduler, agent, config)
+    register_jobs(scheduler, agent, config, on_done=on_done)
     register_dream_job(scheduler, agent, config)
     return scheduler
 
 
-def reload_schedules(scheduler: BackgroundScheduler, agent, config: Config) -> str:
+def reload_schedules(scheduler: BackgroundScheduler, agent, config: Config, on_done=None) -> str:
     """移除全部 javis-* job，按 schedules/*.json 当前内容重新注册。
 
     返回「已重载」文本；无任务时也返回空清单说明。
@@ -262,7 +273,7 @@ def reload_schedules(scheduler: BackgroundScheduler, agent, config: Config) -> s
     for job in scheduler.get_jobs():
         if job.id.startswith("javis-"):
             job.remove()
-    registered = register_jobs(scheduler, agent, config)
+    registered = register_jobs(scheduler, agent, config, on_done=on_done)
     dream_line = register_dream_job(scheduler, agent, config)
     if not registered:
         return f"已重载：schedules/ 下无 enabled 定时任务。 {dream_line}。"

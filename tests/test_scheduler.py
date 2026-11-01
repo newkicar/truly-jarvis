@@ -277,3 +277,83 @@ def test_reload_schedules_reregisters_dream(tmp_path):
             sched.shutdown(wait=False)
         except Exception:
             pass
+# ---------------------------------------------------------------- on_done 完成钩子（gui bgnotify）
+def test_run_task_success_calls_on_done(tmp_path):
+    cfg = make_fake_config(tmp_path)
+
+    class FakeAgent:
+        def invoke(self, input, config=None):
+            return {"messages": [type("M", (), {"type": "ai", "content": "正文"})()]}
+
+    calls = []
+    task = {"id": "t1", "task": "调研 X", "save_path": "vault:Inbox/"}
+    scheduler._run_task(FakeAgent(), cfg, task, on_done=lambda *a: calls.append(a))
+    assert len(calls) == 1
+    got_task, ok, detail = calls[0]
+    assert got_task is task
+    assert ok is True
+    md = list((cfg.vault_path / "Inbox").glob("t1-*.md"))
+    assert len(md) == 1 and detail == str(md[0])
+
+
+def test_run_task_failure_calls_on_done_then_raises(tmp_path):
+    cfg = make_fake_config(tmp_path)
+
+    class BoomAgent:
+        def invoke(self, input, config=None):
+            raise RuntimeError("网络失败")
+
+    calls = []
+    task = {"id": "err", "task": "调研 X", "save_path": "vault:Inbox/"}
+    try:
+        scheduler._run_task(BoomAgent(), cfg, task, on_done=lambda *a: calls.append(a))
+        assert False, "应当抛异常"
+    except RuntimeError:
+        pass
+    assert len(calls) == 1
+    got_task, ok, detail = calls[0]
+    assert got_task is task
+    assert ok is False
+    err_files = list((cfg.vault_path / "Inbox").glob("err-*.error.md"))
+    assert len(err_files) == 1 and detail == str(err_files[0])
+
+
+def test_run_task_on_done_exception_swallowed(tmp_path):
+    cfg = make_fake_config(tmp_path)
+
+    class FakeAgent:
+        def invoke(self, input, config=None):
+            return {"messages": [type("M", (), {"type": "ai", "content": "正文"})()]}
+
+    class BoomAgent:
+        def invoke(self, input, config=None):
+            raise RuntimeError("boom")
+
+    def bad_hook(*a):
+        raise OSError("通知钩子炸了")
+
+    task = {"id": "ok", "task": "t", "save_path": "vault:Inbox/"}
+    scheduler._run_task(FakeAgent(), cfg, task, on_done=bad_hook)  # 钩子异常不影响成功
+    assert len(list((cfg.vault_path / "Inbox").glob("ok-*.md"))) == 1
+
+    task2 = {"id": "fail", "task": "t", "save_path": "vault:Inbox/"}
+    try:
+        scheduler._run_task(BoomAgent(), cfg, task2, on_done=bad_hook)
+        assert False, "应当抛 RuntimeError"
+    except RuntimeError:
+        pass
+    assert len(list((cfg.vault_path / "Inbox").glob("fail-*.error.md"))) == 1
+
+
+def test_make_scheduler_threads_on_done(tmp_path):
+    cfg = make_fake_config(tmp_path)
+    _write_schedule(cfg.schedules_dir, "a.json", {"id": "a", "task": "t", "cron": "0 8 * * *"})
+    hook = lambda *a: None  # noqa: E731
+    sched = scheduler.make_scheduler(object(), cfg, on_done=hook)
+    try:
+        assert sched.get_job("javis-a").args[-1] is hook
+    finally:
+        try:
+            sched.shutdown(wait=False)
+        except Exception:
+            pass
