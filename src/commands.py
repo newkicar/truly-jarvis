@@ -1013,7 +1013,7 @@ def compact(agent, thread_id: str, guide: str | None = None) -> str:
 
     序列化最近 200 条消息为「[用户]/[JARVIS]/[工具:名]」行（单条截 600 字），模型生成
     ≤800 字中文摘要；成功后以 REMOVE_ALL_MESSAGES + SystemMessage 整表重写（与
-    sanitize_history 同手法，随 checkpoint 持久化）。摘要为空/异常 → 友好报错，历史不动。
+    sanitize_history 同手法，随 checkpoint 持久化）。模型摘要为空 → 本地简摘兜底（消息层不动）；模型调用异常 → 返回解决指引，历史不动。
     guide 非空时追加用户倾向提示，压缩优先保留相关细节。
     """
     from langchain_core.messages import (
@@ -1069,22 +1069,46 @@ def compact(agent, thread_id: str, guide: str | None = None) -> str:
         if len(ln) > 600:
             lines[i] = ln[:600] + "…（截断，原文 %d 字符）" % len(ln)
 
-    prompt = (
-        "你是 JARVIS 代理的会话压缩器。把下面的对话历史压缩为一段不超过 800 字的中文"
-        "延续性摘要（markdown 列表）。必须保留：目标与约束、已完成事项、当前进度、"
-        "未决问题、可复用的文件路径/命令/参数。摘要之后代理将仅凭这段摘要继续工作。\n"
+    role = (
+        "你是 JARVIS 代理的会话压缩器。把用户消息里的对话历史压缩为一段不超过 800 字的中文"
+        "延续性摘要（markdown 列表）。必须保留：目标与约束、已完成事项、当前进度、未决问题、可复用的文件路径/命令/参数。"
+        "摘要之后代理将仅凭这段摘要继续工作。只输出摘要本身，不要附加任何其他文字。\n"
     )
-    if guide:
-        prompt += "用户提示（压缩时优先保留与该提示相关的细节）：%s\n" % guide
-    prompt += "对话历史（最近 200 条，单条截断）：\n" + "\n".join(lines)
+    guide_part = ("用户提示（压缩时优先保留与该提示相关的细节）：%s\n" % guide) if guide else ""
+    human_text = guide_part + "对话历史（最近 200 条，单条截断）：\n" + "\n".join(lines)
 
+    summary = ""
+    note = ""
     try:
-        resp = model.invoke([SystemMessage(prompt)])
+        resp = model.invoke([SystemMessage(role), HumanMessage(human_text)])
         summary = content_text(resp).strip()
         if not summary:
-            return "上下文压缩失败：模型未返回摘要，历史未改动"
+            brief = []
+            for m in messages[-30:]:
+                if isinstance(m, HumanMessage):
+                    label = "用户："
+                elif isinstance(m, AIMessage):
+                    label = "JARVIS："
+                else:
+                    label = "工具:%s" % (getattr(m, "name", "") or "")
+                text = content_text(m)
+                item = (label + " " + text) if text else label + "（空）"
+                brief.append(item[:120])
+            summary = "（本地简摘，模型未产出摘要）\n" + "\n".join(brief)
+            note = "；模型未产出摘要，已用本地简摘兜底"
     except Exception as exc:
-        return "上下文压缩失败（历史未改动）：%s: %s" % (type(exc).__name__, exc)
+        raw = str(exc)
+        first_line = (raw.splitlines() or [""])[0][:200]
+        return (
+            "上下文压缩失败（历史未改动）：%s: %s\n"
+            "解决指引：① 网关偶发 400/超时——稍后重试 /compact；"
+            "② 检查 .env 的 BASE_URL/API_KEY/MODEL_ID 是否与套餐匹配；"
+            "③ 反复失败说明本会话 checkpoint 可能损坏——执行 /delete-session 或开新会话。"
+            % (
+                type(exc).__name__,
+                first_line,
+            )
+        )
     agent.update_state(
         thread_config(thread_id),
         {
@@ -1095,7 +1119,7 @@ def compact(agent, thread_id: str, guide: str | None = None) -> str:
         },
         as_node="model",
     )
-    return "已压缩上下文：原 %d 条消息 → 摘要 %d 字，旧历史已覆盖（仅消息层）" % (len(messages), len(summary))
+    return "已压缩上下文：原 %d 条消息 → 摘要 %d 字，旧历史已覆盖（仅消息层）%s" % (len(messages), len(summary), note)
 
 
 def snapshot(agent, thread_id: str) -> str:

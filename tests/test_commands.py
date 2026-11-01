@@ -1301,6 +1301,7 @@ def test_compact_success_rewrites_history():
     agent = FakeCompactAgent(_compact_msgs(), model=FakeCompactModel())
     text = commands.compact(agent, "t")
     assert text.startswith("已压缩上下文：原 4 条消息")
+    assert len(agent.model.prompts[0]) == 2  # gui15: System+Human 成对请求（单 SystemMessage 致网关 400 的回归）
     assert len(agent.state_updates) == 1
     cfg, values, as_node = agent.state_updates[0]
     assert as_node == "model"
@@ -1315,21 +1316,39 @@ def test_compact_success_rewrites_history():
 def test_compact_guide_appended_to_prompt():
     agent = FakeCompactAgent(_compact_msgs(), model=FakeCompactModel())
     commands.compact(agent, "t", guide="保留关键命令")
-    prompt = agent.model.prompts[0][0]
-    assert "用户提示" in prompt
-    assert "保留关键命令" in prompt
+    # gui15: System+Human 成对请求；用户提示随 HumanMessage 下发
+    role, human = agent.model.prompts[0]
+    assert len(agent.model.prompts[0]) == 2
+    assert "会话压缩器" in role
+    assert "用户提示" in human
+    assert "保留关键命令" in human
+    assert "对话历史" in human
 
 
-def test_compact_empty_summary_keeps_history():
+def test_compact_empty_summary_falls_back():
     agent = FakeCompactAgent(_compact_msgs(), model=FakeCompactModel(content=""))
-    assert commands.compact(agent, "t") == "上下文压缩失败：模型未返回摘要，历史未改动"
-    assert agent.state_updates == []
+    text = commands.compact(agent, "t")
+    # gui15: 模型摘要为空 → 本地简摘兜底，历史照常重写（仅消息层）
+    assert text.startswith("已压缩上下文：原 4 条消息")
+    assert "模型未产出摘要" in text
+    assert len(agent.state_updates) == 1
+    _, values, _ = agent.state_updates[0]
+    from langchain_core.messages import SystemMessage
+
+    assert isinstance(values["messages"][1], SystemMessage)
+    assert "（本地简摘，模型未产出摘要）" in values["messages"][1].content
+    # 简摘行形如「用户： 问题一」（label 后跟空格），只断言关键片段
+    assert "用户：" in values["messages"][1].content
+    assert "问题一" in values["messages"][1].content
 
 
 def test_compact_exception_keeps_history():
     agent = FakeCompactAgent(_compact_msgs(), model=FakeCompactModel(fail=True))
     text = commands.compact(agent, "t")
     assert "RuntimeError" in text and "boom" in text
+    # gui15: 失败时返回解决指引（三步），不再裸吐异常
+    assert "解决指引" in text
+    assert "/delete-session" in text
     assert agent.state_updates == []
 
 
@@ -1345,4 +1364,6 @@ def test_dispatch_compact_with_guide():
     text, new_thread, replay_cid = out
     assert text.startswith("已压缩")
     assert new_thread is None and replay_cid is None
-    assert any("保留重要结论" in p[0] for p in agent.model.prompts)
+    # gui15: guide 随 HumanMessage（第二条）下发
+    assert any("保留重要结论" in p[1] for p in agent.model.prompts)
+

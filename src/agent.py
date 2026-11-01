@@ -3,6 +3,7 @@
 model + CompositeBackend（default=InheritedEnvShellBackend 无限制；/workspace(虚拟) /vault /memories /skills 路由）
 + subagents + memory + checkpointer(SqliteSaver) + store。见设计文档 §5.2/§6。
 """
+import logging
 import sys
 from datetime import datetime
 
@@ -398,6 +399,15 @@ def build_agent(
             vault_guard,
         ]
     )
+    # gui15 条目8: auto_compaction——上下文 token 达到阈值自动压缩（langchain SummarizationMiddleware）
+    _auto_compaction = int(getattr(config, "auto_compaction", 0) or 0)
+    if _auto_compaction > 0:
+        try:
+            from langchain.agents.middleware import SummarizationMiddleware
+
+            middleware.insert(2, SummarizationMiddleware(model, trigger=("tokens", _auto_compaction)))
+        except Exception as exc:  # noqa: BLE001 环境不可用时跳过压缩，不影响启动
+            logging.warning("auto_compaction 已配置但 SummarizationMiddleware 不可用，跳过: %s", exc)
     middleware.append(StepBudgetMiddleware(config.execution_max_steps))
     # 停滞防復（近似成功循环：3 次软引导 / 6 次硬熔断），放在 DoomLoop 之外（DoomLoop 仍最内层）；实例有状态，不共享。
     middleware.append(StagnationGuardMiddleware())
