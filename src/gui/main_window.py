@@ -434,6 +434,10 @@ class MainWindow(QMainWindow):
                 b.switch_session.emit(new_tid, f"已切换到会话 {new_tid}")
             if text:
                 b.notify.emit(text)
+            # /yolo 改的是共享 permission_state：worker 完成后回主线程重同步
+            # 菜单勾选 / [YOLO] 徽标（_refresh_mode_badges 单一同步点；状态栏由 notify 承载）
+            if raw.lstrip().split(None, 1)[0] == "/yolo":
+                b.sync_modes.emit()
             return text or ""
 
         self.presenter.run_command(_run, tid)
@@ -1196,6 +1200,7 @@ class MainWindow(QMainWindow):
         b.switch_session.connect(self._on_switch_session)
         b.task_done.connect(self._on_task_done)
         b.queued_flush.connect(self._on_queued_flush)
+        b.sync_modes.connect(self._on_sync_modes)
 
     def _on_create_card(self, tid: str, payload, card_id: str) -> None:
         from src.gui.cards import card_widget_from_payload
@@ -1280,6 +1285,11 @@ class MainWindow(QMainWindow):
         self.status_label.setText(
             text.replace("\r\n", " ").replace("\n", " ")
         )
+
+    def _on_sync_modes(self) -> None:
+        # 命令 worker 完成后的模式面重同步（/yolo 等改 permission_state 的命令）：
+        # 菜单勾选 + [YOLO] 徽标以共享 state 为唯一事实源（_refresh_mode_badges 单一同步点）
+        self._refresh_mode_badges()
 
     def _on_task_done(self, ev) -> None:
         """任务完成（会话回合/定时任务，含后台项目）→ 树标记 + 三通道通知（主线程 queued 信号端）。"""

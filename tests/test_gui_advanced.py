@@ -86,6 +86,53 @@ def test_undo_dispatches_command_and_rebuilds(qapp, monkeypatch):
         cleanup_home(home)
 
 
+def test_yolo_slash_off_resyncs_ui_surfaces(qapp, monkeypatch):
+    """命令 /yolo off 改共享 permission_state 后，菜单勾选 / [YOLO] 徽标 / 状态栏须联动。"""
+    from src import permissions
+
+    win, p, rt, home = _win(qapp)
+    try:
+        state = rt.permission_state
+        win._switch_to("sess-a")
+        win.yolo_action.setChecked(True)  # 菜单开 YOLO
+        assert win.yolo_action.isChecked()
+        assert "[YOLO]" in win.mode_badge.text()
+        calls = []
+        # 同步化 run_command（内联执行 worker fn，queued 信号同线程直连即时生效）
+        monkeypatch.setattr(
+            p, "run_command", lambda fn, tid: calls.append(tid) or fn()
+        )
+        win._execute_slash("/yolo off")
+        assert calls == ["sess-a"]
+        assert not permissions.yolo_active(state, "sess-a")
+        assert not win.yolo_action.isChecked()
+        assert "[YOLO]" not in win.mode_badge.text()
+        assert "YOLO 已关闭" in win.status_label.text()
+    finally:
+        cleanup_home(home)
+
+
+def test_yolo_slash_on_resyncs_ui_surfaces(qapp, monkeypatch):
+    """反向：/yolo on 经命令开启后，菜单勾选与 [YOLO] 徽标同步点亮。"""
+    from src import permissions
+
+    win, p, rt, home = _win(qapp)
+    try:
+        state = rt.permission_state
+        win._switch_to("sess-a")
+        assert not win.yolo_action.isChecked()
+        monkeypatch.setattr(
+            p, "run_command", lambda fn, tid: fn()
+        )
+        win._execute_slash("/yolo on")
+        assert permissions.yolo_active(state, "sess-a")
+        assert win.yolo_action.isChecked()
+        assert "[YOLO]" in win.mode_badge.text()
+        assert "YOLO 已开启" in win.status_label.text()
+    finally:
+        cleanup_home(home)
+
+
 def test_undo_noop_without_active_session(qapp):
     win, p, rt, home = _win(qapp)
     try:

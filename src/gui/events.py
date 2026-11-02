@@ -44,4 +44,7 @@ class UiBridge(QObject):
     task_done = Signal(object)
     # 排队消息重投入门（tid, 原文）→ 主线程把用户气泡补入 pane；气泡仅在回合真正开跑时上屏（gui15 G5）
     queued_flush = Signal(str, str)
+    # 命令 worker 完成后 → 主线程重同步模式面（菜单 YOLO 勾选 / [YOLO] 徽标；
+    # /yolo 等改共享 permission_state 的斜杠命令在 worker 线程执行，UI 三件套须回主线程单一同步点刷新）
+    sync_modes = Signal()
 
