@@ -1,4 +1,4 @@
-"""初始化新的 JARVIS 项目目录（javis init）；/init 生成 JARVIS.md 项目指令草稿（确定性扫描）。"""
+"""初始化新的 JARVIS 项目目录（javis init）；/init 生成 AGENTS.md 项目指令草稿（确定性扫描）。"""
 from __future__ import annotations
 
 import argparse
@@ -7,7 +7,14 @@ import sys
 from collections import OrderedDict
 from pathlib import Path
 
-from src.project_paths import JARVIS_JSON, CHECKPOINTS_DIR, INSTRUCTIONS_FILENAME, discover_project_root, install_root
+from src.project_paths import (
+    JARVIS_JSON,
+    CHECKPOINTS_DIR,
+    INSTRUCTIONS_FILENAME,
+    LEGACY_INSTRUCTIONS_FILENAME,
+    discover_project_root,
+    install_root,
+)
 
 ENV_EXAMPLE = """\
 # JARVIS 环境变量（复制为 .env 并填写）
@@ -240,7 +247,7 @@ def auto_init_project(root: Path | None = None) -> None:
 
 
 # ---------------------------------------------------------------------------
-# /init 项目指令：确定性扫描草稿（无 LLM；JARVIS.md 启动时注入 system prompt）
+# /init 项目指令：确定性扫描草稿（无 LLM；AGENTS.md 启动时注入 system prompt）
 # ---------------------------------------------------------------------------
 
 # 扫描时跳过的目录名（噪音/依赖/缓存），全部小写比较。
@@ -415,14 +422,14 @@ def scan_project(root: Path) -> dict:
     }
 
 
-def render_jarvis_md(scan: dict) -> str:
-    """把 scan 渲染成 JARVIS.md 脚手架文本（确定性、无 LLM）。"""
+def render_agents_md(scan: dict) -> str:
+    """把 scan 渲染成 AGENTS.md 脚手架文本（确定性、无 LLM）。"""
     root: Path = scan["root"]
     lines: list[str] = []
     a = lines.append
-    a(f"# {root.name} — JARVIS 项目指令")
+    a(f"# {root.name} 项目指令")
     a("")
-    a("> 本文件由 `/init` 通过确定性项目扫描生成（非 LLM）。启动时自动注入 jarvis 的 system prompt。")
+    a("> 本文件（AGENTS.md）由 `/init` 通过确定性项目扫描生成（非 LLM）。jarvis 启动时自动发现并注入 system prompt。")
     a("> 请人工补全「约定」节的占位内容；删除不适用的小节。")
     a("")
     a("## 项目概览")
@@ -477,18 +484,24 @@ def render_jarvis_md(scan: dict) -> str:
 
 
 def init_project_instructions(root: Path) -> str:
-    """在 root 生成 JARVIS.md；已存在则不覆盖并返回提示。"""
+    """在 root 生成 AGENTS.md；已存在则不覆盖；检测到 legacy JARVIS.md 时不自动生成，提示手动改名。"""
     root = root.resolve()
+    if not root.is_dir():
+        return f"项目目录不存在或不可访问：{root}，无法生成 {INSTRUCTIONS_FILENAME}。"
     target = root / INSTRUCTIONS_FILENAME
     if target.is_file():
         return (
             f"{INSTRUCTIONS_FILENAME} 已存在（{target}），未覆盖。"
             "如需重建请先删除该文件再运行 /init；或手工编辑已有文件。"
         )
-    if not root.is_dir():
-        return f"项目目录不存在或不可访问：{root}，无法生成 {INSTRUCTIONS_FILENAME}。"
+    legacy = root / LEGACY_INSTRUCTIONS_FILENAME
+    if legacy.is_file():
+        return (
+            f"检测到旧版 {LEGACY_INSTRUCTIONS_FILENAME}（{legacy}），不自动改名也不覆盖。"
+            f"请手工改名为 {INSTRUCTIONS_FILENAME}（或删除该文件）后重新运行 /init。"
+        )
     scan = scan_project(root)
-    target.write_text(render_jarvis_md(scan), encoding="utf-8")
+    target.write_text(render_agents_md(scan), encoding="utf-8")
     langs = scan.get("langs") or []
     top = ", ".join(n for n, _ in langs[:3]) or "未识别"
     return (

@@ -59,7 +59,7 @@ def test_resolve_env_file_project_before_install(tmp_path):
     assert resolve_env_file(project) == project / ".env"
 
 
-# ---------------------------------------------------------------- JARVIS.md 项目指令层
+# ---------------------------------------------------------------- AGENTS.md 项目指令层
 
 
 def test_load_project_instructions_empty_when_missing(tmp_path, monkeypatch):
@@ -76,7 +76,7 @@ def test_load_project_instructions_project_level(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("JARVIS_HOME", str(home))
-    (tmp_path / "JARVIS.md").write_text("测试命令是 pytest -q\n", encoding="utf-8")
+    (tmp_path / "AGENTS.md").write_text("测试命令是 pytest -q\n", encoding="utf-8")
     text = load_project_instructions(tmp_path)
     assert "pytest -q" in text
     assert "本项目约定" in text
@@ -89,8 +89,65 @@ def test_load_project_instructions_global_plus_project(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("JARVIS_HOME", str(home))
-    (home / "JARVIS.md").write_text("全局：回复用中文\n", encoding="utf-8")
-    (tmp_path / "JARVIS.md").write_text("项目：包管理器用 pnpm\n", encoding="utf-8")
+    (home / "AGENTS.md").write_text("全局：回复用中文\n", encoding="utf-8")
+    (tmp_path / "AGENTS.md").write_text("项目：包管理器用 pnpm\n", encoding="utf-8")
     text = load_project_instructions(tmp_path)
     assert text.index("全局用户约定") < text.index("本项目约定"), "全局在前"
     assert "回复用中文" in text and "pnpm" in text
+
+
+def test_load_project_instructions_legacy_jarvis_md_fallback(monkeypatch):
+    """该级无 AGENTS.md、只有 legacy JARVIS.md 时，全局与项目两级均回落读取（自建目录，不用 tmp_path）。"""
+    import os
+    import shutil
+    import tempfile
+
+    from src.project_paths import load_project_instructions
+
+    home = os.path.join(tempfile.gettempdir(), "jx_pp_legacy_test_home")
+    root = os.path.join(tempfile.gettempdir(), "jx_pp_legacy_test_root")
+    os.makedirs(home, exist_ok=True)
+    os.makedirs(root, exist_ok=True)
+    monkeypatch.setenv("JARVIS_HOME", home)
+    try:
+        with open(os.path.join(home, "JARVIS.md"), "w", encoding="utf-8") as f:
+            f.write("全局旧版：回复用中文\n")
+        with open(os.path.join(root, "JARVIS.md"), "w", encoding="utf-8") as f:
+            f.write("项目旧版：包管理器用 pnpm\n")
+        text = load_project_instructions(Path(root))
+        assert "回复用中文" in text and "pnpm" in text
+        assert "全局用户约定" in text and "本项目约定" in text
+        assert "AGENTS.md" not in text
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_load_project_instructions_agents_md_wins_over_legacy(monkeypatch):
+    """两级 AGENTS.md 与 legacy JARVIS.md 并存时，只读 AGENTS.md（自建目录，不用 tmp_path）。"""
+    import os
+    import shutil
+    import tempfile
+
+    from src.project_paths import load_project_instructions
+
+    home = os.path.join(tempfile.gettempdir(), "jx_pp_agents_test_home")
+    root = os.path.join(tempfile.gettempdir(), "jx_pp_agents_test_root")
+    os.makedirs(home, exist_ok=True)
+    os.makedirs(root, exist_ok=True)
+    monkeypatch.setenv("JARVIS_HOME", home)
+    try:
+        with open(os.path.join(home, "AGENTS.md"), "w", encoding="utf-8") as f:
+            f.write("全局：回复用中文\n")
+        with open(os.path.join(home, "JARVIS.md"), "w", encoding="utf-8") as f:
+            f.write("全局旧版（不应出现）\n")
+        with open(os.path.join(root, "AGENTS.md"), "w", encoding="utf-8") as f:
+            f.write("项目：包管理器用 pnpm\n")
+        with open(os.path.join(root, "JARVIS.md"), "w", encoding="utf-8") as f:
+            f.write("项目旧版（不应出现）\n")
+        text = load_project_instructions(Path(root))
+        assert "回复用中文" in text and "pnpm" in text
+        assert "不应出现" not in text
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
+        shutil.rmtree(root, ignore_errors=True)

@@ -452,10 +452,10 @@ def test_build_main_prompt_includes_project_instructions(tmp_path):
     from src.agent import build_main_prompt
     from tests.conftest import make_fake_config
 
-    (tmp_path / "JARVIS.md").write_text("项目专属规则：永远用 bun\n", encoding="utf-8")
+    (tmp_path / "AGENTS.md").write_text("项目专属规则：永远用 bun\n", encoding="utf-8")
     cfg = make_fake_config(tmp_path)
     prompt = build_main_prompt(config=cfg)
-    assert "项目指令（JARVIS.md" in prompt
+    assert "项目指令（AGENTS.md" in prompt
     assert "永远用 bun" in prompt
 
     # 无文件时不出现该段

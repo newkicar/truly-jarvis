@@ -166,7 +166,7 @@ def build_environment_block(config: Config) -> str:
 
 
 def build_main_prompt(*, config: Config | None = None, now: datetime | None = None) -> str:
-    """主系统提示词：会话日期 + 可选环境块 + 正文 + 可选项目指令（JARVIS.md）。"""
+    """主系统提示词：会话日期 + 可选环境块 + 正文 + 可选项目指令（AGENTS.md）。"""
     date_line = session_date_line(now=now)
     parts = [f"## 当前会话\n{date_line}"]
     if config is not None:
@@ -177,7 +177,7 @@ def build_main_prompt(*, config: Config | None = None, now: datetime | None = No
 
         instructions = load_project_instructions(config.project_root)
         if instructions:
-            parts.append(f"## 项目指令（JARVIS.md，优先级高于你的默认习惯）\n{instructions}")
+            parts.append(f"## 项目指令（AGENTS.md，优先级高于你的默认习惯）\n{instructions}")
     return "\n\n".join(parts)
 
 

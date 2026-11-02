@@ -145,7 +145,7 @@ def _win_live(qapp, monkeypatch, record: list) -> MainWindow:
         p, "start_turn", lambda tid, text, **kw: record.append(text) or "started"
     )
     monkeypatch.setattr(win, "_on_doctor", lambda: record.append("(doctor)"))
-    # /init 会确定性生成 JARVIS.md：测试不落真实文件
+    # /init 会确定性生成 AGENTS.md：测试不落真实文件
     monkeypatch.setattr(commands, "init_project", lambda: "INIT_MATCHED")
     return win
 

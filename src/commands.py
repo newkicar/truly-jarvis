@@ -49,7 +49,7 @@ _HELP_COMMANDS = """\
   /snapshots      列出文件快照（git）
   /rollback <id>  按 checkpoint 回退项目文件到对应 git 提交（序号 / 短 id）
   /reload-schedules  重载 schedules/*.json 定时任务配置（无需重启）
-  /init        生成项目指令 JARVIS.md（确定性扫描草稿，已存在则不覆盖）
+  /init        生成项目指令 AGENTS.md（确定性扫描草稿，已存在则不覆盖）
 直接输入文字开始对话。
 """
 
@@ -1319,7 +1319,7 @@ def yolo_command_text(permission_state: dict | None, thread_id: str, raw_command
 
 
 def init_project() -> str:
-    """生成 {project_root}/JARVIS.md 项目指令草稿（确定性扫描，非 LLM）；已存在则不覆盖。"""
+    """生成 {project_root}/AGENTS.md 项目指令草稿（确定性扫描，非 LLM）；已存在则不覆盖。"""
     from src import project_init
 
     return project_init.init_project_instructions(project_root())

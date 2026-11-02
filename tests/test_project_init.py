@@ -46,8 +46,8 @@ def test_suggest_init_if_missing(tmp_path: Path, monkeypatch):
     assert suggest_init_if_missing() is None
 
 
-def test_init_project_instructions_creates_jarvis_md():
-    """定瓤性扫描生成 JARVIS.md（自建目录，不用 tmp_path）。"""
+def test_init_project_instructions_creates_agents_md():
+    """确定性扫描生成 AGENTS.md（自建目录，不用 tmp_path）。"""
     import os
     import tempfile
 
@@ -61,7 +61,7 @@ def test_init_project_instructions_creates_jarvis_md():
         f.write("[project]\nname = 'demo'\n")
     try:
         msg = init_project_instructions(Path(base))
-        target = Path(base, "JARVIS.md")
+        target = Path(base, "AGENTS.md")
         assert target.is_file()
         content = target.read_text(encoding="utf-8")
         assert "Python" in content
@@ -75,7 +75,7 @@ def test_init_project_instructions_creates_jarvis_md():
 
 
 def test_init_project_instructions_does_not_overwrite():
-    """已存在 JARVIS.md 时不覆盖，只返回提示。"""
+    """已存在 AGENTS.md 时不覆盖，只返回提示。"""
     import os
     import tempfile
     import time
@@ -84,7 +84,7 @@ def test_init_project_instructions_does_not_overwrite():
 
     base = os.path.join(tempfile.gettempdir(), "jarvis_init_test_b")
     os.makedirs(base, exist_ok=True)
-    sentinel = Path(base, "JARVIS.md")
+    sentinel = Path(base, "AGENTS.md")
     sentinel.write_text("# 原有指令内容", encoding="utf-8")
     orig = sentinel.read_text(encoding="utf-8")
     mtime_before = sentinel.stat().st_mtime
@@ -120,6 +120,27 @@ def test_scan_project_counts_langs_and_manifests():
         assert lang_map.get("Python") == 2
         assert "pyproject.toml" in scan["manifests"]
         assert isinstance(scan["tree"], list)
+    finally:
+        import shutil
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_init_project_instructions_legacy_jarvis_md_blocks():
+    """检测到 legacy JARVIS.md 时不自动生成 AGENTS.md，只提示手动改名（自建目录，不用 tmp_path）。"""
+    import os
+    import tempfile
+
+    from src.project_init import init_project_instructions
+
+    base = os.path.join(tempfile.gettempdir(), "jarvis_init_test_c")
+    os.makedirs(base, exist_ok=True)
+    legacy = Path(base, "JARVIS.md")
+    legacy.write_text("# 旧版项目指令", encoding="utf-8")
+    try:
+        msg = init_project_instructions(Path(base))
+        assert "JARVIS.md" in msg
+        assert not Path(base, "AGENTS.md").exists()
+        assert legacy.read_text(encoding="utf-8") == "# 旧版项目指令"
     finally:
         import shutil
         shutil.rmtree(base, ignore_errors=True)

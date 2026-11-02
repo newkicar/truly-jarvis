@@ -124,28 +124,38 @@ def resolve_user_jarvis_json() -> Path:
     return user_home() / JARVIS_JSON
 
 
-INSTRUCTIONS_FILENAME = "JARVIS.md"
+INSTRUCTIONS_FILENAME = "AGENTS.md"
+# 旧版本 /init 生成的指令文件名；加载器作为回落（AGENTS.md 缺失/为空时读取），/init 不自动生成
+LEGACY_INSTRUCTIONS_FILENAME = "JARVIS.md"
+
+
+def _read_instructions_level(base_dir: Path, label: str) -> str | None:
+    """读一级指令文件：AGENTS.md 优先，legacy JARVIS.md 回落；该级不存在或全空返回 None。"""
+    for name in (INSTRUCTIONS_FILENAME, LEGACY_INSTRUCTIONS_FILENAME):
+        f = base_dir / name
+        if f.is_file():
+            text = f.read_text(encoding="utf-8", errors="replace").strip()
+            if text:
+                return f"### {label}（{f}）\n{text}"
+    return None
 
 
 def load_project_instructions(project_root: Path | None = None) -> str:
-    """发现并读取项目指令文件（对标 AGENTS.md 分层：全局 + 项目级）。
+    """发现并读取项目指令文件（AGENTS.md 分层：全局 + 项目级，对齐业界约定）。
 
-    - 全局：~/.jarvis/JARVIS.md（用户跨项目约定）
-    - 项目级：{project_root}/JARVIS.md（本项目技术约定）
+    - 全局：~/.jarvis/AGENTS.md（用户跨项目约定）
+    - 项目级：{project_root}/AGENTS.md（本项目技术约定）
+    - 每级 AGENTS.md 优先；旧版 legacy JARVIS.md 作回落（该级 AGENTS.md 缺失/为空时读取）
 
     两级都可选；都存在则拼接（全局在前）。文件缺失返回空串。
     build_agent 启动时调用一次（会话中途编辑文件需重启生效）。
     """
     sections: list[str] = []
-    global_file = user_home() / INSTRUCTIONS_FILENAME
-    if global_file.is_file():
-        text = global_file.read_text(encoding="utf-8", errors="replace").strip()
-        if text:
-            sections.append(f"### 全局用户约定（{global_file}）\n{text}")
+    global_section = _read_instructions_level(user_home(), "全局用户约定")
+    if global_section:
+        sections.append(global_section)
     root = (project_root or get_project_root()).resolve()
-    project_file = root / INSTRUCTIONS_FILENAME
-    if project_file.is_file():
-        text = project_file.read_text(encoding="utf-8", errors="replace").strip()
-        if text:
-            sections.append(f"### 本项目约定（{project_file}）\n{text}")
+    project_section = _read_instructions_level(root, "本项目约定")
+    if project_section:
+        sections.append(project_section)
     return "\n\n".join(sections)
