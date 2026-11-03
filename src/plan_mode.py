@@ -75,10 +75,13 @@ class PlanModeMiddleware(GuardMiddleware):
         merged = f"{text}{PLAN_MODE_PROMPT}" if text else PLAN_MODE_PROMPT.strip()
         return request.override(system_message=SystemMessage(content=merged))
 
-    def wrap_model_call(self, request, handler):
+    def _prepare(self, request):
         if current_mode(self.state) == "plan":
             request = self._with_plan_prompt(request)
-        return handler(request)
+        return request
+
+    def wrap_model_call(self, request, handler):
+        return handler(self._prepare(request))
 
     async def awrap_model_call(self, request, handler):
-        return self.wrap_model_call(request, lambda r: handler(r))
+        return await handler(self._prepare(request))

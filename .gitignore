@@ -59,3 +59,6 @@ scratch/
 
 # 本地探针/草稿目录（不入仓库）
 .scratch/
+
+# 测试临时工作盯录（Phase A 契约测试自目录，不入仓库）
+tests/tmp_phase_a/

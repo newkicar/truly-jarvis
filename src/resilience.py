@@ -204,7 +204,7 @@ class StepBudgetMiddleware(AgentMiddleware):
         merged = f"{text}\n\n{reminder}" if text else reminder
         return request.override(system_message=SystemMessage(content=merged))
 
-    def wrap_model_call(self, request, handler):
+    def _prepare(self, request):
         messages = list(getattr(request, "messages", None) or [])
         remaining = self.max_steps - _count_model_steps(messages)
         if 0 < remaining <= SOFT_LAND_STEPS:
@@ -212,10 +212,13 @@ class StepBudgetMiddleware(AgentMiddleware):
         elif remaining <= 0:
             # 兜底：软着陆被忽略时给出最终通牒（下一跳 recursion_limit 才会硬断）。
             request = self._with_reminder(request, HARD_STOP_REMINDER)
-        return handler(request)
+        return request
+
+    def wrap_model_call(self, request, handler):
+        return handler(self._prepare(request))
 
     async def awrap_model_call(self, request, handler):
-        return self.wrap_model_call(request, lambda r: handler(r))
+        return await handler(self._prepare(request))
 
 
 DOOM_LOOP_THRESHOLD = 3
