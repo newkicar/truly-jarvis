@@ -6,6 +6,7 @@ model + CompositeBackend（default=InheritedEnvShellBackend 无限制；/workspa
 import logging
 import sys
 from datetime import datetime
+from pathlib import Path
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_openai import ChatOpenAI
@@ -24,7 +25,7 @@ from deepagents.backends import (
 from langchain.agents.middleware import TodoListMiddleware
 from langchain_quickjs import CodeInterpreterMiddleware
 
-from src.config import Config
+from src.config import Config, load_config
 from src.deprecated_paths import DeprecatedPathMiddleware
 from src.inbox_snapshot_middleware import InboxSnapshotMiddleware
 from src.media_guard import MediaGuardMiddleware
@@ -458,3 +459,40 @@ def build_agent(
     # 不进 graph 状态，不污染历史。
     setattr(compiled, "_jarvis_model", model)
     return compiled
+
+def create_jarvis(
+    workspace: str | Path,
+    checkpointer: BaseCheckpointSaver | None = None,
+    *,
+    model: BaseChatModel | None = None,
+    store: BaseStore | None = None,
+    env_overrides: dict[str, str] | None = None,
+    permission_state: dict | None = None,
+    mcp_tools: list | None = None,
+):
+    """ADR-0012 headless public entry point: build the Jarvis main agent rooted at an explicit workspace.
+
+    Contract (docs/adr/0012-headless-adapter-contract.md):
+    - The workspace argument is the only directory parameter: the file backend and shell tool are
+      rooted at this directory. The engine never does os.chdir / cwd discovery, so multiple
+      concurrent sessions do not interfere with each other.
+    - The checkpointer is injected by the caller (embedder, e.g. Local Dots, passes
+      SqliteSaver("data/checkpoints.db")); task_id as thread_id; the caller owns the lifecycle
+      and there is no module-level singleton checkpointer inside Jarvis.
+    - Headless: no TUI (textual) imports; importable from the jarvis package public entry point
+      without affecting the interactive path.
+    - Required configuration keys (BASE_URL/API_KEY/MODEL_ID/TAVILY_KEY) come from
+      env_overrides, or from the workspace's .env / the global ~/.jarvis fallback.
+    """
+    root = Path(workspace)
+    if not root.is_dir():
+        raise FileNotFoundError(f"workspace does not exist or is not a directory: {workspace}")
+    config = load_config(project_root=root, env_overrides=env_overrides)
+    return build_agent(
+        config,
+        model=model,
+        checkpointer=checkpointer,
+        store=store,
+        permission_state=permission_state,
+        mcp_tools=mcp_tools,
+    )
