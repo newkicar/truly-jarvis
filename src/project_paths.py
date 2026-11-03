@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 JARVIS_JSON = "jarvis.json"
@@ -22,6 +23,11 @@ DEFAULT_USER_HOME = ".jarvis"
 
 def install_root() -> Path:
     """JARVIS 引擎安装目录（含 src/、内置 skills/）。"""
+    # Frozen Nuitka onedir: the exe directory is the install root (skills/ ships
+    # next to the exe, flat layout, see packaging/build_gui.ps1); the build-time
+    # __file__ points at the source tree on the build machine and must not be used.
+    if getattr(sys, "frozen", False):
+        return Path(sys.argv[0]).resolve().parent
     return Path(__file__).resolve().parent.parent
 
 

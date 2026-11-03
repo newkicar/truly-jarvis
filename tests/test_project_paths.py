@@ -151,3 +151,28 @@ def test_load_project_instructions_agents_md_wins_over_legacy(monkeypatch):
     finally:
         shutil.rmtree(home, ignore_errors=True)
         shutil.rmtree(root, ignore_errors=True)
+
+
+# ---------------------------------------------------------------- frozen install_root (Nuitka onedir)
+
+def test_install_root_frozen_uses_exe_dir(monkeypatch):
+    """frozen 形态：install_root = exe 所在目录（.build 自建目录，不用 tmp_path）。"""
+    import os
+    import sys
+
+    exe_dir = os.path.abspath(os.path.join('.build', 'frozen-root-test'))
+    os.makedirs(exe_dir, exist_ok=True)
+    monkeypatch.setattr(sys, 'frozen', True, raising=False)
+    monkeypatch.setattr(sys, 'argv', [exe_dir + '/jarvis-gui.exe'])
+    assert install_root() == Path(exe_dir).resolve()
+
+
+def test_install_root_not_frozen_uses_source_tree(monkeypatch):
+    """非 frozen（源码运行）：保持 __file__ 语义，exe 目录约定不生效。"""
+    import os
+    import sys
+
+    monkeypatch.setattr(sys, 'argv', ['.build/frozen-root-test/jarvis-gui.exe'])
+    root = install_root()
+    assert root == Path(__file__).resolve().parent.parent
+    assert (root / 'src').is_dir() and (root / 'skills').is_dir()

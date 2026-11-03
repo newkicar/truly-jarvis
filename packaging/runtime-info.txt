@@ -1,0 +1,7 @@
+version: 0.1.0
+build-time: 2026-11-04 04:08
+python: Python 3.14.7
+nuitka: 4.3.4
+pyside6-essentials: 6.12.0
+size: 465 MB（896 个文件，其中 exe 317.5 MiB；zip 158.9 MiB 含使用说明+LICENSE）
+startup-time: ≈17s（冒烟实测 16.9s）

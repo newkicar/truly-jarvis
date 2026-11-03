@@ -1,73 +1,128 @@
-# JARVIS GUI 打包构建（Nuitka onedir）
-#
-# 用法（在仓库根目录，PowerShell 7）：
-#   pwsh packaging\build_gui.ps1
-#   pwsh packaging\build_gui.ps1 -Python D:\python_env\python.exe
-#
-# 产物：
-#   dist\jarvis-gui\            Nuitka onedir 目录（gui_main.exe + Qt DLL + 模块，同目录动态共存）
-#   packaging\runtime-info.txt  体积 / 构建基线（每次构建刷新；启动时间 = 人工冒烟后补录）
-#
-# 约定（spec 打包章节）：
-# - onedir 不用 onefile（单文件启动慢）；
-# - 基础 venv 不装 chromadb（遗留 c：可选依赖降级，RAG 缺失自动回落 grep/wiki）；
-# - PySide6-Essentials（不带 Addons/WebEngine）；
-# - 安装目录只读：全部用户写入走 %APPDATA%\Jarvis 与 .jarvis（安装目录零写入）；
-# - Qt DLL 与 exe 同目录 = LGPL 动态链接形态（无需静态链接源提供义务）。
+﻿<#
+jarvis-gui Nuitka onedir 便携包构建（GUI-only；入口 src\gui_main.py，--windows-console-mode=disable）
+
+布局约定（扁平）：
+  dist\jarvis-gui\ = gui_main.dist\ 全部内容平铺同级（jarvis-gui.exe + DLL + skills\ + ...）
+  skills 随包置于 exe 同级；frozen 形态 install_root() = exe 所在目录（src\project_paths.py）
+
+用法：
+  powershell -NoProfile -File packaging\build_gui.ps1 [-SkipZip] [-SkipVerify]
+
+前置：.build\venv-base（Py 3.14 + Nuitka 4.3.4 + PySide6 + 项目依赖），本机 MSVC。
+#>
 param(
-    [string]$Python = "python",
-    [string]$VenvDir = ".build\venv-base",
-    [string]$NuiKake = "",
-    [string]$OutDir = "dist\jarvis-gui"
+    [switch]$SkipZip,
+    [switch]$SkipVerify
 )
 
-$ErrorActionPreference = "Stop"
-$repo = (Split-Path -Parent $PSScriptRoot)
-Push-Location $repo
-try {
-    # ① 干净基础 venv（无 chromadb / onnxruntime → RAG 自动降级）
-    if (-not (Test-Path "$VenvDir\Scripts\python.exe")) {
-        & $Python -m venv $VenvDir
-        & "$VenvDir\Scripts\python.exe" -m pip install --upgrade pip wheel nuitka
-    }
-    & "$VenvDir\Scripts\python.exe" -m pip install -e .   # 基础依赖（不含 RAG 可选组）
-    $py = "$VenvDir\Scripts\python.exe"
+$ErrorActionPreference = 'Stop'
+$repo = Split-Path -Parent $PSScriptRoot
+Set-Location $repo
 
-    # ② Nuitka onedir 构建（C 扩展产物缓存在 .build\nuitka-cache，CI 可复用，增量秒级）
-    $extra = @()
-    if ($NuiKake) { $extra = $NuiKake -split ' ' }
-    & $py -m nuitka `
-        --standalone `
-        --enable-plugin=pyside6 `
-        --windows-console-mode=disable `
-        --include-package=src `
-        --include-package=jarvis `
-        --output-dir=build\nuitka-out `
-        --output-filename=gui_main `
-        --cache-dir=.build\nuitka-cache `
-        @extra `
-        src\gui_main.py
+function Fail($msg) { Write-Host "[FAIL] $msg" -ForegroundColor Red; exit 1 }
 
-    # ③ 收拢产物：exe + .dist 目录内容 → 同目录（LGPL 动态共存布局）
-    $exe   = "build\nuitka-out\gui_main.exe"
-    $dist  = "build\nuitka-out\gui_main.dist"
-    if (-not (Test-Path $exe) -or -not (Test-Path $dist)) {
-        throw "Nuitka 产物缺失（$exe / $dist）——先查 Nuitka 编译日志"
-    }
-    Remove-Item $OutDir -Recurse -Force -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Path $OutDir | Out-Null
-    Copy-Item $exe $OutDir
-    Copy-Item "$dist\*" $OutDir -Recurse
-    Write-Host "构建完成 → $OutDir"
-
-    # ④ 基线记录（体积 + 构建耗时；启动时间为人工冒烟项，见 packaging/README.md）
-    $sizeMb = [math]::Round(((Get-ChildItem $OutDir -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 1)
-    $nFiles = (Get-ChildItem $OutDir -Recurse -File).Count
-    "构建时间        : $(Get-Date -Format 'yyyy-MM-dd HH:mm')" | Out-File "packaging\runtime-info.txt" -Encoding utf8
-    "产物            : $OutDir（${nFiles} 个文件 / ${sizeMb} MB）" | Out-File "packaging\runtime-info.txt" -Append -Encoding utf8
-    "启动时间        : 待人工冒烟后补录（首启向导页出现耗时）" | Out-File "packaging\runtime-info.txt" -Append -Encoding utf8
-    Write-Host "基线已刷新：${sizeMb} MB / ${nFiles} 文件"
+# ---------- [1/8] 前置检查 ----------
+Write-Host '[1/8] 前置检查' -ForegroundColor Cyan
+foreach ($f in 'src\gui_main.py', 'skills\__init__.py', 'LICENSE.txt', 'packaging\README-portable.md') {
+    if (-not (Test-Path $f)) { Fail "缺少 $f —— 请确认本地工作区完整（skills/ 不入库，需本地构建环境）" }
 }
-finally {
-    Pop-Location
+$py = '.build\venv-base\Scripts\python.exe'
+if (-not (Test-Path $py)) { Fail "缺少 $py —— 请先创建 .build\venv-base（见 packaging\README.md）" }
+
+# ---------- [2/8] venv 依赖 ----------
+Write-Host '[2/8] 检查 venv 依赖' -ForegroundColor Cyan
+& $py -m nuitka --version 2>&1 | Select-Object -First 1 | Out-Host
+if ($LASTEXITCODE -ne 0) { & $py -m pip install 'nuitka==4.3.4' }
+& $py -m pip install -e . 2>&1 | Select-Object -Last 2 | Out-Host
+# 移除 Google GenAI 传递链（deepagents 惰性可选依赖，规避 MSVC C1002 崩溃；须在所有 pip install 之后）
+& $py -m pip uninstall -y langchain-google-genai google-genai 2>&1 | Select-Object -Last 2 | Out-Host
+if ($LASTEXITCODE -ne 0) { Write-Host '[WARN] uninstall 未全部成功 —— 请人工确认 venv 无 Google GenAI 残留' -ForegroundColor Yellow }
+
+# ---------- [3/8] Nuitka 编译 ----------
+Write-Host '[3/8] Nuitka 编译（暖缓存 30-90 分钟；日志 build\nuitka.out.log / .err.log）' -ForegroundColor Cyan
+$env:__NUITKA_CACHE_DIR__ = (Join-Path $repo '.build\nuitka-cache')
+$env:VSLANG = '1033'  # MSVC cl/link 英文输出，避免本地化噪声触发 Nuitka 英文模式过滤器误判（纯降噪，非根因）
+New-Item -ItemType Directory -Force -Path 'build\nuitka-out' | Out-Null
+Remove-Item 'build\nuitka.out.log', 'build\nuitka.err.log' -ErrorAction SilentlyContinue
+$nuArgs = '-m nuitka --standalone --enable-plugin=pyside6 --windows-console-mode=disable --include-data-dir=skills=skills --include-data-file=skills\__init__.py=skills\__init__.py --output-dir=build\nuitka-out --output-filename=jarvis-gui --jobs=4 --assume-yes-for-downloads --nofollow-import-to=langchain_quickjs --nofollow-import-to=quickjs_rs --nofollow-import-to=wasmtime --include-package=langchain_core --include-package=langchain --include-package=langchain_openai --include-package=openai --include-package=anthropic --include-package=langchain_anthropic --include-package=langchain_mcp_adapters --include-package=langgraph --include-package=langgraph_prebuilt --include-package=langgraph_checkpoint --include-package=langgraph_checkpoint_sqlite --include-package=langgraph_store --include-package=langgraph_sdk --include-package=deepagents --include-package=mcp --include-package=pydantic --include-package=pydantic_core --include-package=pydantic_settings --include-package=httpx --include-package=keyring --include-package=apscheduler --include-package=aiosqlite --nofollow-import-to=chromadb --nofollow-import-to=langchain_quickjs --nofollow-import-to=quickjs_rs --nofollow-import-to=wasmtime src\gui_main.py'
+$proc = Start-Process -FilePath $py -ArgumentList $nuArgs -WorkingDirectory $repo `
+    -RedirectStandardOutput 'build\nuitka.out.log' -RedirectStandardError 'build\nuitka.err.log' -Wait -PassThru
+if ($proc.ExitCode -ne 0) {
+    Write-Host "[FAIL] Nuitka 退出码 $($proc.ExitCode) —— build\nuitka.err.log 末 40 行：" -ForegroundColor Red
+    Get-Content 'build\nuitka.err.log' -Tail 40
+    exit 1
 }
+
+# ---------- [4/8] 扁平 staging ----------
+Write-Host '[4/8] 扁平 staging 到 dist\jarvis-gui' -ForegroundColor Cyan
+$distSrc = 'build\nuitka-out\gui_main.dist'
+if (-not (Test-Path (Join-Path $distSrc 'jarvis-gui.exe'))) { Fail "$distSrc\jarvis-gui.exe 缺失" }
+$stage = 'dist\jarvis-gui'
+if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $stage | Out-Null
+robocopy $distSrc $stage /E /NFL /NDL /NJH /NJS /NP /MT:8 | Out-Null
+if ($LASTEXITCODE -ge 8) { Fail ('robocopy failed rc=' + $LASTEXITCODE) }
+Copy-Item (Join-Path $repo 'skills\__init__.py') (Join-Path $stage 'skills\__init__.py') -Force
+$fileCount = (Get-ChildItem $stage -Recurse -File).Count
+$totalMb = [math]::Round(((Get-ChildItem $stage -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 1)
+$exeMb = [math]::Round(((Get-Item (Join-Path $stage 'jarvis-gui.exe')).Length / 1MB), 1)
+Write-Host "staging: $totalMb MB / $fileCount 文件（exe $exeMb MB）"
+# ---------- [5/8] runtime-info.txt ----------
+Write-Host '[5/8] 生成 packaging\runtime-info.txt' -ForegroundColor Cyan
+$ver = (& $py --version 2>&1 | Out-String).Trim()
+$runtimeInfo = @(
+    'version: 0.1.0',
+    ('build-time: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm')),
+    "python: $ver",
+    'nuitka: 4.3.4',
+    'pyside6-essentials: 6.12.0',
+    ('size: {0} MB（{1} 个文件，其中 exe {2} MB）' -f $totalMb, $fileCount, $exeMb),
+    'startup-time: 待冒烟'
+)
+Set-Content 'packaging\runtime-info.txt' $runtimeInfo -Encoding utf8
+
+# ---------- [6/8] zip + SHA-256 ----------
+$zipName = 'jarvis-gui-0.1.0-win-x64-portable.zip'
+if (-not $SkipZip) {
+    Write-Host '[6/8] zip + SHA-256 (release\)' -ForegroundColor Cyan
+    $zipStage = 'build\zip-staging'
+    $zipInner = Join-Path $zipStage 'jarvis-gui'
+    if (Test-Path $zipStage) { Remove-Item $zipStage -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $zipInner | Out-Null
+    Copy-Item (Join-Path $stage '*') $zipInner -Recurse
+    Copy-Item 'packaging\README-portable.md' (Join-Path $zipInner '使用说明.md')
+    Copy-Item 'LICENSE.txt' (Join-Path $zipInner 'LICENSE.txt')
+    New-Item -ItemType Directory -Force -Path 'release' | Out-Null
+    $zipPath = Join-Path 'release' $zipName
+    if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+    Compress-Archive -Path (Join-Path $zipStage '*') -DestinationPath $zipPath
+    if (-not (Test-Path $zipPath)) { Fail 'Compress-Archive 未产出 zip' }
+    $sha = (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLower()
+    $shaName = 'sha256-' + ($zipName -replace '\.zip$', '')
+    Set-Content (Join-Path 'release' $shaName) ("{0}  {1}" -f $sha, $zipName) -Encoding ascii
+    Remove-Item $zipStage -Recurse -Force
+    Write-Host ("zip: release\" + $zipName + "  sha256: " + $sha)
+} else {
+    Write-Host '[6/8] 跳过 zip (-SkipZip)' -ForegroundColor Yellow
+}
+
+# ---------- [7/8] 验证扁平布局 ----------
+if (-not $SkipVerify) {
+    Write-Host '[7/8] 验证扁平布局' -ForegroundColor Cyan
+    if (-not (Test-Path (Join-Path $stage 'skills\__init__.py'))) { Fail 'skills\__init__.py 不在 exe 同级' }
+    $skillDirs = (Get-ChildItem (Join-Path $stage 'skills') -Directory).Count
+    if ($skillDirs -lt 1) { Fail 'skills 下无子目录' }
+    foreach ($bad in 'textual', 'google_genai', 'langchain_google_genai', 'src') {
+        if (Test-Path (Join-Path $stage $bad)) { Fail ("dist\jarvis-gui\" + $bad + ' 残留（不应存在）') }
+    }
+    if (Get-ChildItem $stage -Recurse -File -Filter '*google_genai*') { Fail '*google_genai* 文件残留' }
+    Write-Host ("验证通过（skills 子目录 " + $skillDirs + "，无 textual/google_genai/src 残留）")
+} else {
+    Write-Host '[7/8] 跳过验证 (-SkipVerify)' -ForegroundColor Yellow
+}
+
+# ---------- [8/8] 汇总 ----------
+Write-Host '[8/8] 汇总' -ForegroundColor Green
+Write-Host ("  staging: dist\jarvis-gui（" + $totalMb + " MB / " + $fileCount + " 文件，exe " + $exeMb + " MB）")
+if (-not $SkipZip) { Write-Host ("  release: release\" + $zipName + " + release\" + $shaName) }
+Write-Host '  下一步: 1) packaging\smoke_gui.ps1 冒烟  2) packaging\README.md 基线行填数  3) GitHub Release 上传（web UI）'

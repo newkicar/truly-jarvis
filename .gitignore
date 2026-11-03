@@ -60,5 +60,13 @@ scratch/
 # 本地探针/草稿目录（不入仓库）
 .scratch/
 
-# 测试临时工作盯录（Phase A 契约测试自目录，不入仓库）
+# 便携 release 产物（构建/签名后由 GitHub release 承载）
+release/
+
+# 构建中间物（venv / Nuitka C 扩展缓存）
+.build/
+
+
+
+# 测试临时工作目录（Phase A 契约测试自目录，不入仓库）
 tests/tmp_phase_a/

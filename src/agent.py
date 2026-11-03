@@ -23,7 +23,10 @@ from deepagents.backends import (
     LocalShellBackend,
 )
 from langchain.agents.middleware import TodoListMiddleware
-from langchain_quickjs import CodeInterpreterMiddleware
+try:
+    from langchain_quickjs import CodeInterpreterMiddleware
+except ImportError:  # 便携版剥离 JS 代码解释器（Nuitka 主动排除时 stub 抛 ImportError，非 ModuleNotFoundError）
+    CodeInterpreterMiddleware = None
 
 from src.config import Config, load_config
 from src.deprecated_paths import DeprecatedPathMiddleware
@@ -398,7 +401,7 @@ def build_agent(
     middleware.extend(
         [
             SanitizeHistoryMiddleware(),
-            CodeInterpreterMiddleware(subagents=True),
+            *([CodeInterpreterMiddleware(subagents=True)] if CodeInterpreterMiddleware is not None else []),
             TodoListMiddleware(),
             deny_middleware,
             PlanModeMiddleware(permission_state),

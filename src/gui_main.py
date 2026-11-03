@@ -11,6 +11,27 @@ from __future__ import annotations
 
 import sys
 
+# Nuitka/shiboken 兼容 shim：PySide6 6.12 的部分名称（如 QtCore.QSize、QtGui 上的
+# re-export 常量）由 shiboken 通过 tp_getattro 惰性解析、不进模块 __dict__；而
+# Nuitka 编译后的 C 级 from-import 只查模块 dict，直接报 ImportError。这里在
+# 编译后解释器启动的最早时机把三主模块的惰性大写名称物化进 dict（CPython 下是无害
+# no-op）。必须位于本文件所有 src.gui / PySide6 导入之前（当前它们均为函数内延迟
+# 导入，放文件顶部即满足）。
+try:
+    import PySide6.QtCore as _JC_QC
+    import PySide6.QtGui as _JC_QG
+    import PySide6.QtWidgets as _JC_QW
+
+    for _jc_m in (_JC_QC, _JC_QG, _JC_QW):
+        for _jc_n in list(dir(_jc_m)):
+            if _jc_n.isupper():
+                try:
+                    setattr(_jc_m, _jc_n, getattr(_jc_m, _jc_n))
+                except Exception:
+                    pass
+except Exception:
+    pass
+
 
 def _run_wizard(app) -> "object | None":
     """首启/悬空 LLM 向导。返回 LlmConfig（保存）或 None（跳过/取消）。"""
@@ -66,11 +87,11 @@ def main(argv: list[str] | None = None) -> int:
             if llm is None and config is None:
                 print("LLM 尚未配置：首启请完成向导（或放置 .env 后重启）。")
                 return 1
+    overrides = None  # 闭包变量必须无条件绑定（Nuitka 编译为 cell 变量；也修复 CPython 潜在 NameError）
     if config is None:
         auto_init_project()
         # GUI 自配层喂内核：无项目 .env 时必需键全来自向导 LLM 配置（不落明文）；
         # TAVILY 可空（搜索工具未配置时温和提示，不阻断启动）。
-        overrides = None
         if llm is not None:
             overrides = {
                 "BASE_URL": llm.base_url,
@@ -127,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
 
     controller = WorkspaceController(registry, _make_runtime, bridge)
     # 启动有效性（陈旧条目场景）：jarvis 依赖文件被删/目录已移 → 落空状态（不崩、不自动重建文件），
-    # 由用户经「打开项目 / 新建项目」手动关联。jarvis.json 在上级（子目录误登记）时回落到该项目根。
+    # 由用户经「打开项目 / 新建项目」手动关联。有效性判定只看目录本身（自身有 jarvis.json），不再回落祖先。
     from src.gui.workspace import jarvis_project_root_of
 
     valid_root = jarvis_project_root_of(start_root)
