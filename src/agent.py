@@ -27,6 +27,7 @@ from langchain_quickjs import CodeInterpreterMiddleware
 from src.config import Config
 from src.deprecated_paths import DeprecatedPathMiddleware
 from src.inbox_snapshot_middleware import InboxSnapshotMiddleware
+from src.media_guard import MediaGuardMiddleware
 from src.permissions import (
     build_permission_deny_middleware,
     build_permission_interrupts,
@@ -338,18 +339,24 @@ def build_agent(
         else None
     )
     _register_jarvis_harness(config.model_id)
+    # 媒体守卫：文本-only 模型下 deepagents 把二进制文件的 base64 媒体块塞进
+    # ToolMessage，网关回传即 400「Unsupported content part」（整轮死亡）。
+    # auto/off 自动降级为占位文本继续运行；model_image_input="on"（真多模态）不挂载。
+    media_guard = None if config.model_image_input == "on" else MediaGuardMiddleware()
     researcher = build_researcher(
         search_tools=search_tools, wiki_tools=wiki_tools, rag_tool=rag_tool,
-        deny_middleware=deny_middleware,
+        deny_middleware=deny_middleware, media_guard=media_guard,
     )
     knowledge_keeper = build_knowledge_keeper(
         deny_middleware=deny_middleware,
         project_root=root,
         vault_path=config.vault_path,
+        media_guard=media_guard,
     )
     config_subagents = build_config_subagents(
         config.agents,
         default_deny_middleware=deny_middleware,
+        media_guard=media_guard,
     )
 
     memory_files = [
@@ -399,6 +406,8 @@ def build_agent(
             vault_guard,
         ]
     )
+    if media_guard is not None:
+        middleware.append(media_guard)
     # gui15 条目8: auto_compaction——上下文 token 达到阈值自动压缩（langchain SummarizationMiddleware）
     _auto_compaction = int(getattr(config, "auto_compaction", 0) or 0)
     if _auto_compaction > 0:

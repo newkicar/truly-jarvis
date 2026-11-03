@@ -24,6 +24,7 @@ def build_config_subagents(
     agents_config: dict | None,
     *,
     default_deny_middleware,
+    media_guard=None,
 ) -> list[dict]:
     """把 javis.json agents 段转为 deepagents SubAgent dict 列表（仅追加）。"""
     if not isinstance(agents_config, dict):
@@ -48,6 +49,8 @@ def build_config_subagents(
             continue
 
         middleware: list = [_ERROR_BOUNDARY, default_deny_middleware, _SANITIZE]
+        if media_guard is not None:
+            middleware = [*middleware, media_guard]
         spec: dict[str, object] = {
             "name": name,
             "description": description,
@@ -59,7 +62,11 @@ def build_config_subagents(
         if isinstance(perms, dict) and perms:
             interrupt_on, agent_state = build_permission_interrupts(perms)
             spec["interrupt_on"] = interrupt_on
-            spec["middleware"] = [_ERROR_BOUNDARY, build_permission_deny_middleware(agent_state), _SANITIZE]
+            spec["middleware"] = [
+                _ERROR_BOUNDARY,
+                build_permission_deny_middleware(agent_state),
+                _SANITIZE,
+            ] + ([media_guard] if media_guard is not None else [])
 
         specs.append(spec)
     return specs

@@ -56,16 +56,20 @@ RESEARCHER_DESCRIPTION = (
 )
 
 
-def build_researcher(search_tools=(), wiki_tools=(), rag_tool=None, deny_middleware=None):
+def build_researcher(search_tools=(), wiki_tools=(), rag_tool=None, deny_middleware=None, media_guard=None):
     """构造 researcher 子代理（SubAgent dict 形态）。
 
     search_tools: 分层搜索工具列表（quick_search / search / deep_search）。
     deny_middleware: 权限 deny 拦截 middleware（命中 deny 的工具不执行）。
+    media_guard: 媒体内容守卫 middleware（文本-only 模型下把 read_file 的
+        base64 媒体 block 降级为占位文本，防网关 400；None 不挂）。
     """
     tools = [*search_tools, *wiki_tools]
     if rag_tool is not None:
         tools.append(rag_tool)
     mw = [_ERROR_BOUNDARY, StagnationGuardMiddleware(), NoProgressGuardMiddleware(), _SANITIZE]
+    if media_guard is not None:
+        mw = [*mw, media_guard]
     spec: dict[str, object] = {
         "name": "researcher",
         "description": RESEARCHER_DESCRIPTION,
@@ -74,7 +78,7 @@ def build_researcher(search_tools=(), wiki_tools=(), rag_tool=None, deny_middlew
         "middleware": mw,
     }
     if deny_middleware is not None:
-        spec["middleware"] = [_ERROR_BOUNDARY, StagnationGuardMiddleware(), NoProgressGuardMiddleware(), _SANITIZE, deny_middleware]
+        spec["middleware"] = [*mw, deny_middleware]
     return spec  # type: ignore[return-value]
 
 
@@ -108,11 +112,12 @@ KNOWLEDGE_KEEPER_DESCRIPTION = (
 )
 
 
-def build_knowledge_keeper(deny_middleware=None, project_root=None, vault_path=None):
+def build_knowledge_keeper(deny_middleware=None, project_root=None, vault_path=None, media_guard=None):
     """构造 knowledge_keeper 子代理（SubAgent dict 形态）。
 
     工具继承主代理后端默认的 write_file（可写 /vault/Inbox/），无需显式声明。
     deny_middleware: 权限 deny 拦截 middleware（命中 deny 的工具不执行）。
+    media_guard: 媒体内容守卫 middleware（None 不挂；见 src/media_guard.py）。
     """
     middlewares: list = [
         VaultWriteGuardMiddleware(actor="knowledge_keeper", vault_path=vault_path)
@@ -120,6 +125,8 @@ def build_knowledge_keeper(deny_middleware=None, project_root=None, vault_path=N
     if project_root is not None and vault_path is not None:
         middlewares.append(InboxSnapshotMiddleware(project_root, vault_path))
     middlewares.append(_SANITIZE)
+    if media_guard is not None:
+        middlewares.append(media_guard)
     if deny_middleware is not None:
         middlewares.insert(0, deny_middleware)
     middlewares.insert(0, _ERROR_BOUNDARY)
