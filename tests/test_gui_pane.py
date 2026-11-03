@@ -259,3 +259,37 @@ def test_deferred_snap_respects_user_scroll_up(qtbot, qapp):
     p._on_scroll(0)
     qtbot.wait(150)
     assert sb.value() == 0 and p.stick is False
+
+
+# ---- 最小宽度钳制（非最大化窗口被长内容撑宽的修复；Qt LabelWordWrapWide 先例）
+
+
+def test_cap_label_clamps_minimum_width(qtbot):
+    from src.gui.pane import CapLabel
+
+    lab = CapLabel("A" * 5000 + "\n" + "B" * 5000)
+    lab.setWordWrap(True)
+    qtbot.addWidget(lab)
+    assert lab.minimumSizeHint().width() <= 48
+    assert lab.sizeHint().height() > 0
+
+
+def test_pane_min_width_does_not_follow_content(qtbot):
+    p = ChatPane("t1")
+    qtbot.addWidget(p)
+    p.append_fallback("x" * 5000)  # 超长单行内容
+    p.append_subagent("researcher", "running" * 300)
+    p.ai_delta("y" * 5000)
+    p.flush_dirty()
+    assert p.minimumSizeHint().width() <= 300
+    assert p._ai_label.minimumSizeHint().width() <= 48
+
+
+def test_image_row_wraps_in_horizontal_scroller(qtbot):
+    from PySide6.QtWidgets import QScrollArea
+
+    p = ChatPane("t1")
+    qtbot.addWidget(p)
+    w = p._image_row(["missing-thumbnail.png"] * 8)
+    assert isinstance(w, QScrollArea)
+    assert w.widgetResizable

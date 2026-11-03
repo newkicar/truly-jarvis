@@ -10,7 +10,7 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
     QFrame,
@@ -28,6 +28,19 @@ from src.gui import md_render, theme
 RENDER_BATCH_MS = 150
 _DETAIL_OUTPUT_CAP = 8000
 _BUBBLE_H = 96  # 用户气泡内缩略图边长
+
+class CapLabel(QLabel):
+    """wordwrap QLabel：附加最小宽度钳制。
+
+    默认 QLabel.minimumSizeHint() 的宽度 = 最长不可断行（长 markdown 行 / 长 token
+    可达数千 px），经 inner 布局 → QScrollArea → 窗口后端传播，让窗口被内容突然
+    撑宽（非最大化模式下用户实测）。钳制后文字在窗口宽度内换行，窗口宽度不再
+    随内容；上限不影响实际可拉伸宽度（sizePolicy 不变）。
+    （Qt 先例：LabelWordWrapWide —— wordwrap 标签入布局必须重写 minimumSizeHint。）"""
+
+    def minimumSizeHint(self):  # noqa: N802
+        base = super().minimumSizeHint()
+        return QSize(min(base.width(), 48), base.height())
 
 
 def _detail_html(args_text: str, output_text: str, err: bool, depth: int) -> str:
@@ -73,10 +86,9 @@ class ToolLineWidget(QFrame):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         row = QHBoxLayout()
-        self._summary = QLabel(summary)
+        self._summary = CapLabel(summary)
         self._summary.setFont(md_render.mono_font())
         self._summary.setWordWrap(True)
-        self._summary.setMinimumWidth(0)
         self._summary.setObjectName("tool-line")
         self._summary.setProperty("err", "true" if err else "false")
         self._summary.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
@@ -89,9 +101,8 @@ class ToolLineWidget(QFrame):
         row.addWidget(self.btn_toggle)
         lay.addLayout(row)
 
-        self._detail = QLabel()
+        self._detail = CapLabel()
         self._detail.setObjectName("tool-detail")
-        self._detail.setMinimumWidth(0)
         self._detail.setTextFormat(Qt.TextFormat.RichText)
         self._detail.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
         self._detail.setWordWrap(True)
@@ -125,7 +136,7 @@ class ThinkingBox(QFrame):
         header.addStretch(1)
         header.addWidget(self.btn_toggle)
         lay.addLayout(header)
-        self._body = QLabel()
+        self._body = CapLabel()
         self._body.setObjectName("thinking-body")
         self._body.setWordWrap(True)
         self._body.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
@@ -154,7 +165,7 @@ class ChatPane(QScrollArea):
         self.awaiting_card = False
         self.stopped = False
         self.render_strategy = "batch"
-        self._ai_label: QLabel | None = None
+        self._ai_label: CapLabel | None = None
         self._ai_buf = ""
         self._dirty = False
         self._thinking_box: ThinkingBox | None = None
@@ -188,11 +199,15 @@ class ChatPane(QScrollArea):
         self.verticalScrollBar().valueChanged.connect(self._on_scroll)
 
         # 空会话占位（首条内容出现即从布局移除；rebuild 为空时复原）
-        self._placeholder: QLabel | None = None
+        self._placeholder: CapLabel | None = None
         self._add_placeholder()
 
-    def _make_placeholder(self) -> "QLabel":
-        ph = QLabel(
+    def minimumSizeHint(self):  # noqa: N802
+        """面板最小宽度固定上限：内容随窗口换行，窗口宽度不随内容（补充 CapLabel 钳制）。"""
+        return QSize(200, 120)
+
+    def _make_placeholder(self) -> "CapLabel":
+        ph = CapLabel(
             "新会话\n在下方输入框里输入消息开始对话（Enter 发送，Shift+Enter 换行）"
         )
         ph.setObjectName("pane-placeholder")
@@ -220,7 +235,7 @@ class ChatPane(QScrollArea):
     def append_user(self, text: str, image_paths: list[str] | None = None) -> None:
         self._close_thinking()
         self._hide_placeholder()
-        l = QLabel(md_render.soft_break(f"[你] {text}", 80))
+        l = CapLabel(md_render.soft_break(f"[你] {text}", 80))
         l.setObjectName("bub-user")
         l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
         l.setWordWrap(True)
@@ -231,7 +246,9 @@ class ChatPane(QScrollArea):
         self._follow()
 
     def _image_row(self, paths: list[str]) -> QWidget:
-        """用户气泡内缩略图行（≈96px 高，可点放大——ImagePreview）。"""
+        """用户气泡内缩略图行（≈96px 高，可点放大——ImagePreview）。
+
+        多张时整行宽度不再撑宽 pane：外包无边框横向 QScrollArea（只出横向提手）。"""
         from src.gui.image_widgets import ImagePreview, _thumb_pixmap
 
         host = QWidget()
@@ -248,14 +265,21 @@ class ChatPane(QScrollArea):
             lab.mousePressEvent = lambda _e, pp=path: ImagePreview(pp).show()  # noqa: SLF001
             row.addWidget(lab)
         row.addStretch(1)
-        return host
+        scroller = QScrollArea()
+        scroller.setFrameShape(QFrame.Shape.NoFrame)
+        scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroller.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroller.setWidgetResizable(True)
+        scroller.setWidget(host)
+        scroller.setFixedHeight(_BUBBLE_H + 4)
+        return scroller
 
     def append_fallback(self, text: str) -> None:
         if not text:
             return
         self._close_thinking()
         self._hide_placeholder()
-        l = QLabel(md_render.md_to_qt_html(text))
+        l = CapLabel(md_render.md_to_qt_html(text))
         l.setObjectName("bub-ai")
         l.setTextFormat(Qt.TextFormat.RichText)
         l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
@@ -273,11 +297,10 @@ class ChatPane(QScrollArea):
 
     def append_subagent(self, name, status, depth=0) -> None:
         self._hide_placeholder()
-        l = QLabel(md_render.soft_break(f"{'  ' * depth}[{name}] {status}", 80))
+        l = CapLabel(md_render.soft_break(f"{'  ' * depth}[{name}] {status}", 80))
         l.setObjectName("line-sub")
         l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
         l.setWordWrap(True)
-        l.setMinimumWidth(0)
         self._insert(l)
         self._follow()
 
@@ -297,7 +320,7 @@ class ChatPane(QScrollArea):
     def ai_delta(self, delta: str) -> None:
         self._ai_buf += delta
         if self._ai_label is None:
-            self._ai_label = QLabel()
+            self._ai_label = CapLabel()
             self._ai_label.setObjectName("bub-ai")
             self._ai_label.setTextFormat(Qt.TextFormat.RichText)
             self._ai_label.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
