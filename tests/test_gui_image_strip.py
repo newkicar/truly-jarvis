@@ -177,6 +177,6 @@ def test_submit_with_image_builds_multimodal_payload(qapp, monkeypatch):
         first = pane._vbox.itemAt(0).widget()
         second = pane._vbox.itemAt(1).widget()
         assert first is not None and "看图" in first.text()
-        assert second is not None and second.layout() is not None  # 缩略图行
+        assert second is not None and second.widget() is not None  # 缩略图行（QScrollArea 包裹宿主）
     finally:
         cleanup_home(home)

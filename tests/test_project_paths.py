@@ -175,4 +175,5 @@ def test_install_root_not_frozen_uses_source_tree(monkeypatch):
     monkeypatch.setattr(sys, 'argv', ['.build/frozen-root-test/jarvis-gui.exe'])
     root = install_root()
     assert root == Path(__file__).resolve().parent.parent
-    assert (root / 'src').is_dir() and (root / 'skills').is_dir()
+    # skills/ 在 .gitignore（运行时 seed 产物，全新检出/CI 不一定存在），只断言 src/
+    assert (root / 'src').is_dir()
