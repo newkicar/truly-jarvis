@@ -298,3 +298,32 @@ def load_config(
     ensure_user_home()
     set_runtime_project_root(cfg.project_root)
     return cfg
+
+
+def save_auto_compaction(value: int) -> Path:
+    """把 auto_compaction 阈值写回**全局** jarvis.json（~/.jarvis/jarvis.json）。
+
+    auto_compaction 是全局配置，对所有项目统一生效（非项目级）：
+    - load_config 合并语义 = 全局打底 + 项目覆盖；写全局级即所有项目默认值，
+      项目级 jarvis.json 若显式配置了 auto_compaction 则该项目仍覆盖全局值
+      （读取时合并决定，写盘路径不做项目级写入）；
+    - 负值钳 0（与 load_config 解析规则一致）；全局文件其余键原样保留。
+    不改内存 Config——下次 agent 重建（切换项目/重启应用）时生效。
+    返回实际写入路径，供调用方展示。
+    """
+    n = int(value)
+    if n < 0:
+        n = 0
+    ensure_user_home()
+    target = resolve_user_jarvis_json()
+    data: dict = {}
+    if target.is_file():
+        try:
+            raw = json.loads(target.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                data = raw
+        except (json.JSONDecodeError, OSError):
+            logging.warning("既有全局 jarvis.json 不可读，仅写回 auto_compaction: %s", target)
+    data["auto_compaction"] = n
+    target.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return target

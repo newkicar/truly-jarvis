@@ -32,16 +32,21 @@ def _real_path_for(item_path: str, path_mapping: dict[str, str] | None) -> str |
     """item_path 为虚拟前缀形式（/workspace/x、/vault/x …）时返回映射后的真实路径。
 
     前缀按长度倒序匹配；非虚拟路径或 mapping 未覆盖时返回 None。
+    目录路径（/ 结尾）保留尾部 /。
     """
     if not path_mapping:
         return None
+    is_dir = item_path.endswith("/")
     for prefix in sorted(
         (p for p in path_mapping if p.startswith("/")), key=len, reverse=True
     ):
         if item_path.startswith(prefix):
             root = path_mapping[prefix]
-            rel = item_path[len(prefix) :]
-            return str(Path(root) / rel) if rel else str(Path(root))
+            rel = item_path[len(prefix) :].rstrip("/")
+            result = str(Path(root) / rel) if rel else str(Path(root))
+            if is_dir:
+                result += "/"
+            return result
     return None
 
 
@@ -138,7 +143,11 @@ def resolve_overlay_state(
 
 
 def apply_suggestion(value: str, at_index: int, cursor: int, insert: str) -> tuple[str, int]:
-    replacement = insert if insert.endswith(" ") else f"{insert} "
+    """把 @query 替换为选中路径。目录路径（/ 结尾）不加尾随空格，文件加空格。"""
+    if insert.endswith("/"):
+        replacement = insert
+    else:
+        replacement = insert if insert.endswith(" ") else f"{insert} "
     new_value = value[:at_index] + replacement + value[cursor:]
     new_cursor = at_index + len(replacement)
     return new_value, new_cursor

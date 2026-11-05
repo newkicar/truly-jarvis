@@ -21,6 +21,7 @@ _VAULT_SUFFIXES = frozenset({".md"})
 class PathSuggestion:
     path: str
     hint: str
+    is_dir: bool = False
 
 
 def _should_skip(path: Path, root: Path) -> bool:
@@ -28,21 +29,38 @@ def _should_skip(path: Path, root: Path) -> bool:
         rel = path.relative_to(root)
     except ValueError:
         return True
-    return any(part in _SKIP_DIR_NAMES or part.startswith(".") for part in rel.parts[:-1])
+    parts = rel.parts if path.is_dir() else rel.parts[:-1]
+    return any(part in _SKIP_DIR_NAMES or part.startswith(".") for part in parts)
 
 
-def _scan_paths(root: Path, prefix: str, suffixes: frozenset[str] | None = None, *, cap: int = 500) -> list[str]:
-    """扫描目录下所有文件。suffixes=None 时不过滤后缀（fuzzy search）。"""
+def _scan_paths(
+    root: Path,
+    prefix: str,
+    suffixes: frozenset[str] | None = None,
+    *,
+    cap: int = 500,
+    include_dirs: bool = False,
+) -> list[str]:
+    """扫描目录下所有文件。suffixes=None 时不过滤后缀（fuzzy search）。
+
+    include_dirs=True 时同时产出目录条目（虚拟路径以 / 结尾）。
+    """
     if not root.is_dir():
         return []
     out: list[str] = []
-    for file_path in root.rglob("*"):
-        if not file_path.is_file() or _should_skip(file_path, root):
+    for entry in root.rglob("*"):
+        if _should_skip(entry, root):
             continue
-        if suffixes is not None and file_path.suffix.lower() not in suffixes:
-            continue
-        rel = file_path.relative_to(root).as_posix()
-        out.append(f"{prefix}{rel}")
+        if entry.is_dir():
+            if not include_dirs:
+                continue
+            rel = entry.relative_to(root).as_posix()
+            out.append(f"{prefix}{rel}/")
+        elif entry.is_file():
+            if suffixes is not None and entry.suffix.lower() not in suffixes:
+                continue
+            rel = entry.relative_to(root).as_posix()
+            out.append(f"{prefix}{rel}")
         if len(out) >= cap:
             break
     return out
@@ -95,25 +113,39 @@ def collect_completion_paths(
     items: list[PathSuggestion] = []
 
     if scope in ("all", "workspace") and workspace_root is not None:
-        for path in _scan_paths(workspace_root, "/workspace/", cap=300):
-            hint = "项目"
-            suffix = Path(path).suffix.lower()
-            if suffix in _BINARY_SUFFIXES:
-                hint = "项目 [binary]"
-            items.append(PathSuggestion(path, hint))
+        for path in _scan_paths(workspace_root, "/workspace/", cap=300, include_dirs=True):
+            is_dir = path.endswith("/")
+            if is_dir:
+                hint = "项目 [目录]"
+            else:
+                hint = "项目"
+                suffix = Path(path).suffix.lower()
+                if suffix in _BINARY_SUFFIXES:
+                    hint = "项目 [binary]"
+            items.append(PathSuggestion(path, hint, is_dir=is_dir))
 
     if scope in ("all", "memories") and memories_root is not None:
-        for path in _scan_paths(memories_root, "/memories/", _VAULT_SUFFIXES, cap=100):
-            items.append(PathSuggestion(path, "记忆"))
+        for path in _scan_paths(memories_root, "/memories/", _VAULT_SUFFIXES, cap=100, include_dirs=True):
+            is_dir = path.endswith("/")
+            hint = "记忆 [目录]" if is_dir else "记忆"
+            items.append(PathSuggestion(path, hint, is_dir=is_dir))
 
     if include_vault and scope in ("all", "vault") and vault_path is not None:
-        for path in _scan_paths(vault_path, "/vault/", _VAULT_SUFFIXES):
-            hint = "知识库"
-            if path.startswith("/vault/Inbox/"):
-                hint = "Inbox"
-            elif path.startswith("/vault/Reports/"):
-                hint = "Reports"
-            items.append(PathSuggestion(path, hint))
+        for path in _scan_paths(vault_path, "/vault/", _VAULT_SUFFIXES, include_dirs=True):
+            is_dir = path.endswith("/")
+            if is_dir:
+                hint = "知识库 [目录]"
+                if path.startswith("/vault/Inbox/"):
+                    hint = "Inbox [目录]"
+                elif path.startswith("/vault/Reports/"):
+                    hint = "Reports [目录]"
+            else:
+                hint = "知识库"
+                if path.startswith("/vault/Inbox/"):
+                    hint = "Inbox"
+                elif path.startswith("/vault/Reports/"):
+                    hint = "Reports"
+            items.append(PathSuggestion(path, hint, is_dir=is_dir))
 
     sorted_items = sort_path_suggestions(items)
     if local_q:
@@ -160,8 +192,11 @@ def filter_paths(paths: list[str], query: str, *, limit: int = 50) -> list[str]:
 
 
 def apply_completion(value: str, at_index: int, cursor: int, selected: str) -> tuple[str, int]:
-    """把 @query 替换为选中路径，末尾补空格。"""
-    replacement = selected if selected.endswith(" ") else f"{selected} "
+    """把 @query 替换为选中路径。目录路径（/ 结尾）不加尾随空格，文件加空格。"""
+    if selected.endswith("/"):
+        replacement = selected
+    else:
+        replacement = selected if selected.endswith(" ") else f"{selected} "
     new_value = value[:at_index] + replacement + value[cursor:]
     new_cursor = at_index + len(replacement)
     return new_value, new_cursor

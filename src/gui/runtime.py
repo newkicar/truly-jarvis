@@ -292,6 +292,15 @@ class GuiPresenter:
         )
         return {"decision": "reject"}
 
+    def wake_parked(self, tid: str) -> int:
+        """唤醒该线程停车中的审批卡片（= CardAsk 卡片「放弃」），
+        使停止/重建路径能释放回合门；默认 _default_ask 无此属性 = no-op 返回 0。
+        根因（#4）：回合停在 CardSession.wait 时点停止，gate 永不 finish，
+        后续消息全部排队且永不发出。"""
+        ask = self._ask_action or self._default_ask
+        wake = getattr(ask, "wake_parked", None)
+        return wake(tid) if callable(wake) else 0
+
     # ---- 提交
     def start_turn(
         self,
@@ -300,12 +309,17 @@ class GuiPresenter:
         *,
         user_input: Any | None = None,
         user_input_fallback: str | None = None,
+        images: list[str] | None = None,
     ) -> str:
         """入回合门。返回 'started' / 'queued'。queued 时该 thread 提示「已排队 N」。
 
         FIFO 重投：worker 结束时 gate.finish 出队下一条并再走 start_turn（重新入门）。
         """
-        verdict = self.gate.try_start(tid, user_text)
+        if user_input is None and images:
+            from src.gui.image_strip import build_image_submit
+
+            user_input, user_input_fallback, _ = build_image_submit(user_text, images)
+        verdict = self.gate.try_start(tid, user_text, images=images)
         if verdict == "queued":
             n = self.gate.queued_count(tid)
             self.bridge.notify.emit(f"该会话回合进行中，消息已排队（当前第 {n} 条）。")
@@ -328,6 +342,7 @@ class GuiPresenter:
 
         self.gate.request_cancel(tid)
         _sb.kill_active()  # gui15 条目7：立即杀掉 execute 进程树（不再「等当前步骤跑完才停」）
+        self.wake_parked(tid)  # #4：停在审批卡片的回合必须被唤醒放弃，否则 gate 卡死、消息永排队
         self.bridge.status.emit(tid, "已停止")
 
     @staticmethod
@@ -429,10 +444,10 @@ class GuiPresenter:
             # 任务完成通知（必须在 gate.finish 前读取消位；取消不发）
             self._emit_task_done(rt, tid, ok, cancelled=self.gate.is_cancelled(tid))
             # FIFO 重投：出队下一条排队消息，重新入门起新回合（工单 03）
-            nxt = self.gate.finish(tid)
-            if nxt is not None:
-                b.queued_flush.emit(tid, nxt)
-                self.start_turn(tid, nxt)
+            nxt_full = self.gate.finish_full(tid)
+            if nxt_full is not None:
+                b.queued_flush.emit(tid, nxt_full[0], nxt_full[1])
+                self.start_turn(tid, nxt_full[0], images=nxt_full[1])
 
     # ---- 回放（时间旅行，ticket 09）
     def start_replay(self, tid: str, checkpoint_id: str) -> None:

@@ -255,6 +255,12 @@ class ChatPane(QScrollArea):
         row = QHBoxLayout(host)
         row.setContentsMargins(2, 0, 2, 0)
         row.setSpacing(6)
+
+        def _zoom(pp: str) -> None:
+            prev = ImagePreview(pp)
+            host._preview = prev  # noqa: SLF001 — 持引用：WA_DeleteOnClose 顶层窗，防包装器被 GC
+            prev.show()
+
         for p in paths:
             lab = QLabel()
             lab.setPixmap(_thumb_pixmap(p, _BUBBLE_H))
@@ -262,7 +268,7 @@ class ChatPane(QScrollArea):
             lab.setCursor(Qt.CursorShape.PointingHandCursor)
             lab.setToolTip("点击放大")
             path = p
-            lab.mousePressEvent = lambda _e, pp=path: ImagePreview(pp).show()  # noqa: SLF001
+            lab.mousePressEvent = lambda _e, pp=path: _zoom(pp)  # noqa: SLF001 — 点击放大（居中预览窗，host 持引用）
             row.addWidget(lab)
         row.addStretch(1)
         scroller = QScrollArea()

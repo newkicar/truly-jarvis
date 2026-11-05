@@ -65,7 +65,7 @@ def test_open_dir_resolves_inits_registers():
         bare.mkdir()
         reg, ctrl, _made, _ = _ctrl(d, d / "a")
         (d / "a").mkdir()
-        root = ctrl.open_dir(bare, up_to=d)
+        root = ctrl.open_dir(bare)
         assert (bare / "jarvis.json").is_file()  # 缺配置 → 骨架
         assert reg.get(root) is not None
         assert reg.active() == str(root)

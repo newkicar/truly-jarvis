@@ -18,6 +18,7 @@ from src.config import (
     load_config,
     parse_env_file,
     parse_env_text,
+    save_auto_compaction,
 )
 
 
@@ -412,6 +413,59 @@ def test_load_config_project_overrides_global_auto_compaction():
         json_file = _write_json(base, {"auto_compaction": 4000})
         cfg = load_config(env_file=env_file, json_file=json_file)
         assert cfg.auto_compaction == 4000
+    finally:
+        _restore_home(old)
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_save_auto_compaction_always_writes_global():
+    """即使项目级 jarvis.json 存在，也写全局 JARVIS_HOME/jarvis.json（auto_compaction 全局语义，gui15 G3 写回）"""
+    base = _fresh_dir()
+    old = _isolated_home(base)
+    try:
+        project_root = base / "proj"
+        project_root.mkdir()
+        jf = _write_json(project_root, {"checkpoint_db": "x.sqlite"})
+        written = save_auto_compaction(4000)
+        expected = base / "jh" / "jarvis.json"
+        assert written == expected
+        data = json.loads(expected.read_text(encoding="utf-8"))
+        assert data["auto_compaction"] == 4000
+        # 项目文件未被改动（不再做项目级写入）：_write_json 注入了 model 段，
+        # 故只校验「未写入 auto_compaction 且原键保留」，不做全等。
+        proj = json.loads(jf.read_text(encoding="utf-8"))
+        assert "auto_compaction" not in proj
+        assert proj["checkpoint_db"] == "x.sqlite"
+    finally:
+        _restore_home(old)
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_save_auto_compaction_negative_clamps_zero():
+    """负值钳 0，写全局级（与 load_config 解析规则一致，gui15 G3 auto_compaction 写回）"""
+    base = _fresh_dir()
+    old = _isolated_home(base)
+    try:
+        written = save_auto_compaction(-7)
+        expected = base / "jh" / "jarvis.json"
+        assert written == expected
+        assert json.loads(expected.read_text(encoding="utf-8"))["auto_compaction"] == 0
+    finally:
+        _restore_home(old)
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_save_auto_compaction_corrupt_global_file_no_crash():
+    """损坏的全局文件不崩：仅写 auto_compaction（gui15 G3 auto_compaction 写回）"""
+    base = _fresh_dir()
+    old = _isolated_home(base)
+    try:
+        expected = base / "jh" / "jarvis.json"
+        expected.parent.mkdir(parents=True, exist_ok=True)
+        expected.write_text("{ broken", encoding="utf-8")
+        written = save_auto_compaction(3000)
+        assert written == expected
+        assert json.loads(expected.read_text(encoding="utf-8")) == {"auto_compaction": 3000}
     finally:
         _restore_home(old)
         shutil.rmtree(base, ignore_errors=True)

@@ -84,6 +84,14 @@ def _make_ws(tmp_path):
     return ws
 
 
+def _make_ws_with_dirs(tmp_path):
+    ws = tmp_path / "ws"
+    (ws / "src" / "inner").mkdir(parents=True)
+    (ws / "src" / "app.py").write_text("x", encoding="utf-8")
+    (ws / "docs").mkdir()
+    return ws
+
+
 def test_completion_default_virtual_unchanged(tmp_path):
     ws = _make_ws(tmp_path)
     value = "@src/app"
@@ -151,6 +159,59 @@ def test_completion_real_style_without_mapping_falls_back(tmp_path):
     )
     item = next(i for i in state.items if "app.py" in i.insert)
     assert item.insert == "/workspace/src/app.py"
+
+
+def test_completion_directory_virtual_style(tmp_path):
+    """virtual 风格：目录条目保留 / 结尾，hint 带 [目录]。"""
+    ws = _make_ws_with_dirs(tmp_path)
+    value = "@"
+    state = resolve_overlay_state(
+        value,
+        1,
+        vault_path=None,
+        workspace_root=ws,
+        memories_root=None,
+        path_mapping={"/workspace/": str(ws)},
+    )
+    dir_item = next(i for i in state.items if i.insert == "/workspace/src/")
+    assert dir_item.label == "/workspace/src/"
+    assert "[目录]" in dir_item.hint
+
+
+def test_completion_directory_dual_style(tmp_path):
+    """dual 风格：目录条目 insert 为虚拟路径（/ 结尾），hint 含真实路径（/ 结尾）。"""
+    ws = _make_ws_with_dirs(tmp_path)
+    value = "@"
+    state = resolve_overlay_state(
+        value,
+        1,
+        vault_path=None,
+        workspace_root=ws,
+        memories_root=None,
+        path_mapping={"/workspace/": str(ws)},
+        at_reference_style="dual",
+    )
+    dir_item = next(i for i in state.items if i.insert == "/workspace/src/")
+    assert dir_item.label == "/workspace/src/"
+    assert f"{str(ws / 'src')}/" in dir_item.hint
+
+
+def test_completion_directory_real_style(tmp_path):
+    """real 风格：目录条目 insert 为真实路径（/ 结尾）。"""
+    ws = _make_ws_with_dirs(tmp_path)
+    value = "@"
+    state = resolve_overlay_state(
+        value,
+        1,
+        vault_path=None,
+        workspace_root=ws,
+        memories_root=None,
+        path_mapping={"/workspace/": str(ws)},
+        at_reference_style="real",
+    )
+    dir_item = next(i for i in state.items if "src/" in i.insert)
+    assert dir_item.insert == str(ws / "src") + "/"
+    assert dir_item.label == str(ws / "src") + "/"
 
 
 

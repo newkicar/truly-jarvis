@@ -172,6 +172,90 @@ def test_abandon_card_stops_turn(qapp):
         cleanup_home(home)
 
 
+# ---------------------------------------------------------------- #4 fix (cancel/undo dead-queueing)
+# When the round is halted/rebuilt, if the worker is blocked on an approval card (CardSession.event.wait), it must
+# be woken and abandoned—otherwise the gate never finishes, and all subsequent messages queue up and never get sent.
+def test_card_ask_wake_parked_abandons(qapp):
+    """wake_parked(tid): card-level wake—parked ask inside the worker thread is woken and abandoned (result=None)."""
+    import threading
+
+    from src.gui.cards import make_card_ask
+    from src.gui.events import UiBridge
+
+    class _Cfg:
+        vault_path = ""
+        project_root = ""
+
+    class _RT:
+        config = _Cfg()
+
+    bridge = UiBridge()
+    created: list = []
+    bridge.create_card.connect(lambda tid, payload, cid: created.append(cid))
+
+    ask = make_card_ask(_RT(), bridge)
+    assert hasattr(ask, "wake_parked")  # card factory exposes the wake interface (default _default_ask has no such attr = no-op)
+
+    tid = "t-park"
+    holder: dict = {}
+
+    def _run():
+        holder["result"] = ask(_inv(), tid)
+
+    th = threading.Thread(target=_run, daemon=True)
+    th.start()
+    assert wait_until(lambda: len(created) == 1, timeout=10.0)  # card shown, worker blocked
+    assert th.is_alive()
+
+    assert ask.wake_parked(tid) == 1
+    th.join(timeout=10.0)
+    assert not th.is_alive()
+    assert holder["result"] is None  # wake = abandon this round (equivalent to the "abandon" button)
+    assert ask.wake_parked(tid) == 0  # idempotent: with no parked handles, 0 wakes
+
+
+def test_cancel_parked_card_unsticks_queue(qapp):
+    """#4 full chain: round stopped on approval card + press stop -> card woken and abandoned, gate released;
+    the next message sent goes straight to started (no longer queued and unsent)."""
+    from src.gui.events import UiBridge
+    from src.gui.main_window import MainWindow
+    from src.gui.runtime import build_runtime_for_config
+
+    home = new_home()
+    try:
+        rt = build_runtime_for_config(home, model=ScriptedMockModel())
+        bridge = UiBridge()
+        from src.gui.presenter_wiring import wire_presenter
+
+        presenter = wire_presenter(rt, bridge)
+        win = MainWindow(presenter, bridge)
+        finished = {"done": 0}
+        bridge.turn_done.connect(lambda tid, ok: finished.__setitem__("done", finished["done"] + 1))
+
+        tid = presenter.new_session_id()
+        win._switch_to(tid)
+        win._on_input_submit("trigger execute")
+        card = _wait_card(win, tid, "execute")  # worker blocked on CardSession.wait
+
+        presenter.cancel(tid)  # stop: must wake the parked card (otherwise the gate stays running forever)
+        th = presenter._turns.get(tid)
+        if th is not None:
+            th.join(timeout=10.0)
+        assert not presenter.gate.is_running(tid)  # gate released (RED: current impl stays running forever)
+
+        assert presenter.start_turn(tid, "next line") == "started"  # run directly, no queueing
+        # second round also stops on the execute card (mock script) -> stop can still wake it (idempotency regression)
+        card2 = _wait_card(win, tid, "execute")
+        presenter.cancel(tid)
+        th2 = presenter._turns.get(tid)
+        if th2 is not None:
+            th2.join(timeout=10.0)
+        assert not presenter.gate.is_running(tid)
+        assert wait_until(lambda: finished["done"] >= 2, timeout=30.0)
+        rt.close()
+    finally:
+        cleanup_home(home)
+
 # ---------------------------------------------------------------- 辅助
 def _wait_card(win, tid, name, timeout=120.0):
     import time

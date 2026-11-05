@@ -1,7 +1,7 @@
 """多项目工作区内核（打开/新建 项目 + 切项目 + 只读取非活动项目会话名）。
 
 纯逻辑层（S1/S2 接缝，离 Qt）：
-- resolve_open_root：给定目录判定「开哪个项目根 + 要不要初始化」（三分支）。
+- resolve_open_root：给定目录判定「开哪个项目根 + 要不要初始化」（开哪个文件夹就是哪个项目根，不再向上回落）。
 - init_project：幂等骨架（缺 jarvis.json 才补，绝不覆盖；建 schedules/）。
 - open_project / new_project：登记进全局注册表 + 设为活动。
 - list_sessions_readonly：不加载 runtime、只读列出某非活动项目的会话（id+短名）。
@@ -28,36 +28,24 @@ class OpenDecision:
     needs_init: bool
 
 
-def resolve_open_root(chosen_dir: Any, *, up_to: Any | None = None) -> OpenDecision:
-    """三分支：① 目录本身有 jarvis.json → 开它；② 上级有 → 开那个上级项目根；③ 都没有 → 需初始化。
+def resolve_open_root(chosen_dir: Any) -> OpenDecision:
+    """开哪个文件夹 = 哪个文件夹就是项目根（单目录判定）：
 
-    up_to（可选搜索上界）：向上查找止于该目录（含它本身、不含其父）；缺省 None = 查到文件系统顶。
+    ① 目录本身有 jarvis.json → 开它；② 没有 → 该文件夹是裸文件夹，需初始化。
+    不再向上查找祖先项目根（打开「另一个 jarvis 项目的子文件夹」= 独立裸文件夹，
+    允许项目套项目/临时文件夹，与 codex 的 cwd=项目 语义一致）。
     """
     c = Path(str(chosen_dir)).expanduser().resolve()
-    cap = Path(str(up_to)).expanduser().resolve() if up_to is not None else None
-
-    def within(p: Path) -> bool:
-        if cap is None:
-            return True
-        return p == cap or cap in p.parents
-
-    if (c / JARVIS_JSON).is_file():
-        return OpenDecision(root=c, needs_init=False)
-    for d in c.parents:
-        if not within(d):
-            break
-        if (d / JARVIS_JSON).is_file():
-            return OpenDecision(root=d, needs_init=False)
-    return OpenDecision(root=c, needs_init=True)
+    return OpenDecision(root=c, needs_init=not (c / JARVIS_JSON).is_file())
 
 
-def jarvis_project_root_of(chosen_dir: Any, *, ancestor_levels: int = 4) -> Path | None:
-    """目录本身或上 N 级内有 jarvis.json → 返回该项目根；否则 None（= 不再是 jarvis 项目）。
+def jarvis_project_root_of(chosen_dir: Any) -> Path | None:
+    """目录本身有 jarvis.json → 返回该目录；否则 None（= 不再是 jarvis 项目）。
 
-    启动/切项目的**有效性判定**专用（与 resolve_open_root 的「三分支判定+要初始化」不同）：
+    启动/切项目的**有效性判定**专用（与 resolve_open_root 的「判定+要初始化」不同）：
     - 目录不存在 → None；
-    - 其本身或上 ancestor_levels 级内存在 jarvis.json → 该项目根；
-    - 都没有 → None（用户已删除 jarvis 依赖文件 = 不再需要该项目；**不**自动重建）。
+    - 目录本身存在 jarvis.json → 该目录（**不再**向上查找祖先项目根）；
+    - 没有 → None（用户已删除 jarvis 依赖文件 = 不再需要该项目；**不**自动重建）。
     UNC/网络盘路径不做 .resolve()（避免网络盘探测挂起）；任何 I/O 异常一律 None，
     永不把「探测失败」误判为有效项目。
     """
@@ -65,13 +53,7 @@ def jarvis_project_root_of(chosen_dir: Any, *, ancestor_levels: int = 4) -> Path
         d = Path(str(chosen_dir)).expanduser()
         if not d.is_dir():
             return None
-        for _ in range(ancestor_levels + 1):
-            if (d / JARVIS_JSON).is_file():
-                return d
-            if d.parent == d:  # 已到文件系统顶
-                break
-            d = d.parent
-        return None
+        return d if (d / JARVIS_JSON).is_file() else None
     except OSError:
         return None
 
@@ -93,9 +75,9 @@ def init_project(root: Any) -> None:
     (r / "schedules").mkdir(exist_ok=True)
 
 
-def open_project(registry, chosen_dir: Any, *, now: float | None = None, up_to: Any | None = None) -> Path:
+def open_project(registry, chosen_dir: Any, *, now: float | None = None) -> Path:
     """打开项目：判定根 + （需时）初始化 + 登记并设为活动。返回项目根。"""
-    d = resolve_open_root(chosen_dir, up_to=up_to)
+    d = resolve_open_root(chosen_dir)
     if d.needs_init:
         init_project(d.root)
     registry.add(d.root, now=now)

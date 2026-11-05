@@ -31,6 +31,78 @@ def test_resolve_path_overlay(tmp_path):
     assert any("app.py" in item.insert for item in state.items)
 
 
+def test_resolve_path_overlay_includes_directories(tmp_path):
+    """@ 补全候选应包含目录条目（/ 结尾）。"""
+    ws = tmp_path / "ws"
+    (ws / "src" / "inner").mkdir(parents=True)
+    (ws / "src" / "main.py").write_text("x", encoding="utf-8")
+    (ws / "docs").mkdir()
+    state = resolve_overlay_state(
+        "@",
+        1,
+        vault_path=None,
+        workspace_root=ws,
+        memories_root=None,
+    )
+    assert state.kind == "path"
+    inserts = [i.insert for i in state.items]
+    # 目录条目存在
+    assert "/workspace/src/" in inserts
+    assert "/workspace/docs/" in inserts
+    # 文件条目也在
+    assert "/workspace/src/main.py" in inserts
+    # 目录 hint 带 [目录]
+    dir_item = next(i for i in state.items if i.insert == "/workspace/src/")
+    assert "[目录]" in dir_item.hint
+
+
+def test_resolve_path_overlay_directory_narrowing(tmp_path):
+    """查询 src/ 时应收窄到 src 目录下的条目。"""
+    ws = tmp_path / "ws"
+    (ws / "src").mkdir(parents=True)
+    (ws / "src" / "main.py").write_text("x", encoding="utf-8")
+    (ws / "other").mkdir()
+    (ws / "other" / "a.txt").write_text("y", encoding="utf-8")
+
+    state = resolve_overlay_state(
+        "@src/",
+        len("@src/"),
+        vault_path=None,
+        workspace_root=ws,
+        memories_root=None,
+    )
+    inserts = [i.insert for i in state.items]
+    assert "/workspace/src/" in inserts
+    assert "/workspace/src/main.py" in inserts
+    assert "/workspace/other/" not in inserts
+    assert "/workspace/other/a.txt" not in inserts
+
+
+def test_apply_suggestion_directory_no_trailing_space(tmp_path):
+    """目录条目接受后不加尾随空格（用户可继续输入收窄）。"""
+    value, cursor = apply_suggestion("读 @", 2, 3, "/workspace/src/")
+    assert value == "读 /workspace/src/"
+    assert cursor == len("读 /workspace/src/")
+    # 尾随空格不在
+    assert not value.endswith(" ")
+
+
+def test_apply_suggestion_file_has_trailing_space(tmp_path):
+    """文件条目接受后仍加尾随空格（旧行为不变）。"""
+    value, cursor = apply_suggestion("读 @", 2, 3, "/workspace/src/main.py")
+    assert value == "读 /workspace/src/main.py "
+    assert cursor == len("读 /workspace/src/main.py ")
+
+
+def test_apply_suggestion_on_line_directory(tmp_path):
+    """多行场景下目录建议应用：目录无尾随空格。"""
+    text = "第一行\n读 @src"
+    new_text, new_cursor = apply_suggestion_on_line(text, (1, 6), 2, "/workspace/src/")
+    assert new_text == "第一行\n读 /workspace/src/"
+    assert new_cursor == (1, len("读 /workspace/src/"))
+    assert not new_text.split("\n")[1].endswith(" ")
+
+
 def _use_skill(name: str, desc: str = "", manual: bool = False) -> SkillMeta:
     """tui-ux9 fixture: 直构 SkillMeta，无文件系统依赖。"""
     return SkillMeta(

@@ -87,6 +87,7 @@ class MainWindow(QMainWindow):
         self.panes: dict[str, ChatPane] = {}
         self.active_tid: str | None = None
         self._last_input_text = ""
+        self._drafts: dict[str, tuple[str, list[str]]] = {}  # #1: 每会话未提交草稿（文本+图片）
         self._build_ui()
         self._wire_bridge()
         # 启动即应用已持久化主题（taste-skill token QSS；切主题零重建、全量跟随）
@@ -187,6 +188,11 @@ class MainWindow(QMainWindow):
         adv.addSeparator()
         undo_action = adv.addAction("撤回上一轮（消息层）")
         undo_action.triggered.connect(self._on_undo)
+        compact_action = adv.addAction("自动压缩上下文阈值…")
+        compact_action.triggered.connect(self._on_set_auto_compaction)
+        self._compact_action = compact_action
+        # 空态（无活动项目）置灰，避免「点了没反应」误以为 bug；恢复项目后由 _do_switch_project 重新启用
+        self._compact_action.setEnabled(self.presenter is not None)
         self._advanced_menu = adv
 
         left = QFrame()
@@ -236,6 +242,7 @@ class MainWindow(QMainWindow):
         self.queue_strip = QueueStrip()
         ml.addWidget(self.queue_strip)
         self.queue_strip.pull_out_requested.connect(self._on_queue_pull_out)
+        self.queue_strip.jump_requested.connect(self._on_queue_jump)
 
         self.image_strip = ImageStrip()
         ml.addWidget(self.image_strip)
@@ -262,6 +269,8 @@ class MainWindow(QMainWindow):
         self.completion_popup.hide()
         self.input_bar.edit.textChanged.connect(lambda: self._completion_timer.start())
         self.input_bar.edit.cursorPositionChanged.connect(lambda: self._completion_timer.start())
+        self.input_bar.edit.textChanged.connect(self._save_active_draft)  # #1: 草稿随会话（每次输入即存）
+        self.image_strip.changed.connect(self._save_active_draft)  # #1: 图片增删也进草稿
         # 逐键防抖（120ms singleShot 重启）：消除「每敲一键全量重扫+重挂弹层」的卡顿
         self._completion_timer = QTimer(self)
         self._completion_timer.setSingleShot(True)
@@ -287,6 +296,14 @@ class MainWindow(QMainWindow):
         # Ctrl+N 新建对话（TUI 键位迁移；_on_new_session_clicked 已含空态守卫）
         self._sc_new_session = QShortcut(QKeySequence("Ctrl+N"), self)
         self._sc_new_session.activated.connect(self._on_new_session_clicked)
+
+    def closeEvent(self, event) -> None:
+        # 关窗即停挂起的防抖/卸载 timer：singleShot 补全 timer 若留在父级 Qt app 里，
+        # 会泵进下一个测试的事件循环并访问已析构/缺字段的 runtime（测试隔离卫生）
+        self._completion_timer.stop()
+        self._esc_run_timer.stop()
+        self._esc_undo_timer.stop()
+        super().closeEvent(event)
 
     def _on_new_session_clicked(self) -> None:
         """新会话按钮：空态（无关联项目）时只提示，不崩。"""
@@ -336,7 +353,47 @@ class MainWindow(QMainWindow):
 
         self.presenter.run_command(_run, tid)
 
+    def _on_set_auto_compaction(self) -> None:
+        """高级菜单: auto_compaction 上下文自动压缩阈值（写**全局** jarvis.json，agent 重建后生效）"""
+        if self.presenter is None:
+            self.status_label.setText(
+                "当前没有活动项目，请先「打开项目 / 新建项目」后再设置自动压缩阈值。"
+            )
+            return
+        cfg = self.presenter.runtime.config
+        current = int(getattr(cfg, "auto_compaction", 0) or 0)
+        from PySide6.QtWidgets import QInputDialog
+
+        # 写入目标 = 全局 ~/.jarvis/jarvis.json（auto_compaction 为全局配置，对所有项目生效；
+        # 预填值 current 仍取活动项目合并后的 Config——它才是该项目实际生效值）
+        # PySide6 SIP 绑定不支持 min=/max= keyword（实证：getInt(..., min=0) 抛
+        # AttributeError: unsupported keyword 'min'；value=/step= 可用）→ 全位置传参
+        value, ok = QInputDialog.getInt(
+            self,
+            "自动压缩上下文阈值（全局配置）",
+            "上下文 token 数超过该值时自动压缩历史（0 = 关闭）",
+            current, 0, 200000, 1000,
+        )
+        if not ok:
+            return
+        from src.config import save_auto_compaction
+
+        try:
+            written = save_auto_compaction(value)
+        except OSError as exc:
+            self.status_label.setText("自动压缩阈值写入失败: " + str(exc))
+            return
+        self.status_label.setText(
+            "自动压缩阈值 = " + str(value)
+            + "（全局配置，对所有项目生效）已写入 " + str(written)
+            + "（重启应用后生效；若项目级 jarvis.json 显式配置了 auto_compaction，该项目将覆盖全局值）"
+        )
+
     def _rebuild_pane(self, tid: str) -> None:
+        # #4：undo/重建会拆掉审批卡片 widget；若 worker 仍停在 CardSession.wait，
+        # 必须唤醒放弃（gate 才能 finish），否则该 thread 后续消息永排队不发出。
+        if self.presenter is not None:
+            self.presenter.wake_parked(tid)
         p = self.panes.get(tid)
         if p is None:
             return
@@ -635,7 +692,17 @@ class MainWindow(QMainWindow):
         self.panes[tid] = p
         return p
 
+    def _save_active_draft(self) -> None:
+        """#1: 把当前未提交输入（文本+图片条）记为活动会话草稿（纯写 dict，无去重逻辑）。"""
+        if self.active_tid is None:
+            return
+        self._drafts[self.active_tid] = (
+            self.input_bar.edit.toPlainText(),
+            list(self.image_strip.paths()),
+        )
+
     def _switch_to(self, tid: str) -> None:
+        self._save_active_draft()  # #1: 先记「上一个」会话的未提交草稿（此刻 active_tid 还指向旧会话）
         p = self._ensure_pane(tid)
         self.active_tid = tid
         self.stack.setCurrentWidget(p)
@@ -657,6 +724,12 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"{proj} · 会话 {tid}{note}" if proj else f"会话 {tid}{note}")
         self._refresh_mode_badges()
         self._refresh_running_badge()
+        # #1: 恢复目标会话的未提交草稿（无记录 = 清空输入区与图片条）
+        text, imgs = self._drafts.get(tid, ("", []))
+        self.input_bar.edit.setPlainText(text)
+        self.image_strip.clear()
+        for _img in imgs:
+            self.image_strip.add_image(_img)
 
     # ---- 项目树（工单 04：项目→会话；点项目名=切换，+/−=展开；右键各自菜单）
     def _active_session_rows(self) -> list[tuple[str, bool]]:
@@ -714,9 +787,11 @@ class MainWindow(QMainWindow):
                     leaf.setToolTip(0, tid)
                     pitem.addChild(leaf)
             else:
+                running = set(self._workspace.running_sessions(root))
                 for tid, name in self._workspace.sessions_for(root):
                     s_mark = {"ok": "● ", "fail": "✗ "}.get(self._sess_done.get((rp_norm, tid), ""), "")
-                    leaf = QTreeWidgetItem([f"{s_mark}{name}"])
+                    run = " ⚡" if tid in running else ""
+                    leaf = QTreeWidgetItem([f"{s_mark}{name}{run}"])
                     leaf.setData(0, _TID_ROLE, tid)
                     leaf.setToolTip(0, tid)
                     pitem.addChild(leaf)
@@ -771,6 +846,7 @@ class MainWindow(QMainWindow):
         if pres is None:
             return
         self.presenter = pres
+        self._compact_action.setEnabled(True)  # 空态→活跃：恢复自动压缩菜单项
         self._notifier.policy = self._active_policy()
         # 空态恢复：刚无关联项目时（启动落空态）切项目后重新启用输入区
         self.input_bar.edit.setEnabled(True)
@@ -1054,18 +1130,21 @@ class MainWindow(QMainWindow):
         user_input, user_input_fallback, _ = build_image_submit(payload, images)
         tid = self.active_tid
         verdict = self.presenter.start_turn(
-            tid, payload, user_input=user_input, user_input_fallback=user_input_fallback
+            tid, payload,
+            user_input=user_input, user_input_fallback=user_input_fallback,
+            images=images,  # #2: 排队载荷带图，回合结束重投时图片不丢
         )
         self.input_bar.set_cancel_enabled(verdict == "started")
         if verdict == "started":
             p = self._ensure_pane(tid)
             p.append_user(payload, images or None)
-            if images:
-                self.image_strip.clear()
             self.status_label.setText("已发送，执行中…")
         else:
             # 排队：用户气泡等回合真正开跑（queued_flush）才进窗，期间固定在队列条
             self.status_label.setText("已排队，回合结束后自动续发")
+        # #2 根因修复：提交后无条件清空图片条——排队载荷的图已存进队列 tuple（清空无损）；
+        # 旧图片条残留到「切会话再提交」是图片发到错误对话的泄漏路径
+        self.image_strip.clear()
         self._refresh_queue_strip()
 
     # ---- slash 命令路由（工单 07）：输入框 /xxx 走本地命令，不再发给 AI
@@ -1310,14 +1389,52 @@ class MainWindow(QMainWindow):
         )
         self.queue_strip.set_items(items)
 
-    def _on_queued_flush(self, tid: str, text: str) -> None:
-        """排队消息重投入门 → 用户气泡此刻才进对话窗。"""
-        self._ensure_pane(tid).append_user(text)
+    def _on_queued_flush(self, tid: str, text: str, images: list[str] | None) -> None:
+        """排队消息重投入门 → 用户气泡此刻才进对话窗（随附图片不丢）。"""
+        self._ensure_pane(tid).append_user(text, images or None)
+        self._refresh_queue_strip()
+
+    def _on_queue_jump(self, text: str) -> None:
+        """插队（codex queued-chip Steer 语义）：撤出 FIFO 队列 → 立即注入插队缓存
+        （JumpInRegistry），当前回合的下一步模型调用前由
+        MessageQueueJumpInMiddleware drain 注入——不等回合结束。带图条目以
+        路径引用 fallback 文本形式入缓存（registry 只存 str）。"""
+        if not self.presenter or not self.active_tid:
+            return
+        tid = self.active_tid
+        item = self.presenter.gate.pull_out_full(tid, text)
+        if item is None:
+            # 竞态：点击到处理之间条目已被重投/消费 → 只刷新条
+            self._refresh_queue_strip()
+            return
+        raw, images = item
+        if not self.presenter.gate.is_running(tid):
+            # 边界兜底（正常不可达：有排队项即有 running 回合）：回合已结束 →
+            # 撤出队列等价于立即重投
+            self.presenter.start_turn(tid, raw, images=images or None)
+            self._ensure_pane(tid).append_user(raw, images or None)
+            self.status_label.setText("已发送，执行中…")
+        else:
+            payload = raw
+            if images:
+                _, fallback, _ = build_image_submit(raw, images)
+                payload = fallback or raw
+            self.presenter.runtime.registry.push(tid, payload)
+            self._ensure_pane(tid).append_user(raw, images or None)
+            self.status_label.setText("已插队：注入当前回合的下一步（图片以路径引用）" if images else "已插队：注入当前回合的下一步")
         self._refresh_queue_strip()
 
     def _on_queue_pull_out(self, text: str) -> None:
-        if self.presenter and self.active_tid and self.presenter.gate.pull_out(self.active_tid, text):
-            self.input_bar.edit.setPlainText(text)
+        res = (
+            self.presenter.gate.pull_out_full(self.active_tid, text)
+            if self.presenter and self.active_tid
+            else None
+        )
+        if res is not None:
+            self.input_bar.edit.setPlainText(res[0])
+            self.image_strip.clear()
+            for _img in res[1]:
+                self.image_strip.add_image(_img)
             self.input_bar.edit.setFocus()
             self.status_label.setText("已撤出队列，返回输入框")
         self._refresh_queue_strip()

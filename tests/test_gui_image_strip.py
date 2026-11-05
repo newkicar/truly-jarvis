@@ -9,8 +9,8 @@ from src.gui.image_strip import build_image_submit
 
 # 1x1 红点 PNG（预编码，避免测试生成图片的依赖）
 _TINY_PNG = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABy60mGAAAAFUlEQVQI12NgYFBgYAAAAQsAAAAA"
-    "S1ZCdwAAAABJRU5ErkJggg=="
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ"
+    "/pLvAAAAAElFTkSuQmCC"
 )
 
 
@@ -180,3 +180,63 @@ def test_submit_with_image_builds_multimodal_payload(qapp, monkeypatch):
         assert second is not None and second.widget() is not None  # 缩略图行（QScrollArea 包裹宿主）
     finally:
         cleanup_home(home)
+
+
+
+# ---------------------------------------------------------------- #3：图片预览居中
+def test_image_preview_centered_on_screen(qtbot):
+    """#3：预览窗 show 前显式居中到当前屏 availableGeometry（不偏右/不出屏）。"""
+    from src.gui.image_widgets import ImagePreview
+
+    d = _tmp_dir()
+    p = _png_path(d)
+    prev = ImagePreview(p)
+    qtbot.addWidget(prev)
+    # 窗口被钉在（缩放后）pixmap 尺寸上
+    assert prev.size() == prev.label.pixmap().size()
+    # 位置 = availableGeometry 中心 − 窗口半尺寸（修复前为默认位置 (0,0)）
+    from PySide6.QtCore import QPoint
+    scr = prev.screen().availableGeometry()
+    assert prev.pos() == scr.center() - QPoint(prev.width() // 2, prev.height() // 2)
+
+
+def test_image_preview_missing_file_still_constructs(qtbot):
+    """pixmap 加载失败（文件不存在）：不定尺寸、不居中，仍可构造不崩。"""
+    from src.gui.image_widgets import ImagePreview
+
+    prev = ImagePreview("nonexistent_dir_xyz/missing.png")
+    qtbot.addWidget(prev)
+    assert prev.label.pixmap().isNull()
+
+
+def test_chip_rightclick_removes_leftclick_keeps(qtbot):
+    """#5：右键缩略图=移除（与 ✕ 同路），左键=预览（不移除）。"""
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+
+    from src.gui.image_widgets import ImageStrip
+
+    d = _tmp_dir()
+    p = _png_path(d, "r.png")
+    strip = ImageStrip()
+    qtbot.addWidget(strip)
+    strip.add_image(p)
+    chip = strip._chips[0]
+
+    ev_right = QMouseEvent(
+        QEvent.Type.MouseButtonPress, QPointF(1, 1),
+        Qt.MouseButton.RightButton, Qt.MouseButton.RightButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    chip.label.mousePressEvent(ev_right)
+    assert strip.paths() == []            # 右键=移除
+
+    strip.add_image(p)
+    chip2 = strip._chips[0]
+    ev_left = QMouseEvent(
+        QEvent.Type.MouseButtonPress, QPointF(1, 1),
+        Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    chip2.label.mousePressEvent(ev_left)
+    assert strip.paths() == [p]           # 左键=预览（弹 ImagePreview 无害），不移除

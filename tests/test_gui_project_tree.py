@@ -24,12 +24,15 @@ class FakeWorkspace:
         self._sessions = sessions_by_root    # {root: [(tid, label)]}
         self._active = active
         self.switch_log: list[str] = []
+        self.running_by_root: dict[str, list[str]] = {}
 
     def projects(self):
         return self._projects
 
     def sessions_for(self, root):
         return self._sessions.get(str(Path(root)), [])
+    def running_sessions(self, root):
+        return list(self.running_by_root.get(str(Path(root)), []))
 
     def active_root(self):
         return self._active
@@ -132,3 +135,25 @@ def test_project_context_menu_items(qapp, monkeypatch):
     assert "置顶" in texts
     assert "在资源管理器打开" in texts
     assert any("移除" in t for t in texts)
+
+def test_running_sessions_marked_with_bolt(qapp, monkeypatch):
+    """#6: 执行中会话侧栏 ⚡ 标记——非活动项目走 workspace.running_sessions，活动项目走 presenter.gate。"""
+    _rt, p, ws, win = _mk(qapp, monkeypatch)
+    root_b = f"{str(_rt.config.project_root)}/B"
+    ws.running_by_root[str(Path(root_b))] = ["sB1"]
+    win.refresh_tree()
+    assert any("B会话" in t and "⚡" in t for t in win.session_leaf_texts())
+    p.gate.try_start("sA1", "x")
+    try:
+        win.refresh_tree()
+        assert any("sA1" in t and "⚡" in t for t in win.session_leaf_texts())
+    finally:
+        p.gate.finish("sA1")
+    win.refresh_tree()
+    # sA1 完成 → 其会话无 ⚡；但 sB1 仍在跑 → 保留 ⚡
+    assert not any("sA1" in t and "⚡" in t for t in win.session_leaf_texts())
+    assert any("B会话" in t and "⚡" in t for t in win.session_leaf_texts())
+    # 清理 B 的运行状态，确认全部 ⚡ 消失
+    ws.running_by_root[str(Path(root_b))] = []
+    win.refresh_tree()
+    assert not any("⚡" in t for t in win.session_leaf_texts())

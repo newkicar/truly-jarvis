@@ -42,8 +42,9 @@ class UiBridge(QObject):
     switch_session = Signal(str, str)
     # 任务完成三通道通知载荷（TaskDoneEvent：会话回合/定时任务，含后台项目；queued 信号 worker→主线程安全）
     task_done = Signal(object)
-    # 排队消息重投入门（tid, 原文）→ 主线程把用户气泡补入 pane；气泡仅在回合真正开跑时上屏（gui15 G5）
-    queued_flush = Signal(str, str)
+    # 排队消息重投入门（tid, 原文, 图片列表）→ 主线程把用户气泡补入 pane；气泡仅在回合真正开跑时上屏（gui15 G5；
+    # #2：图片随队列载荷走，排队重投不丢图、不跨会话泄漏；第 3 参为 list[str]，声明 object 以便跨线程队列）
+    queued_flush = Signal(str, str, object)
     # 命令 worker 完成后 → 主线程重同步模式面（菜单 YOLO 勾选 / [YOLO] 徽标；
     # /yolo 等改共享 permission_state 的斜杠命令在 worker 线程执行，UI 三件套须回主线程单一同步点刷新）
     sync_modes = Signal()

@@ -73,13 +73,16 @@ class _FakeMultiWS:
     def has_running(self):
         return False
 
+    def running_sessions(self, root):
+        return []
+
     def new_dir(self, name, parent):
         from pathlib import Path
 
         self.calls.append(("new", name, parent))
         return Path(parent) / name
 
-    def open_dir(self, chosen, up_to=None):
+    def open_dir(self, chosen):
         from pathlib import Path
 
         self.calls.append(("open", chosen))
@@ -179,7 +182,28 @@ def test_mainwindow_with_real_controller_no_crash(qapp, monkeypatch):
     try:
         class FR:
             def __init__(self, root):
-                self.config = SimpleNamespace(project_root=root, mcps={}, model_label="fake", vault_path=None)
+                from pathlib import Path
+
+                root = Path(root)  # registry 里存的是 str
+                # config 必须与 _fake_runtime 同套字段：MainWindow 的 120ms 补全 timer
+                # 会泵进下一个测试的 qtbot 事件循环并读 config.memory_dir 等字段，
+                # 缺字段 → AttributeError 被 Qt 事件循环捕获 → pytest-qt 归因给下一个测试（flaky 污染）。
+                self.config = SimpleNamespace(
+                    project_root=root,
+                    execution_max_steps=200,
+                    model_image_input="auto",
+                    mcps={},
+                    model_label="fake",
+                    vault_path=None,
+                    memory_dir=root / "memory",
+                    schedules_dir=root / "schedules",
+                    api_key="sk-fake",
+                    base_url="https://fake.example/v1",
+                    model_id="fake-model",
+                    rag_ollama_base_url="http://localhost:11434",
+                    rag_embed_model="bge-small-zh-v1.5",
+                    checkpoint_db=root / "checkpoints.sqlite",
+                )
                 self.agent = None
                 self.permission_state = {}
                 self.mcp_tool_count = 0

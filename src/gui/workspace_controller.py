@@ -71,6 +71,12 @@ class StaticWorkspace:
     def has_running(self) -> bool:
         return bool(self._presenter.gate.running_threads())
 
+    def running_sessions(self, root: Any) -> list[str]:
+        """List of thread ids currently running under this project root (#6: session tree background-running marker)."""
+        if Path(str(root)) == self._root:
+            return list(self._presenter.gate.running_threads())
+        return []
+
     # ---- 项目节点操作（单项目：多为 no-op；多项目版经注册表落地）
     def project_name(self, root: Any) -> str:
         return Path(str(root)).name
@@ -88,15 +94,15 @@ class StaticWorkspace:
         pass
 
     # ---- 打开/新建（单项目无注册表：只做解析+骨架，登记/切换为 no-op，避免菜单崩）
-    def resolve_root(self, chosen_dir: Any, *, up_to: Any = None):
+    def resolve_root(self, chosen_dir: Any):
         from src.gui.workspace import resolve_open_root
 
-        return resolve_open_root(chosen_dir, up_to=up_to)
+        return resolve_open_root(chosen_dir)
 
-    def open_dir(self, chosen_dir: Any, *, up_to: Any = None, now: float | None = None) -> Path:
+    def open_dir(self, chosen_dir: Any, *, now: float | None = None) -> Path:
         from src.gui.workspace import init_project, resolve_open_root
 
-        d = resolve_open_root(chosen_dir, up_to=up_to)
+        d = resolve_open_root(chosen_dir)
         if d.needs_init:
             init_project(d.root)
         return d.root
@@ -197,17 +203,28 @@ class WorkspaceController:
     def has_running(self) -> bool:
         return self._has_running()
 
+    def running_sessions(self, root: Any) -> list[str]:
+        """List of thread ids currently running under this project root (#6: session tree background-running marker)."""
+        r = Path(str(root))
+        e = self._manager.runtimes.get(r)
+        if e is not None and e.presenter is not None and not getattr(e.runtime, "closed", False):
+            try:
+                return list(e.presenter.gate.running_threads())
+            except Exception:
+                return []
+        return []
+
     # ---- 项目增删（菜单用）
-    def open_dir(self, chosen_dir: Any, *, up_to: Any = None, now: float | None = None) -> Path:
+    def open_dir(self, chosen_dir: Any, *, now: float | None = None) -> Path:
         """打开目录：判定根 +（需时）骨架 + 登记。返回项目根（UI 再 switch_project）。"""
-        return open_project(self.registry, chosen_dir, now=now, up_to=up_to)
+        return open_project(self.registry, chosen_dir, now=now)
 
     def new_dir(self, name: str, parent_dir: Any, *, now: float | None = None) -> Path:
         """新建项目：建 <父>/<名> + 骨架 + 登记。返回项目根（UI 再 switch_project）。"""
         return new_project(self.registry, name, parent_dir, now=now)
 
-    def resolve_root(self, chosen_dir: Any, *, up_to: Any = None):
-        return resolve_open_root(chosen_dir, up_to=up_to)
+    def resolve_root(self, chosen_dir: Any):
+        return resolve_open_root(chosen_dir)
 
     # ---- 项目节点操作（委托注册表）
     def project_name(self, root: Any) -> str:

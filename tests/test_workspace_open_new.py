@@ -36,19 +36,20 @@ from src.gui.workspace import OpenDecision, init_project, new_project, open_proj
 def test_resolve_self_has_jarvis():
     base, proj, _sub, _bare, clean = _tree()
     try:
-        d = resolve_open_root(proj, up_to=base)
+        d = resolve_open_root(proj)
         assert isinstance(d, OpenDecision)
         assert d.root == proj.resolve() and d.needs_init is False
     finally:
         clean()
 
 
-def test_resolve_ancestor_has_jarvis():
+def test_resolve_subfolder_no_longer_falls_back_to_ancestor():
     base, _proj, sub, _bare, clean = _tree()
     try:
-        d = resolve_open_root(sub, up_to=base)
-        assert d.root == _proj.resolve()  # 认定属于上级项目根
-        assert d.needs_init is False
+        d = resolve_open_root(sub)
+        # 「开哪个文件夹 = 哪个文件夹就是项目根」：jarvis 项目的子文件夹不再回落上级项目根
+        assert d.root == sub.resolve()
+        assert d.needs_init is True
     finally:
         clean()
 
@@ -56,7 +57,7 @@ def test_resolve_ancestor_has_jarvis():
 def test_resolve_neither_needs_init():
     base, _proj, _sub, bare, clean = _tree()
     try:
-        d = resolve_open_root(bare, up_to=base)
+        d = resolve_open_root(bare)
         assert d.root == bare.resolve() and d.needs_init is True
     finally:
         clean()
@@ -81,7 +82,7 @@ def test_open_project_registers_active_root():
     base, proj, _sub, _bare, clean = _tree()
     try:
         reg = ProjectRegistry(base / "projects.json")
-        root = open_project(reg, proj, now=1.0, up_to=base)
+        root = open_project(reg, proj, now=1.0)
         assert root == proj.resolve()
         assert reg.active() == str(proj.resolve())
         assert len(reg.entries()) == 1
@@ -93,7 +94,7 @@ def test_open_bare_inits_then_registers():
     base, _proj, _sub, bare, clean = _tree()
     try:
         reg = ProjectRegistry(base / "projects.json")
-        root = open_project(reg, bare, now=1.0, up_to=base)
+        root = open_project(reg, bare, now=1.0)
         assert (bare / "jarvis.json").is_file()  # 缺配置 → 骨架已补
         assert root == bare.resolve()
         assert reg.get(root) is not None
@@ -105,8 +106,8 @@ def test_open_dedupe_no_duplicate_entry():
     base, proj, _sub, _bare, clean = _tree()
     try:
         reg = ProjectRegistry(base / "projects.json")
-        open_project(reg, proj, now=1.0, up_to=base)
-        open_project(reg, proj, now=2.0, up_to=base)
+        open_project(reg, proj, now=1.0)
+        open_project(reg, proj, now=2.0)
         assert len(reg.entries()) == 1
         assert reg.get(proj)["last_opened"] == 2.0
     finally:

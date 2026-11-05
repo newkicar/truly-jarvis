@@ -286,44 +286,76 @@ def _file_diff(inv, runtime):
 # ---------------------------------------------------------------- owner 侧装配
 
 
-def make_card_ask(runtime, bridge) -> Callable[[Any, str], dict | None]:
-    """presenter 的 ask_action 实现：create_card 信号把卡片挂到对应 pane，
-    worker 阻塞等 CardSession；返回决策 dict 或 None（放弃本轮）。"""
-    from src.tui_format import permission_preview
+class CardAsk:
+    """presenter ask_action 实现（有状态）：worker 阻塞 CardSession 等决策；
+    另按线程登记停车中的 ask —— 回合被停止/pane 被重建时，wake_parked(tid)
+    唤醒阻塞的 ask（放弃，result=None），避免停掉的回合永远卡在
+    CardSession.wait、gate 永不 finish、后续消息全部排队不发出（#4）。"""
 
-    cards: dict[str, CardSession] = {}
+    def __init__(self, runtime: Any, bridge: Any) -> None:
+        self._runtime = runtime
+        self._bridge = bridge
+        self._cards: dict[str, CardSession] = {}
+        self._parked: dict[str, list[tuple[CardSession, Callable[[], None]]]] = {}
+        self._park_lock = threading.Lock()
 
-    def ask(inv: Any, tid: str) -> dict | None:
+    def __call__(self, inv: Any, tid: str) -> dict | None:
+        from src.tui_format import permission_preview
+
         preview = permission_preview(
             inv,
-            vault_path=runtime.config.vault_path,
-            workspace_root=runtime.config.project_root,
+            vault_path=self._runtime.config.vault_path,
+            workspace_root=self._runtime.config.project_root,
         )
         cs = CardSession()
         card_id = uuid.uuid4().hex
-        cards[card_id] = cs
-        bridge.notify.emit(f"等待审批 {inv.name}…")
+        self._cards[card_id] = cs
+        self._bridge.notify.emit(f"等待审批 {inv.name}…")
 
         def on_decision(result: dict) -> None:
             cs.result = result
-            bridge.focus_input.emit(tid)
+            self._bridge.focus_input.emit(tid)
             cs.event.set()
 
         def on_abandon() -> None:
             cs.result = None
-            bridge.focus_input.emit(tid)
+            self._bridge.focus_input.emit(tid)
             cs.event.set()
 
-        diff = _file_diff(inv, runtime)
+        diff = _file_diff(inv, self._runtime)
         payload = (inv, preview, card_id, on_decision, on_abandon, diff)
-        bridge.create_card.emit(tid, payload, card_id)
-        cs.event.wait()
-        cards.pop(card_id, None)
+        with self._park_lock:
+            self._parked.setdefault(tid, []).append((cs, on_abandon))
+        try:
+            self._bridge.create_card.emit(tid, payload, card_id)
+            cs.event.wait()
+        finally:
+            with self._park_lock:
+                entries = self._parked.get(tid)
+                if entries:
+                    try:
+                        entries.remove((cs, on_abandon))
+                    except ValueError:  # 已被 wake_parked 整表弹出
+                        pass
+            self._cards.pop(card_id, None)
         return cs.result
 
-    return ask
+    def wake_parked(self, tid: str) -> int:
+        """唤醒线程上所有停车中的 ask：逐个走 on_abandon（放弃 =「放弃本轮」
+        按钮的结果，worker 侧 resume 收到 None 即放弃本轮），返回唤醒条数。
+        线程无停车/已唤醒过 = 0（幂等，可重复调用）。"""
+        with self._park_lock:
+            entries = self._parked.pop(tid, [])
+        for _cs, on_abandon in entries:
+            on_abandon()
+        return len(entries)
 
 
+def make_card_ask(runtime, bridge) -> Callable[[Any, str], dict | None]:
+    """presenter 的 ask_action 工厂：返回 CardAsk 可调用对象
+    （旧签名不变，presenter_wiring / card_widget_from_payload 零改动；
+    状态从闭包挪到实例，暴露 wake_parked 供停止/重建路径唤醒停车）。"""
+    return CardAsk(runtime, bridge)
 def card_widget_from_payload(payload) -> ApprovalCard:
     """UiBridge.create_card 载荷 → ApprovalCard（主线程构造入 pane）。"""
     inv, preview, _card_id, on_decision, on_abandon = payload[:5]

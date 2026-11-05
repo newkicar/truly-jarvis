@@ -48,7 +48,7 @@ def base():
         shutil.rmtree(b, ignore_errors=True)
 
 
-# ---- 1. jarvis_project_root_of：有效性判定（目录 or 上 4 级内有 jarvis.json）
+# ---- 1. jarvis_project_root_of：有效性判定（仅目录本身，不再向上查找）
 
 
 def test_root_of_missing_dir_is_none():
@@ -62,12 +62,12 @@ def test_root_of_dir_with_jarvis_json(base: Path):
     assert jarvis_project_root_of(p) == p
 
 
-def test_root_of_finds_ancestor_jarvis_json(base: Path):
-    # jarvis.json 在 3 级祖先 → 判为该祖先（子目录误登记时回落到项目根）
+def test_root_of_no_longer_finds_ancestor_jarvis_json(base: Path):
+    # jarvis.json 在 3 级祖先 → 不再回落祖先（判定只看目录本身；子文件夹不是有效项目）
     (base / "jarvis.json").write_text("{}", encoding="utf-8")
     z = base / "x" / "y" / "z"
     z.mkdir(parents=True)
-    assert jarvis_project_root_of(z) == base
+    assert jarvis_project_root_of(z) is None
 
 
 def test_root_of_stale_deep_chain_is_none(base: Path):
@@ -145,7 +145,7 @@ class _EmptyFakeWS:
     def new_dir(self, name, parent):
         return Path(parent) / name
 
-    def open_dir(self, chosen, up_to=None):
+    def open_dir(self, chosen):
         return Path(str(chosen))
 
     def project_name(self, root):

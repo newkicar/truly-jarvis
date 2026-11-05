@@ -1,7 +1,7 @@
 """图片附件条 Qt 部件（工单 07）：ImageStrip（缩略图 chip 行）+ ImagePreview（无边框放大窗）。"""
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QSize, Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
@@ -14,6 +14,18 @@ from PySide6.QtWidgets import (
 
 _THUMB = 56  # 输入区缩略图边长
 _BUBBLE = 96  # 消息气泡内缩略图高度
+
+
+def center_on_screen(w: QWidget) -> None:
+    """顶层窗在 show 前显式居中到当前屏 availableGeometry（按 widget 当前尺寸）。
+
+    Windows/Qt 给新建 frameless 顶层窗的默认摆放位置偏右且可能超出屏幕
+    （图片预览出屏 bug，#3）-> show 前显式 move()；尺寸基准 = w.size()。
+    （Qt 惯例：QMessageBox 等即按 availableGeometry 居中。）"""
+    scr = w.screen().availableGeometry() if w.screen() else None
+    if scr is None:
+        return
+    w.move(scr.center() - QPoint(w.width() // 2, w.height() // 2))
 
 
 def _thumb_pixmap(path: str, side: int) -> QPixmap:
@@ -33,6 +45,7 @@ class _Chip(QFrame):
     """单个缩略图 chip（56 圆角 + ✕）；点图 → zoom_requested(path)。"""
 
     zoom_requested = Signal(str)
+    remove_requested = Signal(str)  # 右键 chip 图 → 移除（#5；左键=预览语义不变）
 
     def __init__(self, path: str, side: int = _THUMB, parent=None) -> None:
         super().__init__(parent)
@@ -48,7 +61,10 @@ class _Chip(QFrame):
         self.label.setObjectName("image-thumb")
 
         def _click(_e=None) -> None:
-            self.zoom_requested.emit(path)
+            if _e is not None and _e.button() == Qt.MouseButton.RightButton:
+                self.remove_requested.emit(path)
+            else:
+                self.zoom_requested.emit(path)
 
         self.label.mousePressEvent = _click  # noqa: SLF001 — 简化点击→放大
         lay.addWidget(self.label)
@@ -57,9 +73,6 @@ class _Chip(QFrame):
         self.btn_rm.setFixedHeight(16)
         self.btn_rm.setToolTip("移除图片")
         lay.addWidget(self.btn_rm)
-
-    def remove_requested(self) -> None:  # pragma: no cover (接口占位)
-        pass
 
 
 class ImageStrip(QFrame):
@@ -71,6 +84,7 @@ class ImageStrip(QFrame):
         super().__init__(parent)
         self._paths: list[str] = []
         self._chips: list[_Chip] = []
+        self._preview: ImagePreview | None = None  # #3：最近一个预览窗（持引用）
         self._lay = QHBoxLayout(self)
         self._lay.setContentsMargins(4, 2, 4, 2)
         self._lay.setSpacing(6)
@@ -82,6 +96,7 @@ class ImageStrip(QFrame):
         self._paths.append(path)
         chip = _Chip(path, side=_THUMB)
         chip.zoom_requested.connect(self._zoom)
+        chip.remove_requested.connect(self.remove_image)  # #5 右键缩略图=移除（与 ✕ 同路）
         chip.btn_rm.clicked.connect(lambda: self.remove_image(path))
         self._chips.append(chip)
         self._lay.addWidget(chip)
@@ -114,7 +129,8 @@ class ImageStrip(QFrame):
         return list(self._paths)
 
     def _zoom(self, path: str) -> None:
-        ImagePreview(path).show()
+        self._preview = ImagePreview(path)  # 持引用：WA_DeleteOnClose 顶层窗，防包装器被 GC
+        self._preview.show()
 
     @staticmethod
     def bubble_pixmap(path: str, height: int = _BUBBLE) -> QPixmap:
@@ -147,6 +163,11 @@ class ImagePreview(QWidget):
         self.label.mousePressEvent = lambda _e: self.close()  # noqa: SLF001
         lay.addWidget(self.label)
 
+        # 居中（#3）：frameless 顶层窗默认摆放偏右且可能出屏 → 显式定尺寸 + 居中
+        if not pm.isNull():
+            self.setFixedSize(pm.size())
+            center_on_screen(self)
+
     def keyPressEvent(self, e) -> None:  # noqa: N802
         if e.key() in (Qt.Key_Escape, Qt.Key_Return, Qt.Key_Enter):
             self.close()
@@ -154,4 +175,4 @@ class ImagePreview(QWidget):
             super().keyPressEvent(e)
 
 
-__all__ = ["ImageStrip", "ImagePreview", "_thumb_pixmap"]
+__all__ = ["ImageStrip", "ImagePreview", "center_on_screen", "_thumb_pixmap"]
