@@ -115,6 +115,14 @@ class RuntimeRegistry:
         k = self._active_key
         return self._entries.get(k) if k is not None else None
 
+    def deactivate(self) -> None:
+        """清活动指针（活动项目被「从列表移除」后调用）：只清不关、不重建。
+
+        ProjectRegistry 侧的登记项与 active 字段已由 registry.remove() 清理；
+        这里防 close_idle/close_all/active_entry 命中陈旧 key。
+        """
+        self._active_key = None
+
     def close_idle(self) -> int:
         """关一切「非活动 + idle + 未关」的 runtime；busy/活动/已关一律跳过。返回关闭数。"""
         n = 0

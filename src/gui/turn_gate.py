@@ -83,6 +83,24 @@ class TurnGate:
                     return item
             return None
 
+    # ---- 队列清除（项目移除/释放路径：排队消息随项目一起放弃）
+    def clear_queue(self, tid: str) -> int:
+        """弹空该 thread 的队列。返回清除条数（无队列 = 0，幂等）。"""
+        with self._lock:
+            q = self._queues.get(tid)
+            if not q:
+                return 0
+            n = len(q)
+            q.clear()
+            return n
+
+    def clear_all_queues(self) -> int:
+        """弹空**全部** thread 的队列（整项目释放用）。返回清除总条数。"""
+        with self._lock:
+            n = sum(len(q) for q in self._queues.values())
+            self._queues.clear()
+            return n
+
     def is_running(self, tid: str) -> bool:
         with self._lock:
             return tid in self._running

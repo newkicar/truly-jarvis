@@ -146,6 +146,24 @@ def test_close_idle_skips_active_even_if_busy():
         _clean(a)
 
 
+def test_deactivate_clears_active_pointer_only():
+    a = _mkroot("a")
+    b = _mkroot("b")
+    try:
+        reg = RuntimeRegistry(_reg_factory([]))
+        ea = reg.activate(a)
+        reg.activate(b)
+        assert reg.active_key() is not None
+        reg.deactivate()                      # 活动项目被「从列表移除」后清活动指针
+        assert reg.active_key() is None
+        assert reg.active_entry() is None
+        assert ea.runtime.closed is False     # 解绑 ≠ 关闭（关闭由调用方负责）
+        e2 = reg.activate(a)                  # 再 activate 复用原 entry（零重建）
+        assert e2 is ea
+    finally:
+        _clean(a)
+
+
 def test_close_all_closes_everything():
     a = _mkroot("a")
     b = _mkroot("b")

@@ -908,8 +908,30 @@ class MainWindow(QMainWindow):
             self.refresh_tree()
 
     def _remove_project_item(self, root) -> None:
-        self._workspace.remove_project(Path(str(root)))  # 只删注册表项，不删项目文件
+        """从列表移除 = 同时解除该项目的占用（关 runtime / 停调度器 / 取消回合 / 清队列；
+        项目文件一律不碰，用户随后即可删除文件夹）。
+
+        返回值 = 新的活动项目根：非 None → 跟随（移除非活动项目 = 当前活动根，
+        _do_switch_project 早退无操作）；None → 落空态（与启动时无活动项目同款处理）。
+        """
+        new_active = self._workspace.remove_project(Path(str(root)))
+        if new_active is None:
+            self._enter_empty_state()
+        else:
+            self._do_switch_project(Path(str(new_active)))
         self.refresh_tree()
+
+    def _enter_empty_state(self) -> None:
+        """空态（无活动项目）：置灰输入区 / 自动压缩菜单，清 pane，标题回落 JARVIS；
+        空态提示由 refresh_tree 里的 _refresh_empty_hint 显示。打开/新建项目时由 _do_switch_project 恢复。"""
+        self.presenter = None
+        self.active_tid = None
+        self._compact_action.setEnabled(False)
+        self.input_bar.edit.setEnabled(False)
+        self.input_bar.btn_send.setEnabled(False)
+        self._notifier.policy = self._active_policy()
+        self._teardown_panes()
+        self._update_title()
 
     # ---- 项目右键菜单（重命名 / 置顶 / 资源管理器打开 / 移除）
     def _build_project_menu(self, root):

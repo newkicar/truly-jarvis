@@ -103,3 +103,19 @@ def test_pull_out_full_returns_payload_or_none():
     assert g.pull_out_full("a", "nope") is None
     assert g.pull_out_full("a", "m2") == ("m2", ["p.png"])
     assert g.pull_out_full("a", "m2") is None
+
+def test_clear_queue_and_clear_all_queues():
+    """项目移除/释放路径：clear_queue 弹空返回条数（空=0、幂等）；clear_all_queues 弹空全部 thread。"""
+    g = TurnGate()
+    g.try_start("a", "m1")
+    g.try_start("a", "q1")
+    g.try_start("a", "q2")
+    g.try_start("b", "n1")
+    g.try_start("b", "p1")
+    assert g.clear_queue("a") == 2
+    assert g.clear_queue("a") == 0            # 幂等
+    assert g.queued_texts("a") == []
+    assert g.queued_texts("b") == ["p1"]     # 他 thread 不受影响（n1 是已开始的回合消息，不在队列）
+    assert g.clear_all_queues() == 1          # 只剩 b
+    assert g.queued_texts("b") == []
+    assert g.clear_all_queues() == 0

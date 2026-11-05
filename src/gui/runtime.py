@@ -269,6 +269,9 @@ class GuiPresenter:
         """首轮成功结束 → 后台 AI 命名（已有短名/摘要的不动；失败静默回落）。"""
         if not ok:
             return
+        if getattr(self.runtime, "closed", False):
+            # 项目已释放（从列表移除 / app 收尾）：不读已关的 checkpointer DB，跳过命名
+            return
         if self.session_registry.get(tid) is not None:
             return
         user_text = commands.first_human_text(self.runtime.agent, tid) or ""
@@ -445,7 +448,9 @@ class GuiPresenter:
             self._emit_task_done(rt, tid, ok, cancelled=self.gate.is_cancelled(tid))
             # FIFO 重投：出队下一条排队消息，重新入门起新回合（工单 03）
             nxt_full = self.gate.finish_full(tid)
-            if nxt_full is not None:
+            if nxt_full is not None and not getattr(rt, "closed", False):
+                # runtime 已关（项目从列表移除 / app 收尾）：不重投新回合，避免再读已关 DB；
+                # 释放路径已清过队列，这里是并发竞态兜底（残余项直接丢弃）
                 b.queued_flush.emit(tid, nxt_full[0], nxt_full[1])
                 self.start_turn(tid, nxt_full[0], images=nxt_full[1])
 

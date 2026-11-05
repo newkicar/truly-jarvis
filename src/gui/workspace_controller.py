@@ -23,6 +23,7 @@ from src.gui.workspace import (
     resolve_open_root,
 )
 from src.gui.project_registry import ProjectRegistry
+from src.gui.runtime_registry import normalize_root_key
 
 from src.gui.presenter_wiring import wire_presenter
 
@@ -90,8 +91,9 @@ class StaticWorkspace:
     def set_project_pinned(self, root: Any, on: bool) -> None:
         pass
 
-    def remove_project(self, root: Any) -> None:
-        pass
+    def remove_project(self, root: Any) -> Path | None:
+        """单项目无注册表：移除是 no-op（契约与多项目版一致：返回当前活动根，UI 切换=早退无操作）。"""
+        return self._root
 
     # ---- 打开/新建（单项目无注册表：只做解析+骨架，登记/切换为 no-op，避免菜单崩）
     def resolve_root(self, chosen_dir: Any):
@@ -240,8 +242,51 @@ class WorkspaceController:
     def set_project_pinned(self, root: Any, on: bool) -> None:
         self.registry.set_pinned(Path(str(root)), on)
 
-    def remove_project(self, root: Any) -> None:
-        self.registry.remove(Path(str(root)))
+    def remove_project(self, root: Any) -> Path | None:
+        """从列表移除 + 解除项目占用（项目文件**一律不碰**，用户随后可自由删文件夹）。
+
+        步骤：① 删注册表项 → ② 取消该项目全部进行中回合（drain 语义：当前步骤跑完即停、
+        后续步骤跳过；停车中的审批卡片被唤醒放弃）→ ③ 清空该项目全部消息队列
+        （排队消息随项目一起放弃）→ ④ 关 runtime（停调度器 + 释放 checkpointer 持久
+        sqlite 连接——Windows「文件夹被占用删不掉」的锁源）→ ⑤ 若被移除的是活动项目：
+        选下一个活动项目并返回其根（UI 侧走完整切换），没有则返回 None（UI 落空态）；
+        移除的是非活动项目：返回当前活动根（UI 切换=无操作早退）。
+
+        与 ADR-0010「切走保留 busy runtime 后台续跑」的区别：移除 = 用户显式放弃该项目，
+        资源全量释放（进行中的回合被取消，不再后台续跑）。
+        """
+        r = Path(str(root))
+        self.registry.remove(r)
+        entry = self._manager.runtimes.get(r)
+        if entry is not None:
+            pres = entry.presenter
+            if pres is not None:
+                for tid in pres.gate.running_threads():
+                    pres.cancel(tid)
+                pres.gate.clear_all_queues()
+            entry.close()
+            entry.presenter = None
+        k = normalize_root_key(r)
+        was_active = self._current_root is not None and normalize_root_key(self._current_root) == k
+        if was_active:
+            self._manager.runtimes.deactivate()
+            self._presenter = None
+            self._current_root = None
+            return self._pick_next_active(k)
+        return self._current_root
+
+    def _pick_next_active(self, excluded_key: str) -> Path | None:
+        """活动项目被移除后选下一个：先取后台未关 runtime 的项目（ADR-0010 在跑项目，零重建复用）；
+        再取注册表里第一个仍有效的项目（jarvis.json 还在）；全无 = None（空态）。"""
+        for e in self._manager.runtimes.entries().values():
+            if e.root == excluded_key or getattr(e.runtime, "closed", False):
+                continue
+            return Path(e.root)
+        for item in self.registry.ordered():
+            p = Path(str(item.get("path")))
+            if jarvis_project_root_of(p) is not None:
+                return p
+        return None
 
     def shutdown(self) -> None:
         """app 收尾：关全部项目 runtime（释放 checkpointer 连接 + 停所有调度器）。"""
