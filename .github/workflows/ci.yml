@@ -64,10 +64,14 @@ jobs:
           # Known native-crash class (AGENTS.md known issue): the suite can finish
           # fully green ("N passed"), then CPython exit-phase PySide6 offscreen
           # native object teardown SIGSEGVs (rc=139) with zero test failures.
-          # Accept green ONLY when rc=139 AND the suite summary line contains
+          # Accept green ONLY when rc=139 AND the pytest summary line contains
           # "passed" and no "failed"/"error"; any real failure still exits red.
+          # 摘要行必须锚定 ^[0-9]+（pytest 结果行以数字开头）：faulthandler 追加在
+          # pytest-output.txt 尾部的 "Fatal Python error: Segmentation fault" 等
+          # 行含 "error" 字样，不锚定会被误当摘要行，把全绿 run 误判为红
+          # （实证 run 41963866063：1188 passed 全绿仍因 rc=139 误红）。
           if [ "$rc" -eq 139 ]; then
-            summary_line=$(tail -n 20 pytest-output.txt | grep -E 'passed|failed|error' | tail -n 1 || true)
+            summary_line=$(tail -n 40 pytest-output.txt | grep -E '^[0-9]+ (passed|failed|error)' | tail -n 1 || true)
             if echo "$summary_line" | grep -q 'passed' && ! echo "$summary_line" | grep -Eq 'failed|error'; then
               echo "::warning:pytest SIGSEGV at interpreter teardown (exit 139), but suite summary is all-pass: $summary_line - accepting green run (faulthandler trace in pytest-output.txt for diagnosis)"
               exit 0
