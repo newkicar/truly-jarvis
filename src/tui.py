@@ -19,7 +19,7 @@ from textual.css.query import NoMatches
 from textual.widgets.option_list import Option
 from textual.worker import Worker
 
-from src import commands, ime_shim
+from src import commands, ime_shim, shell_backend
 from src.clipboard_image import (
     build_multimodal_content,
     image_fallback_text,
@@ -1378,7 +1378,8 @@ class JarvisApp(App):
         self._hide_spinner()
 
     def _show_cancel_banner(self) -> None:
-        """tui-ux7 #01: Esc 取消 → spinner 立即固定为「已取消」banner（收尾结束由 presenter finally 的 _hide_spinner 自动清空）。"""
+        """tui-ux7 #01 / tui-ux22: Esc 取消 → spinner 立即固定为「已取消」banner（收尾结束由 presenter finally 的 _hide_spinner 自动清空）。
+        tui-ux22：进行中的命令已立即终止（shell_backend.kill_active），banner 文案随之更新。"""
         if self._spinner_config()[1] == "none":
             return
         if self._spinner_timer is not None:
@@ -1386,7 +1387,7 @@ class JarvisApp(App):
             self._spinner_timer = None
         spinner = self.query_one("#status_spinner", Static)
         spinner.add_class("-active")
-        spinner.update("[dim]已取消，正在收尾（当前步骤结束后停止）[/dim]")
+        spinner.update("[dim]已取消（进行中的命令已立即终止）[/dim]")
 
     def _release_turn_gate(self, tid: str) -> None:
         """tui-ux7 #02: 释放 tid 的回合门并重投排队队首（UI 线程；由 worker 终结经 call_from_thread 回调）。
@@ -2223,6 +2224,9 @@ class JarvisApp(App):
             self._bump_hitl_generation()
             log.write("[i][dim]（已取消）[/dim][/i]")
             self._show_cancel_banner()
+            # tui-ux22：与 GUI cancel()（gui15 条目7）对齐——立即硬杀进行中的
+            # execute 进程树；drain 语义仍管 LLM/graph 层（worker.cancel 不变）。
+            shell_backend.kill_active()
             worker.cancel()
             self._turn_workers.pop(self.thread_id, None)
             # 取消完成 → 进入撤回 prime（收尾结束门释放后单 Esc 即撤回）

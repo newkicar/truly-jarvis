@@ -280,6 +280,73 @@ async def test_escape_cancel_banner_replaces_spinner():
 
 
 @pytest.mark.asyncio
+async def test_esc_cancel_triggers_kill_active_immediately(monkeypatch):
+    """tui-ux22: Esc#2 取消立即调 shell_backend.kill_active()（与 GUI cancel 对齐，进程树硬杀）。"""
+    import src.shell_backend as _sb
+
+    calls = []
+
+    def _fake_kill():
+        calls.append(1)
+        return len(calls)
+
+    monkeypatch.setattr(_sb, "kill_active", _fake_kill)
+
+    class SlowAgent(FakeAgent):
+        def stream_events(self, *args, **kwargs):
+            class S(_FakeStream):
+                interrupted = False
+                interrupts = None
+                output = None
+
+                def __init__(self):
+                    self._items = [
+                        ("messages", _FakeMsg("正在思考")),
+                        ("messages", _FakeMsg("…")),
+                    ]
+
+                def interleave(self, *kinds):
+                    for item in self._items:
+                        time.sleep(0.4)
+                        yield item
+
+            return S()
+
+    app = JarvisApp(None, SlowAgent(reply=""), {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "慢请求")
+        await pilot.pause()
+        await asyncio.sleep(0.1)
+        app.action_cancel()  # Esc#1 prime：不触发 kill_active
+        assert len(calls) == 0
+        app.action_cancel()  # Esc#2 取消：立即 kill_active（drain 语义仍管 LLM/graph）
+        assert len(calls) == 1
+        banner_text = str(pilot.app.query_one("#status_spinner", Static).render())
+        assert "已取消" in banner_text
+        assert "立即终止" in banner_text
+
+
+@pytest.mark.asyncio
+async def test_idle_double_esc_does_not_kill_active(monkeypatch):
+    """tui-ux22 边界：无活跃 worker 时双 Esc（空闲撤回路径）不调 kill_active，且不崩。"""
+    import src.shell_backend as _sb
+
+    calls = []
+
+    def _fake_kill():
+        calls.append(1)
+        return len(calls)
+
+    monkeypatch.setattr(_sb, "kill_active", _fake_kill)
+
+    app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        app.action_cancel()  # 空闲 Esc#1：仅 prime
+        app.action_cancel()  # 空闲 Esc#2：撤回（无目标即 no-op），均不调 kill_active
+        assert len(calls) == 0
+
+
+@pytest.mark.asyncio
 async def test_cancel_banner_noop_when_spinner_style_none():
     """tui-ux7 #01 附属: spinner_style="none" 时 banner 同步 no-op（不崩）。"""
     cfg = types.SimpleNamespace(tui={"animations": True, "spinner_style": "none"})

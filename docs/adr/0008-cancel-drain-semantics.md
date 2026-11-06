@@ -30,3 +30,13 @@ TUI/CLI 按 Esc 取消 worker 时，旧实现只翻转 `is_cancelled` 标志，�
 - 变更：`src/streaming.py`（`consume_stream_events` +`control` 参、`_run_stream` 建 RunControl、`_stream_with_resilience`/`run_agent_turn` 的 GraphDrained 分支）；测试 fake agent 的 `stream_events` 签名 +`control=None`（test_streaming / test_resilience / test_clipboard_image）。
 - 新增测试：consume 层（假 control 记录 request_drain；取消后回调全抑制；`GraphDrained` 透传；control=None 旧语义）+ e2e（真 RunControl + 2s 慢工具 + 线程 0.3s 后取消 → 断言第二次模型调用未发生、wall-time < 3.5s、`run_agent_turn` 返回 False）。
 - 行为变更：此前「取消但图跑满」的窗口期收敛为「取消后当前 superstep 结束即停」；HITL resume 轮次各自独立 RunControl，取消不跨轮泄漏。
+
+## 修订（2026-11-06，tui-ux22：TUI 取消立即硬杀进程树）
+
+决策 4「不做进程级 SIGKILL」的边界对 TUI 取消路径打开：`InheritedEnvShellBackend`（`src/shell_backend.py`）已引入线程安全的全局 `_ACTIVE_PROCS` 注册表与 `kill_active()`（无活动进程 no-op 返回 0；被杀 holder 标 `holder.killed`，对应 execute 返回 `<killed>` exit 130 独特标记，NoProgressGuard/DoomLoop 不会误判），原「被否决选项」里的 SIGKILL 路线前置条件已就绪。
+
+- TUI Esc#2 取消体（`src/tui.py` `action_cancel`）：在 `worker.cancel()` 之前调 `shell_backend.kill_active()`——进行中的 execute 进程树**立即**被终止；drain 语义仍管 LLM/graph 层（当前 LLM 调用跑完出 token、后续步骤跳过，`RunControl` drain 路径不变）。
+- GUI `runtime.cancel()`（gui15 条目7）本就是 `kill_active()` + `gate.request_cancel` + `wake_parked` 组合，本次 TUI 对齐 GUI；GUI 侧零改动。
+- banner 文案「已取消，正在收尾（当前步骤结束后停止）」→「已取消（进行中的命令已立即终止）」。
+- 不变：Esc 三段交互（prime/cancel/undo）、空闲双 Esc 撤回路径（无活跃 worker，不调 kill_active）、HITL modal。
+- 已知边界：`kill_active` 为进程级全局——同进程 `sched-*` 定时任务线程的 execute 会被连坐（GUI 现状同）；per-thread 进程隔离列后续项。
