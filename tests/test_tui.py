@@ -1658,3 +1658,72 @@ async def test_doctor_command_opens_scrollable_report_modal(monkeypatch):
         await pilot.press("enter")
         await pilot.pause()
         assert not isinstance(app.screen, ReportModal), "Enter 应能关模态"
+
+# ---------------------------------------------------------------------------
+# side-chat 工单02：[SIDE] 副标题 + 输入框 SIDE 徽章 + 侧栏 前缀
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_side_badge_reflects_state():
+    """side-chat 工单02：side 线程输入框显示 SIDE 徽章 + [SIDE] 副标题；side_close 后隐藏。"""
+    from src.permissions import side_open, side_close
+
+    app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}}, thread_id="tside")
+    async with app.run_test() as pilot:
+        badge = pilot.app.query_one("#side_badge", Static)
+        side_open(app.permission_state, "tside", "tmain")
+        app._update_sub_title()
+        await pilot.pause()
+        assert badge.has_class("-active")
+        assert "SIDE" in badge.content
+        assert badge.size.height >= 1  # 内容区不塌 0（yolo 徽章同族回归）
+        assert "[SIDE]" in app.sub_title
+        side_close(app.permission_state, "tside")
+        app._update_sub_title()
+        await pilot.pause()
+        assert not badge.has_class("-active")
+        assert badge.content == ""
+        assert "[SIDE]" not in app.sub_title
+
+
+@pytest.mark.asyncio
+async def test_session_sidebar_side_prefix():
+    """side-chat 工单02：侧栏 side 线程标签加 前缀；旧签名（None）不崩且无前缀；主线不被误标。"""
+    from src.permissions import side_open
+
+    app = JarvisApp(
+        None,
+        _SidebarAgent(["main", "side-a"]),
+        {"default": "ask", "tools": {}},
+        thread_id="main",
+    )
+    async with app.run_test() as pilot:
+        sidebar = pilot.app.query_one("#session_sidebar", SessionSidebar)
+        sidebar.refresh_sessions(app.agent, "main")  # 旧签名兼容：permission_state 缺省 None
+        labels = [str(sidebar.get_option_at_index(i).prompt) for i in range(sidebar.option_count)]
+        assert "◇ " not in "".join(labels)
+        side_open(app.permission_state, "side-a", "main")
+        app._refresh_session_sidebar()
+        labels = [str(sidebar.get_option_at_index(i).prompt) for i in range(sidebar.option_count)]
+        joined = "\n".join(labels)
+        assert "◇ side-a" in joined
+        assert "◇ main" not in joined  # 主线不被误标
+
+
+@pytest.mark.asyncio
+async def test_side_badge_session_switch_linkage():
+    """side-chat 工单02：切会话联动——切到 side 会话徽章显示，切回主线隐藏（同 yolo 联动先例）。"""
+    from src.permissions import side_open
+
+    app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        side_open(app.permission_state, "tside", "default")
+        badge = pilot.app.query_one("#side_badge", Static)
+        assert not badge.has_class("-active")
+        app._switch_session("tside")
+        await pilot.pause()
+        assert badge.has_class("-active")
+        app._switch_session("default")
+        await pilot.pause()
+        assert not badge.has_class("-active")

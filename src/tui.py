@@ -825,14 +825,17 @@ class SessionSidebar(OptionList):
     }
     """
 
-    def refresh_sessions(self, agent, current: str) -> None:
+    def refresh_sessions(self, agent, current: str, permission_state: dict | None = None) -> None:
+        from src.permissions import side_active
+
         threads = commands.session_thread_ids(agent)
         if current and current not in threads:
             threads = [current, *threads]
         self.clear_options()
         for thread_id in threads:
             label_text = commands.session_label(agent, thread_id)
-            label = f"▸ {label_text}" if thread_id == current else label_text
+            prefix = "◇ " if (permission_state and side_active(permission_state, thread_id)) else ""
+            label = f"{prefix}▸ {label_text}" if thread_id == current else f"{prefix}{label_text}"
             self.add_option(Option(label, id=thread_id))
         if threads:
             try:
@@ -1060,6 +1063,18 @@ class JarvisApp(App):
     #yolo_badge.-active {
         display: block;
     }
+    #side_badge {
+        display: none;
+        width: auto;
+        height: auto;
+        border: round 20% $warning 80%;
+        color: $warning;
+        text-style: bold;
+        padding: 0 1;
+    }
+    #side_badge.-active {
+        display: block;
+    }
 
     #message_queue {
         display: none;
@@ -1185,8 +1200,14 @@ class JarvisApp(App):
                 pass
         if yolo_active(self.permission_state, self.thread_id):
             parts.append("[YOLO]")
+        from src.permissions import side_active, side_parent
+
+        if side_active(self.permission_state, self.thread_id):
+            parent = side_parent(self.permission_state, self.thread_id)
+            parts.append(f"[SIDE]→{(parent or '?')[:8]}")
         self.sub_title = "  ".join(parts)
         self._refresh_yolo_badge()
+        self._refresh_side_badge()
 
     def _refresh_yolo_badge(self) -> None:
         """tui-ux14: YOLO 徽章（输入框最右），随 _update_sub_title 联动显示。"""
@@ -1200,6 +1221,21 @@ class JarvisApp(App):
         if yolo_active(self.permission_state, self.thread_id):
             badge.add_class("-active")
             badge.update(Text("YOLO Mode", style="bold red"))  # tui-ux14 定案：Text 内嵌命名色 bold red（widget 渲染缓存实证 bold #ff0000、compositor strips 全链路含文本；markup=False 时 Static CSS color/text-style 不作用于内容，纯文本走默认前景色灰不可见故内嵌；命名色规避真彩 hex 空框历史坑 4a365c4/8fc7523）
+        else:
+            badge.remove_class("-active")
+            badge.update("")
+
+    def _refresh_side_badge(self) -> None:
+        """side-chat 工单02: 输入框最右 SIDE 徽章，随 _update_sub_title 联动显示（NoMatches/ScreenStackError 防御同 yolo 徽章）。"""
+        try:
+            badge = self.query_one("#side_badge", Static)
+        except (NoMatches, ScreenStackError):
+            return  # tui-ux7 先例：app 收尾/拆屏后节点可能已移除；__init__ 期（DOM 未挂载）ScreenStackError 同样 no-op
+        from src.permissions import side_active
+
+        if side_active(self.permission_state, self.thread_id):
+            badge.add_class("-active")
+            badge.update(Text("SIDE", style="bold yellow"))  # yolo 先例 4a365c4/8fc7523：markup=False Static 的 CSS color 不作用于内容，须 Text 内嵌命名色
         else:
             badge.remove_class("-active")
             badge.update("")
@@ -1270,6 +1306,7 @@ class JarvisApp(App):
                         show_line_numbers=False,
                     )
                     yield Static("", id="yolo_badge", markup=False)  # tui-ux14: 内容纯文本，禁 markup 解析（防回归）
+                    yield Static("", id="side_badge", markup=False)  # side-chat 工单02: 输入框 SIDE 徽章（同 yolo 的 markup 防回归）
                 yield Static("", id="status_spinner")
         yield PathCompletionOverlay(id="path_completion")
         yield Footer()
@@ -1828,7 +1865,7 @@ class JarvisApp(App):
         return self.query_one("#session_sidebar", SessionSidebar)
 
     def _refresh_session_sidebar(self) -> None:
-        self._session_sidebar().refresh_sessions(self.agent, self.thread_id)
+        self._session_sidebar().refresh_sessions(self.agent, self.thread_id, self.permission_state)
 
     def _leave_current_thread(self, old_thread: str) -> None:
         """离开当前会话前的固定 choreography（会话切换的唯一出口）。
