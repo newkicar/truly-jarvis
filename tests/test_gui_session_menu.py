@@ -323,7 +323,7 @@ def test_menu_side_branch_and_delete_side(qapp, monkeypatch):
 
     monkeypatch.setattr(
         commands_mod, "close_side",
-        lambda agent, t, state, discard=False: ("已删除 side 会话并返回主线 " + tid, tid),
+        lambda agent, t, state: ("已删除 side 会话并返回主线 " + tid, tid),
     )
     monkeypatch.setattr(
         QMessageBox, "question",
@@ -335,7 +335,7 @@ def test_menu_side_branch_and_delete_side(qapp, monkeypatch):
     assert p.session_registry.get(side_tid) is None
 
 
-def test_side_pill_toggle_and_keep_close(qapp, monkeypatch):
+def test_side_pill_toggle_and_close(qapp, monkeypatch):
     from src import permissions
 
     rt, p, win = _win(qapp)
@@ -361,4 +361,4 @@ def test_side_pill_toggle_and_keep_close(qapp, monkeypatch):
     assert win.active_tid == tid
     assert win.side_pill.isVisible() is False
     assert p.is_side(side_tid) is False
-    assert p.session_registry.get(side_tid) is not None  # 保留式留注册表可回看
+    assert p.session_registry.get(side_tid) is None  # 关=删，留不住注册表

@@ -438,7 +438,8 @@ class PermissionDenyMiddleware(GuardMiddleware):
 
 
 class SideTaskGuardMiddleware(GuardMiddleware):
-    """/side 侧边会话 task 工具守卫：side 会话中禁用 sub-agents。
+    """side 会话工具守卫：side 会话只读（仅读/搜，对标 codex side）。
+    task（sub-agents）与 execute（命令执行）被拦截；读/搜工具放行。
 
     挂在主代理 wrap_tool_call / awrap_tool_call（工具执行前），state 与
     interrupt_on 共享同一引用 —— side_open/side_close 即时生效，无需重建 agent。
@@ -455,14 +456,15 @@ class SideTaskGuardMiddleware(GuardMiddleware):
         return "side-task-guard"
 
     def block(self, view: ToolCallView) -> str | None:
-        if view.name != "task":
+        if view.name not in ("task", "execute"):
             return None
         if not side_active(self.state, str(self.state.get("thread_id") or "")):
             return None
-        return (
-            "Error: side 会话中不可用 sub-agents（task 工具）。"
-            "/side close 返回主线后再用。"
-        )
+        if view.name == "task":
+            return ("Error: side 会话中不可用 sub-agents（task 工具）。"
+                    "/side close 返回主线后再用。")
+        return ("Error: side 会话为只读（仅读/搜，对标 codex side），execute 被禁用。"
+                "/side close 返回主线后再执行命令。")
 
 
 def dump_permissions_json(permissions: dict, json_path: Path) -> None:

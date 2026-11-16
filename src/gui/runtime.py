@@ -283,19 +283,18 @@ class GuiPresenter:
         self.bridge.refresh_sessions.emit()
         return text, new_tid
 
-    def close_side(self, tid: str, discard: bool = False) -> tuple[str, str]:
-        """回主线：保留式（默认，side 会话留注册表可回看）或整删（discard=True）。
+    def close_side(self, tid: str) -> tuple[str, str]:
+        """回主线 = 删除 side 会话（关了就没了：checkpoint + 注册表均移除）。
 
         非 side 会话 -> 内核拒绝文案 + ""，不动注册表。
         """
         text, parent = commands.close_side(
-            self.runtime.agent, tid, self.runtime.permission_state, discard=discard
+            self.runtime.agent, tid, self.runtime.permission_state
         )
         if parent is None:
             return text, ""
-        if discard:
-            self.session_registry.delete(tid)
-            self.bridge.refresh_sessions.emit()
+        self.session_registry.delete(tid)
+        self.bridge.refresh_sessions.emit()
         return text, parent
 
     def is_side(self, tid: str) -> bool:

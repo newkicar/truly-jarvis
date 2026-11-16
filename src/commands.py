@@ -43,7 +43,7 @@ _HELP_COMMANDS = """\
   /skills       列出可用 skills（manual 需 /use 手动触发）
   /use <skill> [说明]  手动调用 manual-only skill（注入完整指令）
   /yolo on | off  YOLO 模式开关：本会话所有动作免审批（仅当前会话、重启即关）
-  /side | /side close [--discard]  开/关侧边会话（继承历史，只读，禁 sub-agents）
+  /side | /side close  开/关侧边会话（继承历史，只读，禁 sub-agents 与 execute；关=删除会话）
   /compact [提示]  压缩当前会话历史为一条延续性摘要写回（可选文字提示压缩倾向）
   /dream   梦境沉淀：回顾近期会话，蒸馏可复用知识到 梦境知识库（默认全局 ~/.jarvis/memory/dream/）
   /snapshot       记录当前文件状态到当前 checkpoint（git 快照）
@@ -997,7 +997,7 @@ def fork(agent, thread_id: str, checkpoint_id: str):
 
 def open_side(agent, thread_id: str, state: dict) -> tuple[str, str | None]:
     """/side 开侧边会话：fork 当前 thread head（悬挂时回退最近 terminal），
-    注入 [side] 边界 SystemMessage，自动切 Plan（只读），task 由 SideTaskGuard 拦截。
+    注入 [side] 边界 SystemMessage，自动切 Plan（只读），task/execute 由 SideTaskGuard 拦截。
 
     门控序（spec）：空会话拒 -> 已在 side 拒 -> 已有 side 拒。
     返回 (指引文案, 新 thread_id | None)。
@@ -1038,7 +1038,7 @@ def open_side(agent, thread_id: str, state: dict) -> tuple[str, str | None]:
     boundary = SystemMessage(
         content=(
             f"本会话是主线 {thread_id} 的 side 侧边会话。历史消息继承自主线；"
-            "你处在只读约定下：不做文件修改，不使用 sub-agents（task 工具不可用）。"
+            "你处在只读约定下：不做文件修改，不使用 sub-agents（task 工具不可用），不执行命令（execute 工具不可用）。关闭即删除本会话（关了就没了）。"
         )
     )
     # 单次写入：boundary SystemMessage 置消息列表 0 位（存储形式，越靠前越好）。
@@ -1061,17 +1061,15 @@ def open_side(agent, thread_id: str, state: dict) -> tuple[str, str | None]:
     set_mode(state, "plan")
     return (
         f"已开 side 会话 {new_tid}（继承主线历史，默认只读）；"
-        "/side close 返回主线（保留），/side close --discard 删除",
+        "/side close 返回主线（side 会话即删除，不留存）",
         new_tid,
     )
 
 
-def close_side(
-    agent, thread_id: str, state: dict, discard: bool = False
-) -> tuple[str, str | None]:
-    """/side close 回主线：默认保留式（side 会话可回看），discard 显式删除。
+def close_side(agent, thread_id: str, state: dict) -> tuple[str, str | None]:
+    """/side close 回主线：关闭 = 删除（side 是临时问一嘴，关了就没了）。
 
-    非 side 调用 -> 拒绝；discard 走 delete_session（第三参 = parent 主线 tid，
+    非 side 调用 -> 拒绝；删除走 delete_session（第三参 = parent 主线 tid，
     保证「删当前会话则新建」逻辑不误触发、不误删主线）。模式恢复：
     回退到开 side 前主线自己的模式（MVP 快照语义）。
     返回 (文案, parent_tid | None)。
@@ -1082,14 +1080,11 @@ def close_side(
     parent = side_parent(state, thread_id)
     if parent is None:
         return "当前不在 side 会话", None
-    if discard:
-        delete_session(agent, thread_id, parent)
+    delete_session(agent, thread_id, parent)
     side_close(state, thread_id)
     prev = state.pop(SIDE_MODE_BEFORE_KEY, "act") or "act"
     set_mode(state, prev)
-    if discard:
-        return f"已删除 side 会话并返回主线 {parent}", parent
-    return f"已返回主线 {parent}", parent
+    return f"已删除 side 会话并返回主线 {parent}", parent
 
 
 def side_parent_status(agent, parent_tid: str, state: dict) -> str:
@@ -1545,12 +1540,10 @@ def dispatch_command(
         if sub == "close" and (
             len(parts) == 2 or (len(parts) == 3 and parts[2] == "--discard")
         ):
-            discard = len(parts) == 3 and parts[2] == "--discard"
-            text, new_thread = close_side(
-                agent, thread_id, permission_state, discard=discard
-            )
+            # --discard 为遗留别名（关闭=删除已是默认），接受但忽略
+            text, new_thread = close_side(agent, thread_id, permission_state)
             return text, new_thread, None
-        return "用法: /side | /side close [--discard]", None, None
+        return "用法: /side | /side close（关闭即删除 side 会话）", None, None
     if cmd == "/init":
         return init_project(), None, None
     return f"未知命令: {cmd}（/help 查看帮助）", None, None

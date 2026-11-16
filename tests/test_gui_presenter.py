@@ -203,13 +203,14 @@ def test_open_side_renames_registry_and_emits(bridge, qapp, monkeypatch):
     assert len(emitted) == 1
 
 
-def test_close_side_preserve_and_discard(bridge, qapp, monkeypatch):
-    import src.commands as commands_mod
+def test_close_side_always_deletes(bridge, qapp):
+    """close = 删除（关了就没了）：side 会话必离注册表 + 发 refresh_sessions。"""
     from src import permissions
     from src.gui.runtime import GuiPresenter
 
     p = GuiPresenter(_fake_runtime(), bridge)
     rt = p.runtime
+
     emitted = []
     p.bridge.refresh_sessions.connect(lambda: emitted.append(1))
     p.session_registry.rename("t-1", "主线", ai_generated=False)
@@ -221,30 +222,18 @@ def test_close_side_preserve_and_discard(bridge, qapp, monkeypatch):
     assert p.side_parent("t-2") == "t-1"
     assert p.side_parent("t-1") == ""
 
-    # 保留式：真内核（agent=None 安全），side 会话留注册表
-    note, parent = p.close_side("t-2", discard=False)
+    # 真内核（agent=None，delete_session 无 checkpointer 提前返回），side 会话离注册表
+    note, parent = p.close_side("t-2")
     assert parent == "t-1"
-    assert "已返回主线" in note
-    assert p.session_registry.get("t-2") is not None
+    assert "已删除 side 会话" in note
+    assert p.session_registry.get("t-2") is None
     assert p.is_side("t-2") is False
-    assert len(emitted) == 0
-
-    # discard 式：内核需 checkpointer → monkeypatch
-    p.session_registry.rename("t-3", "主线2", ai_generated=False)
-    permissions.side_open(rt.permission_state, "t-3", "t-1")
-    monkeypatch.setattr(
-        commands_mod, "close_side",
-        lambda agent, t, state, discard=False: ("已删除 side 会话并返回主线 t-1", "t-1"),
-    )
-    note, parent = p.close_side("t-3", discard=True)
-    assert parent == "t-1"
-    assert p.session_registry.get("t-3") is None
     assert len(emitted) == 1
 
-    monkeypatch.setattr(
-        commands_mod, "close_side",
-        lambda agent, t, state, discard=False: ("当前不在 side 会话", None),
-    )
+    # 非 side 会话：内核拒绝，注册表不动
+    p.session_registry.rename("t-7", "主线2", ai_generated=False)
     note, parent = p.close_side("t-7")
     assert parent == ""
+    assert "当前不在 side 会话" in note
+    assert p.session_registry.get("t-7") is not None
     assert len(emitted) == 1

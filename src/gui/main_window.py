@@ -1145,16 +1145,16 @@ class MainWindow(QMainWindow):
         )
         if ans != QMessageBox.StandardButton.Yes:
             return
-        note, parent = self.presenter.close_side(tid, discard=True)
+        note, parent = self.presenter.close_side(tid)
         self.status_label.setText(note)
         if parent:
             self._switch_to(parent)
 
     def _on_side_pill_clicked(self) -> None:
-        """pill = 保留式回主线（side 会话留注册表可回看；整删走右键菜单）。"""
+        """pill = 关闭 side 会话（关了就没了：删除会话并回主线；右键菜单同语义）。"""
         if not self.active_tid or self.presenter is None:
             return
-        note, parent = self.presenter.close_side(self.active_tid, discard=False)
+        note, parent = self.presenter.close_side(self.active_tid)
         self.status_label.setText(note)
         if parent:
             self._switch_to(parent)
@@ -1176,7 +1176,7 @@ class MainWindow(QMainWindow):
             if parent
             else "主线状态未知"
         )
-        self.side_pill.setToolTip(f"{tip}（点击回主线，保留本 side 会话历史）")
+        self.side_pill.setToolTip(f"{tip}（点击回主线并删除本 side 会话）")
         self.side_pill.setVisible(True)
 
     # ---- 图片粘贴（工单 07）：剪贴板图 / 图片路径 → 附件条
