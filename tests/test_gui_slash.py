@@ -98,11 +98,11 @@ def test_doctor_with_args_routes_to_dialog(qapp, monkeypatch):
     assert not [r for r in record if r[0] == "slash"]
 
 
-def test_notify_flattens_multiline(qapp, monkeypatch):
+def test_notify_keeps_multiline(qapp, monkeypatch):
     record: list = []
     win = _win(qapp, monkeypatch, record)
     win._on_notify("报告\n第二行\r\n第三行")
-    assert win.status_label.text() == "报告 第二行 第三行"
+    assert win.status_label.text() == "报告\n第二行\n第三行"
 
 
 def test_doctor_guard_without_presenter(qapp, monkeypatch):

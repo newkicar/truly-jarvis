@@ -219,7 +219,7 @@ QMainWindow { background-color: $ground; }
 /* ---- 文本：默认透明底（气泡/卡片各自 objectName 覆盖背景）---- */
 QLabel { background: transparent; }
 QLabel#title-sessions { color: $text; font-size: 14px; font-weight: bold; }
-QLabel#status-bar { color: $muted; font-size: 12px; padding: 2px; }
+QPlainTextEdit#status-bar { color: $muted; font-size: 12px; padding: 2px; background: transparent; border: none; }
 QLabel#badge-mode { color: $muted; font-size: 13px; font-weight: bold; background-color: $raised; border: 1px solid $border; border-radius: 9px; padding: 2px 10px; }
 QLabel#badge-running { color: $warning; font-size: 12px; font-weight: bold; }
 QWidget#queue-strip { background-color: $control; border: 1px solid $border; border-radius: 6px; padding: 2px; }

@@ -38,6 +38,7 @@ from src.gui.pane import RENDER_BATCH_MS, ChatPane
 
 from src.gui.queue_strip import QueueStrip
 from src.gui.runtime import GuiPresenter
+from src.gui.status_view import StatusView
 from src.gui.workspace_controller import StaticWorkspace
 from src.gui.notify_channels import make_hooks
 from src.gui.notify_policy import TaskNotifier
@@ -241,8 +242,7 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         ml.addWidget(self.stack, stretch=1)
 
-        self.status_label = QLabel("就绪")
-        self.status_label.setObjectName("status-bar")
+        self.status_label = StatusView("就绪")
         ml.addWidget(self.status_label)
 
         self.queue_strip = QueueStrip()
@@ -1449,10 +1449,8 @@ class MainWindow(QMainWindow):
         self._refresh_running_badge()
 
     def _on_notify(self, text: str) -> None:
-        # 状态栏必须单行：压平多行长文本（/history、命令失败堆栈等），防布局被顶爆
-        self.status_label.setText(
-            text.replace("\r\n", " ").replace("\n", " ")
-        )
+        # 状态栏保留换行：StatusView 自动换行 + 限高内滚 + 可复制，不再压平多行长文本
+        self.status_label.setText(text.replace("\r\n", "\n"))
 
     def _on_sync_modes(self) -> None:
         # 命令 worker 完成后的模式面重同步（/yolo 等改 permission_state 的命令）：
