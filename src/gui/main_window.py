@@ -232,6 +232,12 @@ class MainWindow(QMainWindow):
         ml = QVBoxLayout(mid)
         ml.setContentsMargins(4, 4, 4, 4)
         ml.setSpacing(2)
+        # side 会话「回主线」pill（side-chat 工单 03）：仅当前会话为 side 时可见
+        self.side_pill = QPushButton("← 回主线")
+        self.side_pill.setObjectName("side-pill")
+        self.side_pill.hide()
+        self.side_pill.clicked.connect(self._on_side_pill_clicked)
+        ml.addWidget(self.side_pill)
         self.stack = QStackedWidget()
         ml.addWidget(self.stack, stretch=1)
 
@@ -730,6 +736,7 @@ class MainWindow(QMainWindow):
         self.image_strip.clear()
         for _img in imgs:
             self.image_strip.add_image(_img)
+        self._refresh_side_pill()
 
     # ---- 项目树（工单 04：项目→会话；点项目名=切换，+/−=展开；右键各自菜单）
     def _active_session_rows(self) -> list[tuple[str, bool]]:
@@ -752,7 +759,10 @@ class MainWindow(QMainWindow):
         pin = "★ " if reg.is_pinned(tid) else ""
         arch = "📁 " if reg.is_archived(tid) else ""
         run = " ⚡" if gate.is_running(tid) else ""
-        return f"{mark}{done_mark}{pin}{arch}{self.presenter.session_label(tid)}{run}"
+        side = "◇ " if (
+            self.presenter is not None and self.presenter.is_side(tid)
+        ) else ""
+        return f"{mark}{done_mark}{side}{pin}{arch}{self.presenter.session_label(tid)}{run}"
 
     def refresh_tree(self) -> None:
         """重建项目→会话树（活动项目=live 会话，非活动项目=只读会话名）。保留已展开项。"""
@@ -798,6 +808,7 @@ class MainWindow(QMainWindow):
             pitem.setExpanded(is_active or r in prev_expanded)
         self._select_active_leaf()
         self._refresh_empty_hint()
+        self._refresh_side_pill()
 
     # 兼容旧信号/测试名（bridge refresh_sessions → 重建树）
     def refresh_sessions(self) -> None:
@@ -1052,6 +1063,12 @@ class MainWindow(QMainWindow):
         arch = menu.addAction("取消归档" if arch_on else "归档")
         arch.triggered.connect(lambda: self._archive_session(tid, not arch_on))
         menu.addSeparator()
+        if self.presenter.is_side(tid):
+            del_side = menu.addAction("删除侧边会话（回主线）")
+            del_side.triggered.connect(lambda: self._delete_side_session(tid))
+        else:
+            open_side_act = menu.addAction("开侧边会话")
+            open_side_act.triggered.connect(lambda: self._open_side_session(tid))
         delete = menu.addAction("删除会话")
         delete.triggered.connect(lambda: self._delete_session(tid))
         return menu
@@ -1111,6 +1128,56 @@ class MainWindow(QMainWindow):
         self.status_label.setText(note)
         if was_active:
             self._switch_to(self.presenter.new_session_id())
+
+    # ---- 侧边会话（side-chat 工单 03）
+    def _open_side_session(self, tid: str) -> None:
+        note, new_tid = self.presenter.open_side(tid)
+        self.status_label.setText(note)
+        if new_tid:
+            self._switch_to(new_tid)
+
+    def _delete_side_session(self, tid: str) -> None:
+        from PySide6.QtWidgets import QMessageBox
+
+        ans = QMessageBox.question(
+            self, "删除侧边会话",
+            f"删除侧边会话「{self.presenter.session_label(tid)}」并返回主线？（不可恢复）",
+        )
+        if ans != QMessageBox.StandardButton.Yes:
+            return
+        note, parent = self.presenter.close_side(tid, discard=True)
+        self.status_label.setText(note)
+        if parent:
+            self._switch_to(parent)
+
+    def _on_side_pill_clicked(self) -> None:
+        """pill = 保留式回主线（side 会话留注册表可回看；整删走右键菜单）。"""
+        if not self.active_tid or self.presenter is None:
+            return
+        note, parent = self.presenter.close_side(self.active_tid, discard=False)
+        self.status_label.setText(note)
+        if parent:
+            self._switch_to(parent)
+
+    def _refresh_side_pill(self) -> None:
+        if not hasattr(self, "side_pill") or self.presenter is None:
+            return
+        show = bool(self.active_tid) and self.presenter.is_side(self.active_tid)
+        if not show:
+            self.side_pill.setVisible(False)
+            return
+        parent = self.presenter.side_parent(self.active_tid)
+        tip = (
+            commands.side_parent_status(
+                self.presenter.runtime.agent,
+                parent,
+                self.presenter.runtime.permission_state,
+            )
+            if parent
+            else "主线状态未知"
+        )
+        self.side_pill.setToolTip(f"{tip}（点击回主线，保留本 side 会话历史）")
+        self.side_pill.setVisible(True)
 
     # ---- 图片粘贴（工单 07）：剪贴板图 / 图片路径 → 附件条
     def _try_image_paste(self) -> bool:

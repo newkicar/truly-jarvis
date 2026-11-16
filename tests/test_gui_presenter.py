@@ -175,3 +175,76 @@ def test_thread_isolation(bridge, qapp, monkeypatch):
     release.set()
     assert wait_until(lambda: not p.gate.is_running("a") and not p.gate.is_running("b"))
     assert set(calls) == {"a", "b"}
+
+
+# ---------------------------------------------------------------- 侧边会话（side-chat 工单 03）
+def test_open_side_renames_registry_and_emits(bridge, qapp, monkeypatch):
+    import src.commands as commands_mod
+    from src.gui.runtime import GuiPresenter
+
+    p = GuiPresenter(_fake_runtime(), bridge)
+    emitted = []
+    p.bridge.refresh_sessions.connect(lambda: emitted.append(1))
+    p.session_registry.rename("t-1", "主线", ai_generated=False)
+
+    monkeypatch.setattr(commands_mod, "open_side", lambda agent, tid, state: ("已开", "t-2"))
+    note, new = p.open_side("t-1")
+    assert new == "t-2"
+    assert p.session_registry.get("t-2")["title"] == "主线-side"
+    assert len(emitted) == 1
+
+    monkeypatch.setattr(
+        commands_mod, "open_side",
+        lambda agent, tid, state: ("空会话无法开侧边会话", None),
+    )
+    note, new = p.open_side("t-9")
+    assert new == ""
+    assert p.session_registry.get("t-9") is None
+    assert len(emitted) == 1
+
+
+def test_close_side_preserve_and_discard(bridge, qapp, monkeypatch):
+    import src.commands as commands_mod
+    from src import permissions
+    from src.gui.runtime import GuiPresenter
+
+    p = GuiPresenter(_fake_runtime(), bridge)
+    rt = p.runtime
+    emitted = []
+    p.bridge.refresh_sessions.connect(lambda: emitted.append(1))
+    p.session_registry.rename("t-1", "主线", ai_generated=False)
+    p.session_registry.rename("t-2", "主线-side", ai_generated=False)
+
+    permissions.side_open(rt.permission_state, "t-2", "t-1")
+    assert p.is_side("t-2") is True
+    assert p.is_side("t-1") is False
+    assert p.side_parent("t-2") == "t-1"
+    assert p.side_parent("t-1") == ""
+
+    # 保留式：真内核（agent=None 安全），side 会话留注册表
+    note, parent = p.close_side("t-2", discard=False)
+    assert parent == "t-1"
+    assert "已返回主线" in note
+    assert p.session_registry.get("t-2") is not None
+    assert p.is_side("t-2") is False
+    assert len(emitted) == 0
+
+    # discard 式：内核需 checkpointer → monkeypatch
+    p.session_registry.rename("t-3", "主线2", ai_generated=False)
+    permissions.side_open(rt.permission_state, "t-3", "t-1")
+    monkeypatch.setattr(
+        commands_mod, "close_side",
+        lambda agent, t, state, discard=False: ("已删除 side 会话并返回主线 t-1", "t-1"),
+    )
+    note, parent = p.close_side("t-3", discard=True)
+    assert parent == "t-1"
+    assert p.session_registry.get("t-3") is None
+    assert len(emitted) == 1
+
+    monkeypatch.setattr(
+        commands_mod, "close_side",
+        lambda agent, t, state, discard=False: ("当前不在 side 会话", None),
+    )
+    note, parent = p.close_side("t-7")
+    assert parent == ""
+    assert len(emitted) == 1

@@ -24,7 +24,7 @@ from src import commands, streaming
 from src.agent import build_agent
 from src.config import Config
 from src.jump_in_queue import JumpInRegistry
-from src.permissions import build_permission_interrupts
+from src import permissions
 
 from src.gui.events import UiBridge
 from src.gui.session_registry import SessionRegistry, generate_session_name, registry_path
@@ -82,7 +82,7 @@ def build_runtime(
     checkpointer = saver_ctx.__enter__()
     checkpointer.setup()
     try:
-        _, permission_state = build_permission_interrupts(
+        _, permission_state = permissions.build_permission_interrupts(
             config.permissions,
             hooks=config.hooks,
             project_root=config.project_root,
@@ -264,6 +264,51 @@ class GuiPresenter:
         self.session_registry.delete(tid)
         self.bridge.refresh_sessions.emit()
         return f"已删除会话 {tid}"
+
+    # ---- 侧边会话（side-chat 工单 03：GUI 装配层，内核 = commands.open_side/close_side）
+    def open_side(self, tid: str) -> tuple[str, str]:
+        """开侧边会话：内核 fork 主线 head + 注入 side 边界 + 自动切 Plan（只读）。
+
+        内核拒（空会话/已在 side/已有 side/无已完成步骤）-> (文案, "")，不动注册表。
+        """
+        text, new_tid = commands.open_side(
+            self.runtime.agent, tid, self.runtime.permission_state
+        )
+        if new_tid is None:
+            return text, ""
+        title = (self.session_registry.get(tid) or {}).get("title", "").strip()
+        if not title:
+            title = commands.session_label(self.runtime.agent, tid)
+        self.session_registry.rename(new_tid, f"{title}-side", ai_generated=False)
+        self.bridge.refresh_sessions.emit()
+        return text, new_tid
+
+    def close_side(self, tid: str, discard: bool = False) -> tuple[str, str]:
+        """回主线：保留式（默认，side 会话留注册表可回看）或整删（discard=True）。
+
+        非 side 会话 -> 内核拒绝文案 + ""，不动注册表。
+        """
+        text, parent = commands.close_side(
+            self.runtime.agent, tid, self.runtime.permission_state, discard=discard
+        )
+        if parent is None:
+            return text, ""
+        if discard:
+            self.session_registry.delete(tid)
+            self.bridge.refresh_sessions.emit()
+        return text, parent
+
+    def is_side(self, tid: str) -> bool:
+        """指定会话是否处于 side 状态（线程级 permission_state）。"""
+        state = self.runtime.permission_state
+        return bool(state) and bool(permissions.side_active(state, tid))
+
+    def side_parent(self, tid: str) -> str:
+        """side 会话归属的主线 tid；非 side / 无状态 -> ""（None 归一）。"""
+        state = self.runtime.permission_state
+        if not state:
+            return ""
+        return permissions.side_parent(state, tid) or ""
 
     def _maybe_name(self, tid: str, ok: bool) -> None:
         """首轮成功结束 → 后台 AI 命名（已有短名/摘要的不动；失败静默回落）。"""

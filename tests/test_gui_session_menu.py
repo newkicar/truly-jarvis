@@ -293,3 +293,72 @@ def test_clone_failure_leaves_no_ghost_session(qapp, monkeypatch):
     assert "克隆失败" in note
     assert p.session_registry.get("t-src") is not None
     assert all("副本" not in str(v) for v in p.session_registry.load().values())
+
+
+# ---------------------------------------------------------------- 侧边会话（side-chat 工单 03）
+def test_menu_side_branch_and_delete_side(qapp, monkeypatch):
+    import src.commands as commands_mod
+    from src import permissions
+    from PySide6.QtWidgets import QMessageBox
+
+    rt, p, win = _win(qapp)
+    tid = p.new_session_id()
+    side_tid = p.new_session_id()
+    p.session_registry.rename(tid, "主线", ai_generated=False)
+    p.session_registry.rename(side_tid, "主线-side", ai_generated=False)
+    monkeypatch.setattr(p, "session_ids", lambda: [tid, side_tid])
+    win._switch_to(tid)
+    qapp.processEvents()
+
+    texts = [a.text() for a in win._build_session_menu(tid).actions()]
+    assert "开侧边会话" in texts
+    assert "删除会话" in texts
+    assert "删除侧边会话（回主线）" not in texts
+
+    permissions.side_open(rt.permission_state, side_tid, tid)
+    texts = [a.text() for a in win._build_session_menu(side_tid).actions()]
+    assert "删除侧边会话（回主线）" in texts
+    assert "删除会话" in texts
+    assert "开侧边会话" not in texts
+
+    monkeypatch.setattr(
+        commands_mod, "close_side",
+        lambda agent, t, state, discard=False: ("已删除 side 会话并返回主线 " + tid, tid),
+    )
+    monkeypatch.setattr(
+        QMessageBox, "question",
+        staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes),
+    )
+    win._delete_side_session(side_tid)
+    qapp.processEvents()
+    assert win.active_tid == tid
+    assert p.session_registry.get(side_tid) is None
+
+
+def test_side_pill_toggle_and_keep_close(qapp, monkeypatch):
+    from src import permissions
+
+    rt, p, win = _win(qapp)
+    tid = p.new_session_id()
+    side_tid = p.new_session_id()
+    p.session_registry.rename(tid, "主线", ai_generated=False)
+    p.session_registry.rename(side_tid, "主线-side", ai_generated=False)
+    monkeypatch.setattr(p, "session_ids", lambda: [tid, side_tid])
+    win._switch_to(tid)
+    qapp.processEvents()
+    assert win.side_pill.isVisible() is False
+
+    permissions.side_open(rt.permission_state, side_tid, tid)
+    win._switch_to(side_tid)
+    qapp.processEvents()
+    assert win.side_pill.isVisible() is True
+    tip = win.side_pill.toolTip()
+    assert "回主线" in tip
+    assert "主线状态未知" in tip  # agent=None 降级文案
+
+    win._on_side_pill_clicked()
+    qapp.processEvents()
+    assert win.active_tid == tid
+    assert win.side_pill.isVisible() is False
+    assert p.is_side(side_tid) is False
+    assert p.session_registry.get(side_tid) is not None  # 保留式留注册表可回看

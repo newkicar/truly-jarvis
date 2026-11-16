@@ -279,6 +279,12 @@ QPushButton#back-pill {
     color: $ground; background-color: $accent; border: none; border-radius: 17px;
     font-size: 16px; font-weight: bold;
 }
+QPushButton#side-pill {
+    color: $warning; background-color: transparent; border: 1px solid $warning;
+    border-radius: 11px; font-size: 11px; font-weight: bold; padding: 1px 10px;
+}
+QPushButton#side-pill:hover { background-color: $active; }
+
 QPushButton#tool-toggle, QPushButton#thinking-toggle {
     color: $accent; background-color: transparent; border: 1px solid $control;
     border-radius: $radius_ctrl px; font-size: 11px; padding: 1px 6px;
