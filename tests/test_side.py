@@ -1,0 +1,366 @@
+"""/side 侧边会话内核单测（side-chat 工单01）。
+
+覆盖：
+- open_side：terminal head fork / 悬挂 head 回退最近 terminal / 空会话拒 /
+  已在 side 拒 / 已有 side 拒；自动 Plan + 状态登记 + mode_before_side 快照
+- close_side：保留式（thread 保留、回主线、恢复模式）/ discard（delete_session
+  第三参=主线 tid，不误触发「删当前则新建」、不误删主线）/ 非 side 拒
+- side_parent_status 三态
+- dispatch_command /side 分支（开 / 关 / --discard / 非法子参 / 权限层缺失）
+- SideTaskGuardMiddleware：side 内拦 task / 非 side 放行 / close 即解除（零重建）
+- 权限层 state 键齐备（build_permission_interrupts 装 side_threads/side_parents）
+
+无磁盘依赖、不用 tmp_path（本机 WinError 5 纪律）；discard 路径 monkeypatch
+commands.delete_session 记录调用，不触 inbox/time_travel 落盘。
+"""
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+from src import commands
+from src.permissions import (
+    SIDE_MODE_BEFORE_KEY,
+    SIDE_PARENTS_KEY,
+    SIDE_THREADS_KEY,
+    SideTaskGuardMiddleware,
+    build_permission_interrupts,
+    side_active,
+    side_close,
+    side_open,
+    side_parent,
+)
+from src.tool_call import ToolCallView
+
+
+class _Head:
+    def __init__(self, messages, next_=None, config=None):
+        self.values = {"messages": list(messages)}
+        self.next = next_
+        self.config = config or {"configurable": {"thread_id": "t-main"}}
+
+
+class _SideAgent:
+    """fake agent：主线 t-main；threads 按线程记录 fork/边界 写入。
+
+    pending=True 时 head.next 非空（HITL 悬挂），get_state_history 模拟
+    append-only 日志：[悬挂 head, 最近 terminal]。
+    """
+
+    def __init__(self, main_msgs, pending=False, terminal_msgs=None):
+        self.main_msgs = list(main_msgs)
+        self.pending = pending
+        self.terminal_msgs = list(terminal_msgs if terminal_msgs is not None else main_msgs)
+        self.threads: dict = {}
+
+    def get_state(self, config):
+        tid = config["configurable"]["thread_id"]
+        if tid == "t-main":
+            return _Head(
+                self.main_msgs,
+                next_="model" if self.pending else None,
+                config={"configurable": {"thread_id": "t-main"}},
+            )
+        return _Head(
+            self.threads.get(tid, []),
+            next_=None,
+            config={"configurable": {"thread_id": tid}},
+        )
+
+    def get_state_history(self, config=None):
+        if config["configurable"]["thread_id"] != "t-main":
+            return []
+        head = _Head(
+            self.main_msgs,
+            next_="model" if self.pending else None,
+            config={"configurable": {"thread_id": "t-main"}},
+        )
+        if self.pending:
+            terminal = _Head(
+                self.terminal_msgs,
+                next_=None,
+                config={"configurable": {"thread_id": "t-main"}},
+            )
+            return [head, terminal]
+        return [head]
+
+    def update_state(self, config, values=None, as_node=None):
+        tid = config["configurable"]["thread_id"]
+        msgs = list((values or {}).get("messages", []))
+        if tid == "t-main":
+            # fork 语义：主线状态 update 产生新 thread
+            new_tid = f"side-{len(self.threads) + 1}"
+            self.threads[new_tid] = msgs
+            return {"configurable": {"thread_id": new_tid}, "checkpoint_id": "cp-fork"}
+        self.threads.setdefault(tid, []).extend(msgs)
+        return {"configurable": {"thread_id": tid}, "checkpoint_id": "cp-upd"}
+
+
+def _msgs():
+    return [
+        HumanMessage("问题 1", id="m1"),
+        AIMessage("回答 1", id="a1"),
+        HumanMessage("问题 2", id="m2"),
+        AIMessage("回答 2", id="a2"),
+    ]
+
+
+# ---------------------------------------------------------------- open_side
+
+
+def test_open_side_forks_terminal_head():
+    agent = _SideAgent(_msgs())
+    state = {}
+    text, new_tid = commands.open_side(agent, "t-main", state)
+    assert new_tid == "side-1"
+    assert "已开 side 会话 side-1" in text
+    forked = agent.threads["side-1"]
+    # 继承主线历史 + [side] 边界消息
+    assert [m.id for m in forked[:4]] == ["m1", "a1", "m2", "a2"]
+    assert isinstance(forked[4], SystemMessage)
+    assert "t-main" in forked[4].content
+    assert "t-main" not in agent.threads  # 主线未被写入
+    # 状态登记 + 自动 Plan + 模式快照
+    assert side_active(state, "side-1")
+    assert side_parent(state, "side-1") == "t-main"
+    assert state["mode"] == "plan"
+    assert state[SIDE_MODE_BEFORE_KEY] == "act"
+
+
+def test_open_side_snapshots_prior_plan_mode():
+    agent = _SideAgent(_msgs())
+    state = {"mode": "plan"}
+    _, new_tid = commands.open_side(agent, "t-main", state)
+    assert new_tid == "side-1"
+    assert state[SIDE_MODE_BEFORE_KEY] == "plan"
+
+
+def test_open_side_pending_head_falls_back_to_terminal():
+    pending_ai = AIMessage(
+        "需要查看文件",
+        id="a4",
+        tool_calls=[{"name": "read_file", "args": {"path": "/workspace/a.py"}, "id": "tc1"}],
+    )
+    head = _msgs() + [HumanMessage("问题 4", id="m4"), pending_ai]
+    agent = _SideAgent(head, pending=True, terminal_msgs=_msgs())
+    state = {}
+    text, new_tid = commands.open_side(agent, "t-main", state)
+    assert new_tid == "side-1"
+    forked = agent.threads["side-1"]
+    # 悬挂那一轮（含 pending tool_call）不带进 side
+    assert all(m.id not in ("m4", "a4") for m in forked)
+    assert [m.id for m in forked[:4]] == ["m1", "a1", "m2", "a2"]
+    assert any(isinstance(m, SystemMessage) for m in forked)
+
+
+def test_open_side_rejects_blank_conversation():
+    agent = _SideAgent([])
+    state = {}
+    text, new_tid = commands.open_side(agent, "t-main", state)
+    assert new_tid is None
+    assert "空会话无法开侧边会话" in text
+    assert "mode" not in state
+    assert SIDE_MODE_BEFORE_KEY not in state
+
+
+def test_open_side_rejects_already_in_side():
+    agent = _SideAgent(_msgs())
+    state = {"side_threads": {"t-main"}, "side_parents": {"t-main": "other"}}
+    text, new_tid = commands.open_side(agent, "t-main", state)
+    assert new_tid is None
+    assert "已在 side 会话" in text
+
+
+def test_open_side_rejects_existing_side():
+    agent = _SideAgent(_msgs())
+    state = {"side_threads": {"side-x"}, "side_parents": {"side-x": "other"}}
+    text, new_tid = commands.open_side(agent, "t-main", state)
+    assert new_tid is None
+    assert "已有 side 会话" in text
+
+
+# ---------------------------------------------------------------- close_side
+
+
+def _side_state():
+    return {
+        SIDE_THREADS_KEY: {"t-side"},
+        SIDE_PARENTS_KEY: {"t-side": "t-main"},
+        "mode": "plan",
+        SIDE_MODE_BEFORE_KEY: "act",
+    }
+
+
+def test_close_side_retained():
+    agent = _SideAgent(_msgs())
+    state = _side_state()
+    text, parent = commands.close_side(agent, "t-side", state)
+    assert parent == "t-main"
+    assert "已返回主线 t-main" in text
+    assert not side_active(state, "t-side")
+    assert side_parent(state, "t-side") is None
+    assert state["mode"] == "act"
+    assert SIDE_MODE_BEFORE_KEY not in state
+
+
+def test_close_side_restores_prior_mode():
+    agent = _SideAgent(_msgs())
+    state = _side_state()
+    state[SIDE_MODE_BEFORE_KEY] = "plan"  # 开 side 前主线处于 plan
+    _, _ = commands.close_side(agent, "t-side", state)
+    assert state["mode"] == "plan"
+
+
+def test_close_side_rejects_non_side():
+    agent = _SideAgent(_msgs())
+    text, parent = commands.close_side(agent, "t-main", {})
+    assert parent is None
+    assert "当前不在 side 会话" in text
+
+
+def test_close_side_discard_deletes_side_not_main(monkeypatch):
+    agent = _SideAgent(_msgs())
+    state = _side_state()
+    calls = []
+
+    def _delete(a, target, current):
+        calls.append((target, current))
+        return f"已删除会话 {target}", None
+
+    monkeypatch.setattr(commands, "delete_session", _delete)
+    text, parent = commands.close_side(agent, "t-side", state, discard=True)
+    # 第三参 = 主线 tid：不触发「删当前则新建」，也不会误删主线
+    assert calls == [("t-side", "t-main")]
+    assert parent == "t-main"
+    assert "已删除 side 会话并返回主线 t-main" in text
+    assert not side_active(state, "t-side")
+    assert state["mode"] == "act"
+
+
+# ------------------------------------------------------------ status / helpers
+
+
+def test_side_parent_status_three_states():
+    terminal = _SideAgent(_msgs())
+    assert commands.side_parent_status(terminal, "t-main", {}) == "主线已结束"
+    pending = _SideAgent(_msgs() + [HumanMessage("问题 4", id="m4")], pending=True)
+    assert commands.side_parent_status(pending, "t-main", {}) == "主线进行中/待审批"
+
+    class _Boom:
+        def get_state(self, config):
+            raise RuntimeError("boom")
+
+    assert commands.side_parent_status(_Boom(), "t-main", {}) == "主线状态未知"
+
+
+def test_side_state_helpers_idempotent():
+    state = {}
+    side_open(state, "s1", "m1")
+    side_open(state, "s1", "m1")  # 幂等
+    assert side_active(state, "s1")
+    assert side_parent(state, "s1") == "m1"
+    side_open(state, "", "m1")  # 空 id no-op
+    assert not side_active(state, "")
+    side_close(state, "s1")
+    side_close(state, "s1")  # 缺失不报错
+    assert not side_active(state, "s1")
+    assert side_parent(state, "s1") is None
+    # 旧引用防御：缺键 state 不崩
+    assert not side_active({}, "s1")
+    assert side_parent({}, "s1") is None
+
+
+def test_permission_state_carries_side_keys():
+    _, state = build_permission_interrupts(None)
+    assert state.get(SIDE_THREADS_KEY) == set()
+    assert state.get(SIDE_PARENTS_KEY) == {}
+
+
+# ----------------------------------------------------------------- dispatch
+
+
+def test_dispatch_side_open_and_close_roundtrip():
+    agent = _SideAgent(_msgs())
+    state = {}
+    text, new_tid, replay = commands.dispatch_command(agent, "t-main", "/side", permission_state=state)
+    assert replay is None
+    assert new_tid == "side-1"
+    assert "已开 side 会话" in text
+    text, new_tid, replay = commands.dispatch_command(agent, "side-1", "/side close", permission_state=state)
+    assert new_tid == "t-main"  # close 回主线
+    assert "已返回主线 t-main" in text
+    assert not side_active(state, "side-1")
+
+
+def test_dispatch_side_close_discard(monkeypatch):
+    agent = _SideAgent(_msgs())
+    state = {}
+    _, new_tid, _ = commands.dispatch_command(agent, "t-main", "/side", permission_state=state)
+    assert new_tid == "side-1"
+    calls = []
+
+    def _delete(a, target, current):
+        calls.append((target, current))
+        return f"已删除会话 {target}", None
+
+    monkeypatch.setattr(commands, "delete_session", _delete)
+    text, new_tid, replay = commands.dispatch_command(
+        agent, "side-1", "/side close --discard", permission_state=state
+    )
+    assert calls == [("side-1", "t-main")]
+    assert new_tid == "t-main"
+    assert "已删除 side 会话并返回主线 t-main" in text
+    assert replay is None
+
+
+def test_dispatch_side_bad_subarg_usage():
+    text, new_tid, replay = commands.dispatch_command(
+        _SideAgent(_msgs()), "t-main", "/side foo", permission_state={}
+    )
+    assert text == "用法: /side | /side close [--discard]"
+    assert new_tid is None
+    assert replay is None
+
+
+def test_dispatch_side_without_permission_layer():
+    text, new_tid, replay = commands.dispatch_command(_SideAgent(_msgs()), "t-main", "/side")
+    assert "side 会话不可用（权限层未初始化）" in text
+    assert new_tid is None
+
+
+# ------------------------------------------------------------ task guard
+
+
+def test_side_task_guard_blocks_task_in_side():
+    state = {
+        "thread_id": "t-side",
+        SIDE_THREADS_KEY: {"t-side"},
+        SIDE_PARENTS_KEY: {"t-side": "t-main"},
+    }
+    mw = SideTaskGuardMiddleware(state)
+    out = mw.block(ToolCallView(name="task", id="c1"))
+    assert out is not None
+    assert "side 会话中不可用 sub-agents" in out
+    assert "/side close" in out
+
+
+def test_side_task_guard_passes_outside_side_and_non_task():
+    state = {
+        "thread_id": "t-main",
+        SIDE_THREADS_KEY: {"t-side"},
+        SIDE_PARENTS_KEY: {"t-side": "t-main"},
+    }
+    mw = SideTaskGuardMiddleware(state)
+    # 非 side 会话 task 放行
+    assert mw.block(ToolCallView(name="task", id="c1")) is None
+    # side 会话非 task 工具放行
+    state["thread_id"] = "t-side"
+    assert mw.block(ToolCallView(name="execute", id="c2")) is None
+
+
+def test_side_task_guard_releases_after_close():
+    state = {"thread_id": "t-main", "mode": "act", SIDE_MODE_BEFORE_KEY: "act"}
+    side_open(state, "t-side", "t-main")
+    state["thread_id"] = "t-side"
+    mw = SideTaskGuardMiddleware(state)
+    assert mw.block(ToolCallView(name="task", id="c1")) is not None
+    # close 即时解除（零 agent 重建，共享 state 引用）
+    commands.close_side(_SideAgent(_msgs()), "t-side", state)
+    assert mw.block(ToolCallView(name="task", id="c1")) is None

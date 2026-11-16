@@ -32,6 +32,15 @@ VALID_ACTIONS = ("allow", "ask", "deny")
 # 因此 /yolo off 后原 permissions 规则原样生效（零快照、零 agent 重建）。
 YOLO_THREADS_KEY = "yolo_threads"
 
+# /side 侧边会话（side-chat，2026-11-16）：线程级 side 标记。
+# state["side_threads"] = 当前所有 side thread_id 集合；
+# state["side_parents"] = side tid -> 主线 parent tid 映射。
+# 与 yolo_threads 同惯例：纯内存、不落盘、重启全清；side_open/side_close
+# 只动集合成员，零 agent 重建。
+SIDE_THREADS_KEY = "side_threads"
+SIDE_PARENTS_KEY = "side_parents"
+SIDE_MODE_BEFORE_KEY = "mode_before_side"
+
 
 def _match_pattern(pattern: str, value: str) -> bool:
     """通配匹配：* 任意多字符，? 单字符；用 fnmatch 实现（opencode 同语义）。"""
@@ -145,6 +154,54 @@ def yolo_active(state: dict, thread_id: str) -> bool:
     return bool(threads is not None and tid in threads)
 
 
+def side_open(state: dict, thread_id: str, parent: str) -> None:
+    """登记一个 side 会话（幂等）。空 id 为 no-op。
+
+    同时写 side_threads 集合与 side_parents 映射（parent 存主线 tid）。
+    """
+    tid = str(thread_id or "")
+    if not tid:
+        return
+    state.setdefault(SIDE_THREADS_KEY, set()).add(tid)
+    state.setdefault(SIDE_PARENTS_KEY, {})[tid] = str(parent or "")
+
+
+def side_close(state: dict, thread_id: str) -> None:
+    """注销一个 side 会话（幂等，缺失不报错）。空 id 为 no-op。"""
+    tid = str(thread_id or "")
+    if not tid:
+        return
+    threads = state.get(SIDE_THREADS_KEY)
+    if isinstance(threads, set):
+        threads.discard(tid)
+    parents = state.get(SIDE_PARENTS_KEY)
+    if isinstance(parents, dict):
+        parents.pop(tid, None)
+
+
+def side_active(state: dict, thread_id: str) -> bool:
+    """指定 thread 是否处于 side 会话。
+
+    空 id -> False；state 缺 side_threads 键（旧引用防御）-> False。
+    """
+    tid = str(thread_id or "")
+    if not tid:
+        return False
+    threads = state.get(SIDE_THREADS_KEY)
+    return bool(threads is not None and tid in threads)
+
+
+def side_parent(state: dict, thread_id: str) -> str | None:
+    """side 会话归属的主线 thread_id；非 side 会话 -> None。"""
+    tid = str(thread_id or "")
+    if not tid:
+        return None
+    parents = state.get(SIDE_PARENTS_KEY)
+    if isinstance(parents, dict) and tid in parents:
+        return parents[tid]
+    return None
+
+
 def _action_for_args(state: dict, tool: str, args: dict) -> str:
     """按 state 当前规则 + 一次工具调用的 args 解析动作（allow/ask/deny）。
 
@@ -254,6 +311,8 @@ def build_permission_interrupts(
         "project_root": project_root,
         "heuristics": bool(permissions.get("heuristics", False)),
         "yolo_threads": set(),
+        SIDE_THREADS_KEY: set(),
+        SIDE_PARENTS_KEY: {},
     }
     return _build_interrupt_on(state), state
 
@@ -261,6 +320,8 @@ def build_permission_interrupts(
 def build_permission_interrupts_from_state(state: dict) -> dict:
     """从已构造的 state 重建 interrupt_on（供外部复用同一 state 引用时使用）。"""
     state.setdefault(YOLO_THREADS_KEY, set())
+    state.setdefault(SIDE_THREADS_KEY, set())
+    state.setdefault(SIDE_PARENTS_KEY, {})
     return _build_interrupt_on(state)
 
 
@@ -373,6 +434,34 @@ class PermissionDenyMiddleware(GuardMiddleware):
         return (
             f"{lead}"
             f"工具 {tool}，参数 {value or view.args}。{hook_msg} 请更换方案或询问用户，不要重试相同调用。"
+        )
+
+
+class SideTaskGuardMiddleware(GuardMiddleware):
+    """/side 侧边会话 task 工具守卫：side 会话中禁用 sub-agents。
+
+    挂在主代理 wrap_tool_call / awrap_tool_call（工具执行前），state 与
+    interrupt_on 共享同一引用 —— side_open/side_close 即时生效，无需重建 agent。
+    已知并发边界（与 yolo 同记录不解决）：state["thread_id"] 为共享键，
+    并发 sched-turn 可覆写。
+    """
+
+    def __init__(self, state: dict):
+        super().__init__()
+        self.state = state
+
+    @property
+    def name(self) -> str:
+        return "side-task-guard"
+
+    def block(self, view: ToolCallView) -> str | None:
+        if view.name != "task":
+            return None
+        if not side_active(self.state, str(self.state.get("thread_id") or "")):
+            return None
+        return (
+            "Error: side 会话中不可用 sub-agents（task 工具）。"
+            "/side close 返回主线后再用。"
         )
 
 

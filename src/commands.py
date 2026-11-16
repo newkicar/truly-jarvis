@@ -43,6 +43,7 @@ _HELP_COMMANDS = """\
   /skills       列出可用 skills（manual 需 /use 手动触发）
   /use <skill> [说明]  手动调用 manual-only skill（注入完整指令）
   /yolo on | off  YOLO 模式开关：本会话所有动作免审批（仅当前会话、重启即关）
+  /side | /side close [--discard]  开/关侧边会话（继承历史，只读，禁 sub-agents）
   /compact [提示]  压缩当前会话历史为一条延续性摘要写回（可选文字提示压缩倾向）
   /dream   梦境沉淀：回顾近期会话，蒸馏可复用知识到 梦境知识库（默认全局 ~/.jarvis/memory/dream/）
   /snapshot       记录当前文件状态到当前 checkpoint（git 快照）
@@ -989,6 +990,111 @@ def fork(agent, thread_id: str, checkpoint_id: str):
     return f"已从 {full_id} 分叉（保留原历史），当前会话 {new_thread}", new_thread
 
 
+def open_side(agent, thread_id: str, state: dict) -> tuple[str, str | None]:
+    """/side 开侧边会话：fork 当前 thread head（悬挂时回退最近 terminal），
+    注入 [side] 边界 SystemMessage，自动切 Plan（只读），task 由 SideTaskGuard 拦截。
+
+    门控序（spec）：空会话拒 -> 已在 side 拒 -> 已有 side 拒。
+    返回 (指引文案, 新 thread_id | None)。
+    """
+    from src.permissions import side_active, side_open
+
+    base = thread_config(thread_id)
+    try:
+        head = agent.get_state(base)
+    except Exception:
+        return f"side 开侧边会话失败: 无法读取会话 {thread_id} 状态", None
+    if not ((head.values or {}).get("messages")):
+        return "空会话无法开侧边会话", None
+    if side_active(state, thread_id):
+        return "已在 side 会话，用 /side close 返回主线", None
+    existing = state.get("side_threads")
+    if isinstance(existing, set) and existing:
+        return "已有 side 会话，请先关闭再开新的", None
+
+    # 定 fork 点：head terminal 直接 fork；head 悬挂（HITL pending）回退最近 terminal
+    target = head
+    if head.next:
+        target = None
+        for s in agent.get_state_history(config=base):
+            if not s.next:
+                target = s
+                break
+        if target is None:
+            return "side 开侧边会话失败: 当前会话尚无已完成步骤，请在本轮结束后再开", None
+    try:
+        new_config = agent.update_state(
+            target.config, values=target.values, as_node="model"
+        )
+    except Exception:
+        return "side 开侧边会话失败: 无法分叉当前会话历史", None
+    new_tid = new_config["configurable"]["thread_id"]
+
+    from langchain_core.messages import SystemMessage
+
+    boundary = SystemMessage(
+        content=(
+            f"本会话是主线 {thread_id} 的 side 侧边会话。历史消息继承自主线；"
+            "你处在只读约定下：不做文件修改，不使用 sub-agents（task 工具不可用）。"
+        )
+    )
+    agent.update_state(
+        thread_config(new_tid), values={"messages": [boundary]}, as_node="model"
+    )
+
+    from src.plan_mode import current_mode, set_mode
+    from src.permissions import SIDE_MODE_BEFORE_KEY
+
+    side_open(state, new_tid, thread_id)
+    state[SIDE_MODE_BEFORE_KEY] = current_mode(state)
+    set_mode(state, "plan")
+    return (
+        f"已开 side 会话 {new_tid}（继承主线历史，默认只读）；"
+        "/side close 返回主线（保留），/side close --discard 删除",
+        new_tid,
+    )
+
+
+def close_side(
+    agent, thread_id: str, state: dict, discard: bool = False
+) -> tuple[str, str | None]:
+    """/side close 回主线：默认保留式（side 会话可回看），discard 显式删除。
+
+    非 side 调用 -> 拒绝；discard 走 delete_session（第三参 = parent 主线 tid，
+    保证「删当前会话则新建」逻辑不误触发、不误删主线）。模式恢复：
+    回退到开 side 前主线自己的模式（MVP 快照语义）。
+    返回 (文案, parent_tid | None)。
+    """
+    from src.plan_mode import set_mode
+    from src.permissions import SIDE_MODE_BEFORE_KEY, side_close, side_parent
+
+    parent = side_parent(state, thread_id)
+    if parent is None:
+        return "当前不在 side 会话", None
+    if discard:
+        delete_session(agent, thread_id, parent)
+    side_close(state, thread_id)
+    prev = state.pop(SIDE_MODE_BEFORE_KEY, "act") or "act"
+    set_mode(state, prev)
+    if discard:
+        return f"已删除 side 会话并返回主线 {parent}", parent
+    return f"已返回主线 {parent}", parent
+
+
+def side_parent_status(agent, parent_tid: str, state: dict) -> str:
+    """主线状态标签（内核两态）：head.next 非空 -> 进行中/待审批；terminal -> 已结束。
+
+    TUI/GUI 可叠加 gate.is_running 细化（可选增强，非契约）。
+    """
+    try:
+        head = agent.get_state(thread_config(parent_tid))
+    except Exception:
+        return "主线状态未知"
+    if head.next:
+        return "主线进行中/待审批"
+    return "主线已结束"
+
+
 def undo(agent, thread_id: str, n: int = 1) -> str:
     """撤回最近 n 条用户消息（消息层 time travel；文件/Inbox 不动，HITL 悬挂随回退作废）。
 
@@ -1418,6 +1524,22 @@ def dispatch_command(
         return dream.run_dream(agent, load_config()), None, None
     if cmd == "/yolo":
         return yolo_command_text(permission_state, thread_id, command), None, None
+    if cmd == "/side":
+        if permission_state is None:
+            return "side 会话不可用（权限层未初始化）", None, None
+        sub = parts[1] if len(parts) > 1 else ""
+        if sub == "":
+            text, new_thread = open_side(agent, thread_id, permission_state)
+            return text, new_thread, None
+        if sub == "close" and (
+            len(parts) == 2 or (len(parts) == 3 and parts[2] == "--discard")
+        ):
+            discard = len(parts) == 3 and parts[2] == "--discard"
+            text, new_thread = close_side(
+                agent, thread_id, permission_state, discard=discard
+            )
+            return text, new_thread, None
+        return "用法: /side | /side close [--discard]", None, None
     if cmd == "/init":
         return init_project(), None, None
     return f"未知命令: {cmd}（/help 查看帮助）", None, None

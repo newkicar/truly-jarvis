@@ -33,6 +33,7 @@ from src.deprecated_paths import DeprecatedPathMiddleware
 from src.inbox_snapshot_middleware import InboxSnapshotMiddleware
 from src.media_guard import MediaGuardMiddleware
 from src.permissions import (
+    SideTaskGuardMiddleware,
     build_permission_deny_middleware,
     build_permission_interrupts,
     build_permission_interrupts_from_state,
@@ -405,6 +406,7 @@ def build_agent(
             TodoListMiddleware(),
             deny_middleware,
             PlanModeMiddleware(permission_state),
+            SideTaskGuardMiddleware(permission_state),
             deprecated_guard,
             system_context_enforcer,
             vault_guard,
