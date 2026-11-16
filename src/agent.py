@@ -446,6 +446,12 @@ def build_agent(
         from src.jump_in_queue import MessageQueueJumpInMiddleware
 
         middleware.append(MessageQueueJumpInMiddleware(jump_in_registry, permission_state))
+    # 400 自愈（双 System 硬规则，殿后最内层）：历史里散落的 SystemMessage
+    #（side 边界 / compact 摘要）在模型调用时合并进唯一 system 头，不写历史
+    from src.system_head import SystemHeadMiddleware
+
+    middleware.append(SystemHeadMiddleware())
+
 
     compiled = create_deep_agent(
         model=model,

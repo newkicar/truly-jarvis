@@ -1032,12 +1032,6 @@ def open_side(agent, thread_id: str, state: dict) -> tuple[str, str | None]:
     import uuid
 
     new_tid = f"side-{uuid.uuid4().hex[:8]}"
-    try:
-        agent.update_state(
-            thread_config(new_tid), values=target.values, as_node="model"
-        )
-    except Exception:
-        return "side 开侧边会话失败: 无法分叉当前会话历史", None
 
     from langchain_core.messages import SystemMessage
 
@@ -1047,9 +1041,17 @@ def open_side(agent, thread_id: str, state: dict) -> tuple[str, str | None]:
             "你处在只读约定下：不做文件修改，不使用 sub-agents（task 工具不可用）。"
         )
     )
-    agent.update_state(
-        thread_config(new_tid), values={"messages": [boundary]}, as_node="model"
-    )
+    # 单次写入：boundary SystemMessage 置消息列表 0 位（存储形式，越靠前越好）。
+    # 网关硬规则（实证）：wire 请求必须恰好一个 System 且位于 index 0；
+    # boundary 与请求级主 agent prompt 在调用时构成双 System，由
+    # SystemHeadMiddleware（src/system_head.py）在模型调用时合并进唯一
+    # system 头——不动存储，undo / fork / GUI 转录显示均不受影响。
+    vals = dict(target.values)
+    vals["messages"] = [boundary] + list(vals.get("messages") or [])
+    try:
+        agent.update_state(thread_config(new_tid), values=vals, as_node="model")
+    except Exception:
+        return "side 开侧边会话失败: 无法分叉当前会话历史", None
 
     from src.plan_mode import current_mode, set_mode
     from src.permissions import SIDE_MODE_BEFORE_KEY

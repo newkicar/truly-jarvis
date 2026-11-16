@@ -122,10 +122,10 @@ def test_open_side_forks_terminal_head():
     assert new_tid.startswith("side-") and new_tid != "t-main"
     assert "已开 side 会话" in text
     forked = agent.threads[new_tid]
-    # 继承主线历史 + [side] 边界消息
-    assert [m.id for m in forked[:4]] == ["m1", "a1", "m2", "a2"]
-    assert isinstance(forked[4], SystemMessage)
-    assert "t-main" in forked[4].content
+    # boundary SystemMessage 置 0 位（网关要求 System 必须在开头），其后为继承主线历史
+    assert isinstance(forked[0], SystemMessage)
+    assert "t-main" in forked[0].content
+    assert [m.id for m in forked[1:5]] == ["m1", "a1", "m2", "a2"]
     assert "t-main" not in agent.threads  # 主线未被写入
     # 状态登记 + 自动 Plan + 模式快照
     assert side_active(state, new_tid)
@@ -156,8 +156,64 @@ def test_open_side_pending_head_falls_back_to_terminal():
     forked = agent.threads[new_tid]
     # 悬挂那一轮（含 pending tool_call）不带进 side
     assert all(m.id not in ("m4", "a4") for m in forked)
-    assert [m.id for m in forked[:4]] == ["m1", "a1", "m2", "a2"]
-    assert any(isinstance(m, SystemMessage) for m in forked)
+    assert isinstance(forked[0], SystemMessage)  # boundary 置 0 位
+    assert [m.id for m in forked[1:5]] == ["m1", "a1", "m2", "a2"]
+
+
+def test_open_side_boundary_first_when_main_compacted():
+    """主线已 compact（历史 0 位是 compact 摘要 SystemMessage）：side 开出来后
+    boundary 置 0 位、compact 摘要 System 紧随其后，更后不再出现 System；
+    wire 恰好一个 System 位于 0 位的网关硬规则由 SystemHeadMiddleware
+    调用时合并满足（见 tests/test_system_head.py 与下方集成断言）。"""
+    main = [
+        SystemMessage("[compact] 早前对话摘要：讨论了 X", id="c1"),
+        HumanMessage("问题 1", id="m1"),
+        AIMessage("回答 1", id="a1"),
+    ]
+    agent = _SideAgent(main)
+    state = {}
+    text, new_tid = commands.open_side(agent, "t-main", state)
+    assert new_tid.startswith("side-")
+    forked = agent.threads[new_tid]
+    # boundary 0 位，compact 摘要 System 1 位；2 位起不得再出现 System
+    assert isinstance(forked[0], SystemMessage) and "side" in forked[0].content
+    assert forked[1].id == "c1" and isinstance(forked[1], SystemMessage)
+    assert [m.id for m in forked[2:4]] == ["m1", "a1"]
+    assert not any(isinstance(m, SystemMessage) for m in forked[2:])
+
+
+
+def test_side_storage_form_merges_to_single_system_head():
+    """v1 存储形式 [S(boundary), 继承历史] + 请求级主 agent prompt：
+    SystemHeadMiddleware 调用时合并后，wire 恰好一个 System 在 0 位
+    （文本 = 主 agent prompt + boundary 按序拼接），历史形式不变。"""
+    from langchain.agents.middleware.types import ModelRequest
+
+    from src.system_head import SystemHeadMiddleware
+
+    agent = _SideAgent(_msgs())
+    state = {}
+    _, new_tid = commands.open_side(agent, "t-main", state)
+    history = agent.threads[new_tid]
+    assert isinstance(history[0], SystemMessage)  # boundary 存储形式 0 位
+
+    req = ModelRequest(
+        model=None,
+        messages=list(history),
+        system_message=SystemMessage(content="主 agent prompt"),
+    )
+    captured = []
+    SystemHeadMiddleware().wrap_model_call(req, lambda r: captured.append(r) or "ok")
+    out = captured[0]
+
+    # wire 恰好一个 System（请求级头部），消息列表不再含 System
+    assert out.system_message is not None
+    assert "主 agent prompt" in out.system_message.content
+    assert "side" in out.system_message.content
+    assert not any(isinstance(m, SystemMessage) for m in out.messages)
+    assert [m.id for m in out.messages] == ["m1", "a1", "m2", "a2"]
+    # 存储形式未被中间件改动
+    assert isinstance(agent.threads[new_tid][0], SystemMessage)
 
 
 def test_open_side_rejects_blank_conversation():
