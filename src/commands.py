@@ -979,14 +979,19 @@ def fork(agent, thread_id: str, checkpoint_id: str):
                     break
         if target is None:
             return f"分叉失败: 找不到 checkpoint {full_id}", None
-        new_config = agent.update_state(
-            target.config,
+        # 显式新 tid：update_state 写入的是 config 里的 thread_id（真实 LangGraph 原样
+        # 返回该 tid，不是「产生新 thread」）；新线程首写 = 历史全量继承
+        # （add_messages 对空 channel 按 id 去重），绝不污染主线
+        import uuid
+
+        new_thread = f"fork-{uuid.uuid4().hex[:8]}"
+        agent.update_state(
+            thread_config(new_thread),
             values=target.values,
             as_node="model",
         )
     except Exception:
         return f"分叉失败: checkpoint {full_id}", None
-    new_thread = new_config["configurable"]["thread_id"]
     return f"已从 {full_id} 分叉（保留原历史），当前会话 {new_thread}", new_thread
 
 
@@ -1022,13 +1027,17 @@ def open_side(agent, thread_id: str, state: dict) -> tuple[str, str | None]:
                 break
         if target is None:
             return "side 开侧边会话失败: 当前会话尚无已完成步骤，请在本轮结束后再开", None
+    # 显式新 tid（同 fork 根因）：update_state 写入 config 里的 thread_id，
+    # 真实 LangGraph 原样返回该 tid；必须显式新 tid + thread_config 首写继承
+    import uuid
+
+    new_tid = f"side-{uuid.uuid4().hex[:8]}"
     try:
-        new_config = agent.update_state(
-            target.config, values=target.values, as_node="model"
+        agent.update_state(
+            thread_config(new_tid), values=target.values, as_node="model"
         )
     except Exception:
         return "side 开侧边会话失败: 无法分叉当前会话历史", None
-    new_tid = new_config["configurable"]["thread_id"]
 
     from langchain_core.messages import SystemMessage
 

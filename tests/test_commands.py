@@ -534,9 +534,10 @@ def test_completed_turn_checkpoint_pending_input_returns_none():
 
 
 class FakeForkAgent:
-    def __init__(self, target_state, new_thread="fork-session-1"):
+    """模拟真实 LangGraph：update_state 写入 config 里的 thread_id、原样返回（不产生新 thread）。"""
+
+    def __init__(self, target_state):
         self._target = target_state
-        self._new_thread = new_thread
         self.update_calls = []
 
     def get_state_history(self, config=None):
@@ -544,7 +545,12 @@ class FakeForkAgent:
 
     def update_state(self, config, values, as_node):
         self.update_calls.append((config, values, as_node))
-        return {"configurable": {"thread_id": self._new_thread, "checkpoint_id": "new-cp"}}
+        return {
+            "configurable": {
+                "thread_id": config["configurable"]["thread_id"],
+                "checkpoint_id": "new-cp",
+            }
+        }
 
 
 class FakeRollbackDispatchAgent:
@@ -561,8 +567,13 @@ def test_dispatch_fork_returns_new_thread():
     agent = FakeForkAgent(target)
     text, new_thread, replay_cid = commands.dispatch_command(agent, "default", f"/fork {cid[:13]}")
     assert "分叉" in text
-    assert new_thread == "fork-session-1"
+    # 显式新 tid（真实 LangGraph 的 update_state 不「产生」新 thread），且不复用主线
+    assert new_thread.startswith("fork-") and new_thread != "default"
     assert agent.update_calls
+    # 内核显式对新 tid 做首写（thread_config 无 checkpoint_id）
+    written_cfg = agent.update_calls[-1][0]
+    assert written_cfg["configurable"]["thread_id"] == new_thread
+    assert "checkpoint_id" not in written_cfg["configurable"]
 
 
 def test_dispatch_rollback_includes_inbox_listing(monkeypatch, tmp_path):
@@ -1366,4 +1377,4 @@ def test_dispatch_compact_with_guide():
     assert new_thread is None and replay_cid is None
     # gui15: guide 随 HumanMessage（第二条）下发
     assert any("保留重要结论" in p[1] for p in agent.model.prompts)
-
+

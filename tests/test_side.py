@@ -82,14 +82,23 @@ class _SideAgent:
         return [head]
 
     def update_state(self, config, values=None, as_node=None):
+        """模拟真实 LangGraph：写入 config 里的 thread_id、原样返回该 tid（不产生新
+        thread）；新 thread 首写 = 历史全量继承；已有 thread = add_messages 语义
+        （按 id 替换，无 id 追加）。"""
         tid = config["configurable"]["thread_id"]
         msgs = list((values or {}).get("messages", []))
-        if tid == "t-main":
-            # fork 语义：主线状态 update 产生新 thread
-            new_tid = f"side-{len(self.threads) + 1}"
-            self.threads[new_tid] = msgs
-            return {"configurable": {"thread_id": new_tid}, "checkpoint_id": "cp-fork"}
-        self.threads.setdefault(tid, []).extend(msgs)
+        existing = self.threads.get(tid)
+        if existing is None:
+            self.threads[tid] = list(msgs)
+            return {"configurable": {"thread_id": tid}, "checkpoint_id": "cp-fork"}
+        by_id = {}
+        for m in msgs:
+            mid = getattr(m, "id", None)
+            if mid:
+                by_id[mid] = m
+        merged = [by_id.get(getattr(m, "id", None), m) for m in existing]
+        merged.extend(m for m in msgs if getattr(m, "id", None) is None)
+        self.threads[tid] = merged
         return {"configurable": {"thread_id": tid}, "checkpoint_id": "cp-upd"}
 
 
@@ -109,17 +118,18 @@ def test_open_side_forks_terminal_head():
     agent = _SideAgent(_msgs())
     state = {}
     text, new_tid = commands.open_side(agent, "t-main", state)
-    assert new_tid == "side-1"
-    assert "已开 side 会话 side-1" in text
-    forked = agent.threads["side-1"]
+    # 显式新 tid（真实 LangGraph 的 update_state 不「产生」新 thread）
+    assert new_tid.startswith("side-") and new_tid != "t-main"
+    assert "已开 side 会话" in text
+    forked = agent.threads[new_tid]
     # 继承主线历史 + [side] 边界消息
     assert [m.id for m in forked[:4]] == ["m1", "a1", "m2", "a2"]
     assert isinstance(forked[4], SystemMessage)
     assert "t-main" in forked[4].content
     assert "t-main" not in agent.threads  # 主线未被写入
     # 状态登记 + 自动 Plan + 模式快照
-    assert side_active(state, "side-1")
-    assert side_parent(state, "side-1") == "t-main"
+    assert side_active(state, new_tid)
+    assert side_parent(state, new_tid) == "t-main"
     assert state["mode"] == "plan"
     assert state[SIDE_MODE_BEFORE_KEY] == "act"
 
@@ -128,7 +138,7 @@ def test_open_side_snapshots_prior_plan_mode():
     agent = _SideAgent(_msgs())
     state = {"mode": "plan"}
     _, new_tid = commands.open_side(agent, "t-main", state)
-    assert new_tid == "side-1"
+    assert new_tid.startswith("side-") and new_tid != "t-main"
     assert state[SIDE_MODE_BEFORE_KEY] == "plan"
 
 
@@ -142,8 +152,8 @@ def test_open_side_pending_head_falls_back_to_terminal():
     agent = _SideAgent(head, pending=True, terminal_msgs=_msgs())
     state = {}
     text, new_tid = commands.open_side(agent, "t-main", state)
-    assert new_tid == "side-1"
-    forked = agent.threads["side-1"]
+    assert new_tid.startswith("side-") and new_tid != "t-main"
+    forked = agent.threads[new_tid]
     # 悬挂那一轮（含 pending tool_call）不带进 side
     assert all(m.id not in ("m4", "a4") for m in forked)
     assert [m.id for m in forked[:4]] == ["m1", "a1", "m2", "a2"]
@@ -281,19 +291,21 @@ def test_dispatch_side_open_and_close_roundtrip():
     state = {}
     text, new_tid, replay = commands.dispatch_command(agent, "t-main", "/side", permission_state=state)
     assert replay is None
-    assert new_tid == "side-1"
+    assert new_tid.startswith("side-") and new_tid != "t-main"
     assert "已开 side 会话" in text
-    text, new_tid, replay = commands.dispatch_command(agent, "side-1", "/side close", permission_state=state)
-    assert new_tid == "t-main"  # close 回主线
+    # 主线不被 side 写入
+    assert "t-main" not in agent.threads
+    text, closed, replay = commands.dispatch_command(agent, new_tid, "/side close", permission_state=state)
+    assert closed == "t-main"  # close 回主线
     assert "已返回主线 t-main" in text
-    assert not side_active(state, "side-1")
+    assert not side_active(state, new_tid)
 
 
 def test_dispatch_side_close_discard(monkeypatch):
     agent = _SideAgent(_msgs())
     state = {}
     _, new_tid, _ = commands.dispatch_command(agent, "t-main", "/side", permission_state=state)
-    assert new_tid == "side-1"
+    assert new_tid.startswith("side-") and new_tid != "t-main"
     calls = []
 
     def _delete(a, target, current):
@@ -301,11 +313,11 @@ def test_dispatch_side_close_discard(monkeypatch):
         return f"已删除会话 {target}", None
 
     monkeypatch.setattr(commands, "delete_session", _delete)
-    text, new_tid, replay = commands.dispatch_command(
-        agent, "side-1", "/side close --discard", permission_state=state
+    text, closed, replay = commands.dispatch_command(
+        agent, new_tid, "/side close --discard", permission_state=state
     )
-    assert calls == [("side-1", "t-main")]
-    assert new_tid == "t-main"
+    assert calls == [(new_tid, "t-main")]
+    assert closed == "t-main"
     assert "已删除 side 会话并返回主线 t-main" in text
     assert replay is None
 
