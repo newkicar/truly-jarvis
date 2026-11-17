@@ -27,7 +27,7 @@ try {
     if ($LASTEXITCODE -eq 0) { Write-Host "[1/4] tag $Tag 已存在" }
     else {
         Write-Host "[1/4] 创建 tag $Tag …"
-        git tag -a $Tag -m "${Tag}：空格+/ 任意位置命令补全（tui-ux23）+ GUI @ 多行回归（gui-ux22）+ Side per-thread 隔离（side-isolation）+ GUI 宽度自适应换行 / <>br 修复 / tui-ux20（gui-ux21）"
+        git tag -a $Tag -m "${Tag}：空格+/ 任意位置命令补全（tui-ux23）+ GUI @ 多行回归（gui-ux22）+ Side per-thread 隔离（side-isolation）+ GUI 宽度自适应换行 / <>br 修复 / tui-ux20（gui-ux21）+ GUI 续行 @ / 光标失步修复（gui-ux24）"
     }
 
     # ② push main
