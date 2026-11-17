@@ -16,7 +16,7 @@ param(
     [string]$Thumbprint = "",
     [string]$Pfx = "",
     [string]$PfxPassword = "",
-    [string]$Version = "0.1.1",
+    [string]$Version = "0.1.2",
     [string]$OutDir = "release"
 )
 

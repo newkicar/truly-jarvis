@@ -1,4 +1,4 @@
-version: 0.1.1
+version: 0.1.2
 build-time: 2026-11-17 11:26
 python: Python 3.14.7
 nuitka: 4.3.4

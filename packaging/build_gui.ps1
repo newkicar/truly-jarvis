@@ -71,7 +71,7 @@ Write-Host "staging: $totalMb MB / $fileCount 文件（exe $exeMb MB）"
 Write-Host '[5/8] 生成 packaging\runtime-info.txt' -ForegroundColor Cyan
 $ver = (& $py --version 2>&1 | Out-String).Trim()
 $runtimeInfo = @(
-    'version: 0.1.1',
+    'version: 0.1.2',
     ('build-time: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm')),
     "python: $ver",
     'nuitka: 4.3.4',
@@ -82,7 +82,7 @@ $runtimeInfo = @(
 Set-Content 'packaging\runtime-info.txt' $runtimeInfo -Encoding utf8
 
 # ---------- [6/8] zip + SHA-256 ----------
-$zipName = 'jarvis-gui-0.1.1-win-x64-portable.zip'
+$zipName = 'jarvis-gui-0.1.2-win-x64-portable.zip'
 if (-not $SkipZip) {
     Write-Host '[6/8] zip + SHA-256 (release\)' -ForegroundColor Cyan
     $zipStage = 'build\zip-staging'
