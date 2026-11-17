@@ -43,8 +43,58 @@ class CapLabel(QLabel):
         return QSize(min(base.width(), 48), base.height())
 
 
-def _detail_html(args_text: str, output_text: str, err: bool, depth: int) -> str:
-    """工具详情区（等宽 args + 完整输出；错误态染红；超长截断）。"""
+class ReflowLabel(CapLabel):
+    """宽度自适应换行 QLabel（gui-ux21）：resize 时按实测宽度重算断行字数 + 80ms 防抖。
+
+    - 内容路径：source 闭包（every -> 文本/HTML）+ render() 按当前 _every 重算；
+      构造函数不设初始文本（合批 flush 前为空、详情展开前为空，test_gui_pane 契约）。
+    - resize → timer 防抖 80ms → rewrap_now()：wrap_every(font, width()) 重算字数，
+      变化才重渲；width()<=0（offscreen/未布局）沿用 48/80 传统初值，首次真实 resize 自校正。
+    """
+
+    def __init__(self, source, initial_every: int = 80, parent=None) -> None:
+        super().__init__("", parent)
+        self._source = source  # Callable[[int], str]：every -> 文本/HTML
+        self._every = initial_every
+        self._has_content = False
+        self._rewrap_timer = QTimer(self)
+        self._rewrap_timer.setSingleShot(True)
+        self._rewrap_timer.setInterval(80)
+        self._rewrap_timer.timeout.connect(self._rewrap_debounced)
+
+    def render(self) -> None:
+        """内容更新路径（流式/finalize/toggle 展开）：按当前 _every 重算文本。"""
+        self._has_content = True
+        self.setText(self._source(self._every))
+
+    def rebind(self, source) -> None:
+        """换绑 source 闭包（ai_end 切最终文本；label 对象仍在布局中存活）。"""
+        self._source = source
+
+    def rewrap_now(self) -> None:
+        """无防抖立即重算（测试入口）。"""
+        if self.width() <= 0:
+            return  # offscreen/未布局：沿用初值，首次真实 resize 自校正
+        new_every = md_render.wrap_every(self.font(), self.width())
+        if new_every != self._every:
+            self._every = new_every
+            if self._has_content:
+                self.setText(self._source(new_every))
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        if self._has_content:
+            self._rewrap_timer.start()
+
+    def _rewrap_debounced(self) -> None:
+        self.rewrap_now()
+
+
+def _detail_html(args_text: str, output_text: str, err: bool, depth: int, every: int = 80) -> str:
+    """工具详情区（等宽 args + 完整输出；错误态染红；超长截断）。
+
+    gui-ux21：断行字数 every 参数化（调用方按控件宽度 wrap_every 计算）；
+    afa23e7 起误写的 <>br（应为 <br>，旧 regex 测试无该断言故漏网）一并修复。"""
     out = str(output_text or "")
     truncated = ""
     if len(out) > _DETAIL_OUTPUT_CAP:
@@ -53,8 +103,8 @@ def _detail_html(args_text: str, output_text: str, err: bool, depth: int) -> str
     tok = theme.current_tokens()
     color = tok["negative"] if err else tok["muted"]
     pad = "&nbsp;" * depth * 2
-    args_soft = md_render.soft_break(str(args_text), 80).replace("\n", "<>br")
-    out_soft = md_render.soft_break(out, 80).replace("\n", "<>br")
+    args_soft = md_render.soft_break(str(args_text), every).replace("\n", "<br>")
+    out_soft = md_render.soft_break(out, every).replace("\n", "<br>")
     return (
         f'<span style="font-family:Consolas,\'Courier New\',monospace; font-size:12px; color:{color};">'
         f"{pad}<b>args</b><br>{args_soft}"
@@ -70,23 +120,19 @@ class ToolLineWidget(QFrame):
 
     def __init__(self, name, args_text: str, err: bool, output: str, depth: int = 0) -> None:
         super().__init__()
-        mark = "✗" if err else "✓"
-        out_preview = str(output or "")
-        if len(out_preview) > 160:
-            out_preview = out_preview[:160] + "…"
-        out_preview = md_render.soft_break(out_preview, 48)
-        args_soft = md_render.soft_break(str(args_text)[:120], 48)
-        summary = f"{'  ' * depth}{mark} {name}({args_soft})"
-        if out_preview:
-            summary += f"  → {out_preview}"
+        # gui-ux21：存 raw 材料，摘要/详情按控件实测宽度自适应断行（_summary_text / 详情闭包）
+        self._name = name
+        self._args_text = str(args_text)
+        self._err = err
+        self._output = str(output or "")
+        self._depth = depth
 
         self._expanded = False
-        self._detail_html = _detail_html(str(args_text), str(output or ""), err, depth)
-
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         row = QHBoxLayout()
-        self._summary = CapLabel(summary)
+        self._summary = ReflowLabel(self._summary_text, 48)
+        self._summary.render()
         self._summary.setFont(md_render.mono_font())
         self._summary.setWordWrap(True)
         self._summary.setObjectName("tool-line")
@@ -101,7 +147,9 @@ class ToolLineWidget(QFrame):
         row.addWidget(self.btn_toggle)
         lay.addLayout(row)
 
-        self._detail = CapLabel()
+        self._detail = ReflowLabel(
+            lambda e: _detail_html(self._args_text, self._output, self._err, self._depth, e), 80
+        )
         self._detail.setObjectName("tool-detail")
         self._detail.setTextFormat(Qt.TextFormat.RichText)
         self._detail.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
@@ -109,11 +157,24 @@ class ToolLineWidget(QFrame):
         self._detail.setVisible(False)
         lay.addWidget(self._detail)
 
+    def _summary_text(self, every: int) -> str:
+        """gui-ux21：摘要行按断行字数 every 重算（raw 材料 → 纯函数，初始 48 传统初值）。"""
+        mark = "✗" if self._err else "✓"
+        out_preview = self._output
+        if len(out_preview) > 160:
+            out_preview = out_preview[:160] + "…"
+        out_preview = md_render.soft_break(out_preview, every)
+        args_soft = md_render.soft_break(self._args_text[:120], every)
+        text = f"{'  ' * self._depth}{mark} {self._name}({args_soft})"
+        if out_preview:
+            text += f"  → {out_preview}"
+        return text
+
     def toggle(self) -> None:
         self._expanded = not self._expanded
         self._detail.setVisible(self._expanded)
         if self._expanded:
-            self._detail.setText(self._detail_html)
+            self._detail.render()
         self.btn_toggle.setText("－ 收起" if self._expanded else "＋ 详情")
 
 
@@ -136,7 +197,7 @@ class ThinkingBox(QFrame):
         header.addStretch(1)
         header.addWidget(self.btn_toggle)
         lay.addLayout(header)
-        self._body = CapLabel()
+        self._body = ReflowLabel(lambda e: md_render.soft_break(self._buf, e), 80)
         self._body.setObjectName("thinking-body")
         self._body.setWordWrap(True)
         self._body.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
@@ -144,7 +205,7 @@ class ThinkingBox(QFrame):
 
     def add_delta(self, t: str) -> None:
         self._buf += t
-        self._body.setText(self._buf)
+        self._body.render()
 
     def toggle(self) -> None:
         self._expanded = not self._expanded
@@ -165,7 +226,7 @@ class ChatPane(QScrollArea):
         self.awaiting_card = False
         self.stopped = False
         self.render_strategy = "batch"
-        self._ai_label: CapLabel | None = None
+        self._ai_label: ReflowLabel | None = None
         self._ai_buf = ""
         self._dirty = False
         self._thinking_box: ThinkingBox | None = None
@@ -235,11 +296,12 @@ class ChatPane(QScrollArea):
     def append_user(self, text: str, image_paths: list[str] | None = None) -> None:
         self._close_thinking()
         self._hide_placeholder()
-        l = CapLabel(md_render.soft_break(f"[你] {text}", 80))
+        l = ReflowLabel(lambda e: md_render.soft_break(f"[你] {text}", e), 80)
         l.setObjectName("bub-user")
         l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
         l.setWordWrap(True)
         l.setTextFormat(Qt.TextFormat.PlainText)
+        l.render()
         self._insert(l)
         if image_paths:
             self._insert(self._image_row(image_paths))
@@ -285,11 +347,12 @@ class ChatPane(QScrollArea):
             return
         self._close_thinking()
         self._hide_placeholder()
-        l = CapLabel(md_render.md_to_qt_html(text))
+        l = ReflowLabel(lambda e: md_render.md_to_qt_html(text, e), 80)
         l.setObjectName("bub-ai")
         l.setTextFormat(Qt.TextFormat.RichText)
         l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
         l.setWordWrap(True)
+        l.render()
         self._insert(l)
         self._follow()
 
@@ -303,10 +366,11 @@ class ChatPane(QScrollArea):
 
     def append_subagent(self, name, status, depth=0) -> None:
         self._hide_placeholder()
-        l = CapLabel(md_render.soft_break(f"{'  ' * depth}[{name}] {status}", 80))
+        l = ReflowLabel(lambda e: md_render.soft_break(f"{'  ' * depth}[{name}] {status}", e), 80)
         l.setObjectName("line-sub")
         l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
         l.setWordWrap(True)
+        l.render()
         self._insert(l)
         self._follow()
 
@@ -326,7 +390,9 @@ class ChatPane(QScrollArea):
     def ai_delta(self, delta: str) -> None:
         self._ai_buf += delta
         if self._ai_label is None:
-            self._ai_label = CapLabel()
+            # gui-ux21：流式 AI 标签宽度自适应（构造不设初始文本 = 合批契约；
+            # resize 防抖 80ms 按 wrap_every 重算断行字数，内容路径 render() 重渲）
+            self._ai_label = ReflowLabel(lambda e: md_render.md_to_qt_html(self._ai_buf, e), 80)
             self._ai_label.setObjectName("bub-ai")
             self._ai_label.setTextFormat(Qt.TextFormat.RichText)
             self._ai_label.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
@@ -334,7 +400,7 @@ class ChatPane(QScrollArea):
             self._hide_placeholder()
             self._insert(self._ai_label)
         if self.render_strategy == "instant":
-            self._ai_label.setText(md_render.md_to_qt_html(self._ai_buf))
+            self._ai_label.render()
             self._dirty = False
             self._follow()
         else:
@@ -343,14 +409,18 @@ class ChatPane(QScrollArea):
     def flush_dirty(self) -> None:
         """合批渲染：owner 的 RENDER_BATCH_MS 定时器调用。"""
         if self._dirty and self._ai_label is not None:
-            self._ai_label.setText(md_render.md_to_qt_html(self._ai_buf))
+            self._ai_label.render()
             self._dirty = False
             self._follow()
 
     def ai_end(self, text: str) -> None:
         self._close_thinking()
         if self._ai_label is not None:
-            self._ai_label.setText(md_render.md_to_qt_html(self._ai_buf or text))
+            # gui-ux21：最终文本换绑 source（label 仍在布局中存活，宽度变化仍可重排）
+            final_text = self._ai_buf or text
+            label = self._ai_label
+            label.rebind(lambda e: md_render.md_to_qt_html(final_text, e))
+            label.render()
             self._ai_label = None
             self._ai_buf = ""
             self._dirty = False

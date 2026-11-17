@@ -13,7 +13,7 @@ import threading
 import uuid
 from typing import Any, Callable
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -65,6 +65,17 @@ class ApprovalCard(QFrame):
         self._inv = inv
         self._editor_shown = False
         self._card_id = uuid.uuid4().hex[:8]
+        # gui-ux21：宽度自适应重排状态（resize 80ms 防抖，wrap_every 重算断行字数）
+        self._path_label: QLabel | None = None
+        self._preview_edit: QPlainTextEdit | None = None
+        self._raw_path = ""
+        self._raw_preview = ""
+        self._orig_boxes: list[tuple[QPlainTextEdit, str]] = []
+        self._rewrap_width = 0
+        self._rewrap_timer = QTimer(self)
+        self._rewrap_timer.setSingleShot(True)
+        self._rewrap_timer.setInterval(80)
+        self._rewrap_timer.timeout.connect(self._rewrap)
 
         self.setObjectName("approval-card")
         # 卡片宽度随面板收缩（内容用 _soft_break 断行，不再顶出窗口）；配色全走 theme QSS
@@ -78,11 +89,14 @@ class ApprovalCard(QFrame):
         outer.addWidget(head)
 
         if getattr(inv, "path", None):
-            p = QLabel(f"目标: {_soft_break(str(inv.path), 48)}")
+            # gui-ux21：存 raw 路径，按卡片宽度自适应断行（_rewrap 重排）
+            self._raw_path = str(inv.path)
+            p = QLabel(f"目标: {_soft_break(self._raw_path, 48)}")
             p.setObjectName("card-label")
             p.setWordWrap(True)
             p.setMinimumWidth(0)
             outer.addWidget(p)
+            self._path_label = p
 
         if diff is not None:
             # 左右对比 diff（write/edit/delete 文件工具）优先：并排对照，文本预览让位
@@ -92,13 +106,16 @@ class ApprovalCard(QFrame):
         elif preview:
             # 固定高只读编辑框：最小宽塌缩（QLabel 即使断行仍被最长行顶宽），
             # 长 diff 内部滚动；mono 字体 + 可选鼠标选中
-            pv = QPlainTextEdit(_soft_break(preview, 48))
+            # gui-ux21：存 raw 预览，按卡片宽度自适应断行（_rewrap 重排）
+            self._raw_preview = preview
+            pv = QPlainTextEdit(_soft_break(self._raw_preview, 48))
             pv.setObjectName("card-preview")
             pv.setReadOnly(True)
             pv.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
             pv.setFont(md_render.mono_font())
             pv.setFixedHeight(120)
             outer.addWidget(pv)
+            self._preview_edit = pv
 
         note = QLabel("「放弃本轮」= 放弃本轮（工具不会执行；不是取消整个任务）")
         note.setObjectName("card-note")
@@ -191,13 +208,15 @@ class ApprovalCard(QFrame):
             kl.setObjectName("card-key")
             kl.setTextFormat(Qt.TextFormat.RichText)
             bl.addWidget(kl)
-            orig = QPlainTextEdit(_soft_break(_clip(v, 400), 48))
+            raw = _clip(v, 400)
+            orig = QPlainTextEdit(_soft_break(raw, 48))
             orig.setObjectName("card-orig")
             orig.setReadOnly(True)
             orig.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
             orig.setFont(md_render.mono_font())
             orig.setFixedHeight(60)
             bl.addWidget(orig)
+            self._orig_boxes.append((orig, raw))
             if single_line:
                 ed: QLineEdit | QPlainTextEdit = QLineEdit(str(v or ""))
             else:
@@ -221,6 +240,27 @@ class ApprovalCard(QFrame):
 
         ok.clicked.connect(_confirm)
         box.show()
+
+    # ---- gui-ux21：宽度自适应重排（resize 80ms 防抖；offscreen/未布局 width=0 沿用 48 初值）
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._rewrap_timer.start()
+
+    def _rewrap(self) -> None:
+        w = self.width()
+        if w <= 0 or w == self._rewrap_width:
+            return
+        self._rewrap_width = w
+        every_mono = md_render.wrap_every(md_render.mono_font(), w)
+        if self._path_label is not None:
+            self._path_label.setText(
+                f"目标: {_soft_break(self._raw_path, md_render.wrap_every(self._path_label.font(), w))}"
+            )
+        if self._preview_edit is not None:
+            self._preview_edit.setPlainText(_soft_break(self._raw_preview, every_mono))
+        if self._orig_boxes:
+            for box, raw in self._orig_boxes:
+                box.setPlainText(_soft_break(raw, every_mono))
 
     # ---- 决策 / 放弃
     def _decide(self, result: dict) -> None:
