@@ -507,3 +507,94 @@ def test_accept_suggestion_slash_any_position_second_line(qapp):
         assert lines[1].startswith("第二 /compact")
     finally:
         cleanup_home(home)
+
+
+# ---------------------------------------------------------------- gui-ux24: 真实 Windows 光标块失步回归
+class _DesyncCursor:
+    """模拟真实 Windows 上失步的 QPlainTextEdit textCursor：
+    position() 正确（绝对文档位置），blockNumber() 误报 0、
+    positionInBlock() 返回绝对位置（gui-ux24 探针实证）。"""
+
+    def __init__(self, text, pos):
+        self._text = text
+        self._pos = pos
+
+    def position(self):
+        return self._pos
+
+    def blockNumber(self):
+        return 0  # 误报：永远第一块
+
+    def positionInBlock(self):
+        return self._pos  # 误报：绝对位置非块内相对
+
+
+class _DesyncEdit:
+    """伪 QPlainTextEdit：toPlainText() 正确 + 光标失步。
+    rowcol_from_cursor 须完全不感知 blockNumber/positionInBlock。"""
+
+    def __init__(self, text, pos):
+        self._text = text
+        self._cursor = _DesyncCursor(text, pos)
+
+    def toPlainText(self):
+        return self._text
+
+    def textCursor(self):
+        return self._cursor
+
+
+def test_rowcol_from_cursor_immune_to_block_desync():
+    """gui-ux24: blockNumber 误报 0（真实 Windows Shift+Enter 怪癖）时，
+    (row, col) 推导仍以绝对位置为准。"""
+    from src.gui.completion import rowcol_from_cursor
+
+    text = "第一行\n@no"  # 7 字符（第一行 3 + \n 1 + @no 3）
+    assert rowcol_from_cursor(_DesyncEdit(text, 7)) == (1, 3)  # 第二行行尾
+    assert rowcol_from_cursor(_DesyncEdit(text, 4)) == (1, 0)  # 第二行行首（@ 处）
+    assert rowcol_from_cursor(_DesyncEdit(text, 1)) == (0, 1)  # 第一行中间
+    assert rowcol_from_cursor(_DesyncEdit("no", 0)) == (0, 0)
+    assert rowcol_from_cursor(_DesyncEdit("no", 2)) == (0, 2)
+    assert rowcol_from_cursor(_DesyncEdit("a\nb\nc", 4)) == (2, 0)
+
+
+def test_desync_continuation_at_and_slash_resolve():
+    """gui-ux24: 用户症状「换行后 @ 和 / 都不好使」回归——光标失步
+    （blockNumber 卡 0）时，续行 @ / 与第一行同等触发（GUI 弹层唯一
+    数据源 = resolve_for_input）。"""
+    from src.gui.completion import resolve_for_input
+
+    home = new_home()
+    try:
+        rt = _fake_runtime()
+        (rt.config.project_root / "notes.md").write_text("# x", encoding="utf-8")
+        text = "第一行\n@no"
+        st = resolve_for_input(_DesyncEdit(text, len(text)), skills=[], config=rt.config)
+        assert st.kind == "path"
+        assert any("notes.md" in i.insert for i in st.items)
+        text2 = "第一行\n第二 /comp"
+        st2 = resolve_for_input(_DesyncEdit(text2, len(text2)), skills=[], config=rt.config)
+        assert st2.kind == "slash"
+    finally:
+        cleanup_home(home)
+
+
+def test_desync_has_query_no_match():
+    """gui-ux24: 失步下「No matching items」判定（用户确实输入了查询串）
+    亦不错读。"""
+    from src.gui.completion import has_query_no_match, resolve_for_input
+
+    home = new_home()
+    try:
+        rt = _fake_runtime()
+        (rt.config.project_root / "notes.md").write_text("# x", encoding="utf-8")
+        text = "第一行\n@zzz"  # 无匹配候选
+        st = resolve_for_input(_DesyncEdit(text, len(text)), skills=[], config=rt.config)
+        assert st.kind == "path" and not st.items
+        assert has_query_no_match(_DesyncEdit(text, len(text)), st)
+        text2 = "第一行\n@"  # 空查询 = 全量清单，不算无匹配
+        st2 = resolve_for_input(_DesyncEdit(text2, len(text2)), skills=[], config=rt.config)
+        assert st2.kind == "path" and st2.items
+        assert not has_query_no_match(_DesyncEdit(text2, len(text2)), st2)
+    finally:
+        cleanup_home(home)

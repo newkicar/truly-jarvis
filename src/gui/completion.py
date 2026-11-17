@@ -15,9 +15,19 @@ from src.tui_completion import OverlayState, SuggestionItem
 
 
 def rowcol_from_cursor(widget) -> tuple[int, int]:
-    """QPlainTextEdit 光标 → (row, col)。纯映射。"""
-    tc = widget.textCursor()
-    return tc.blockNumber(), tc.positionInBlock()
+    """QPlainTextEdit 光标 → (row, col)。纯映射。
+
+    gui-ux24: 用「绝对文档位置 + toPlainText()」推导 (row, col)，
+    不读 blockNumber()/positionInBlock()——真实 Windows 下 Shift+Enter
+    换行后 blockNumber 误报 0（仍第一块）、positionInBlock 返回绝对
+    位置，导致续行 @ / 永远不触发（offscreen 平台无此怪癖，纯内核
+    测试拦不住）。光标位置按字符计，CJK 安全。
+    """
+    text = widget.toPlainText()
+    pos = widget.textCursor().position()
+    row = text.count("\n", 0, pos)
+    col = pos - text.rfind("\n", 0, pos) - 1
+    return row, col
 
 
 def set_cursor_pos(widget, row: int, col: int) -> None:
