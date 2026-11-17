@@ -459,3 +459,51 @@ def test_popup_click_accepts_item(qapp):
     qapp.processEvents()
     assert edit.toPlainText().startswith("/ses")  # 首项已插入
     assert not pop.isVisible()
+
+def test_accept_suggestion_at_multiline_only_touches_cursor_line(qapp):
+    """gui-ux22: continuation-line @ opens path completion; accept rewrites
+    only the cursor line (shared TUI kernel regression)."""
+    from src.gui.completion import accept_suggestion, resolve_for_input
+
+    home = new_home()
+    try:
+        rt = _fake_runtime()
+        p = GuiPresenter(rt, UiBridge())
+        win = MainWindow(p, p.bridge)
+        edit = win.input_bar.edit
+        (rt.config.project_root / "notes.md").write_text("# x", encoding="utf-8")
+        edit.setPlainText("第一行\n@no")
+        edit.moveCursor(QTextCursor.MoveOperation.End)  # cursor at end of line 2
+        st = resolve_for_input(edit, skills=[], config=rt.config)
+        assert st.kind == "path"
+        sel = next(i.insert for i in st.items if "notes.md" in i.insert)
+        assert accept_suggestion(edit, st, sel)
+        lines = edit.toPlainText().split("\n")
+        assert lines[0] == "第一行"  # line 1 untouched
+        assert "notes.md" in lines[1]
+    finally:
+        cleanup_home(home)
+
+
+def test_accept_suggestion_slash_any_position_second_line(qapp):
+    """tui-ux21 (GUI): "space + /" on any line opens the command list;
+    accept rewrites only the cursor line."""
+    from src.gui.completion import accept_suggestion, resolve_for_input
+
+    home = new_home()
+    try:
+        rt = _fake_runtime()
+        p = GuiPresenter(rt, UiBridge())
+        win = MainWindow(p, p.bridge)
+        edit = win.input_bar.edit
+        edit.setPlainText("第一行\n第二 /comp")
+        edit.moveCursor(QTextCursor.MoveOperation.End)
+        st = resolve_for_input(edit, skills=[], config=rt.config)
+        assert st.kind == "slash"
+        sel = next(i.insert for i in st.items if "compact" in i.insert)
+        assert accept_suggestion(edit, st, sel)
+        lines = edit.toPlainText().split("\n")
+        assert lines[0] == "第一行"
+        assert lines[1].startswith("第二 /compact")
+    finally:
+        cleanup_home(home)
