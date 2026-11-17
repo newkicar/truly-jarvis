@@ -12,7 +12,7 @@ from textual import events
 from textual.selection import Selection
 from rich.segment import Segment
 from rich.style import Style
-from rich.measure import measure_renderables
+
 from textual.geometry import Size
 from textual.strip import Strip
 from textual.widgets import Button, RichLog
@@ -145,11 +145,20 @@ class CopyableRichLog(RichLog):
         self._tool_entries: list[dict] = []
         self._click_down: tuple[int, int] | None = None
         self._size_known = False  # tui-ux19: 首次 on_show（布局落定）后置 True，工具条目双变体才可预渲染
+        # tui-ux20: 宽度自适应换行——块注册表 + 预布局 FIFO + reflow 记账
+        self._items: list[dict] = []
+        self._reflow_width: int = 0
+        self._pending_writes: list = []
 
-    def on_show(self, event: events.Show) -> None:
-        """tui-ux19: widget 首次上屏（父布局已完成，size.width 有效）→ 工具条目双变体预渲染可用。"""
+    def on_show(self, event) -> None:
+        """tui-ux19: widget 首次上屏（父布局落定）→ 工具条目双变体预渲染可用。
+        tui-ux20: drain 预布局队列 + 宽度变化时全量重折。"""
         self._size_known = True
-        self._materialize_pending_entries()  # tui-ux19r2: materialize pre-layout pending entries
+        self._drain_pending_writes()
+        self._materialize_pending_entries()
+        if (self._items and getattr(self, "max_lines", None) is None
+                and self.size.width > 0 and self.size.width != self._reflow_width):
+            self._reflow_all()
 
     def focus_on_click(self) -> bool:
         """tui-ux17: 点击日志区即聚焦（对标 opencode 列表点击聚焦模型；Textual 8.2.8
@@ -219,6 +228,11 @@ class CopyableRichLog(RichLog):
         return Strip(Segment.simplify(new_segments), total_cells)
 
     def write(self, content, *args, **kwargs):
+        # tui-ux20: 预布局（size 未定）入 FIFO，首次上屏统一 drain；
+        # 其余走原生 write + 块注册（native 块）
+        if not self._size_known:
+            self._pending_writes.append(("native", content))
+            return self
         # tui-ux16 sticky scroll（codex 交互模型）：贴底自动跟随；
         # 上翻后停跳，累计未确认新消息。显式 scroll_end（kwarg，或
         # 第 4 个位置参数 = deferred 回放形态）原样尊重。
@@ -230,6 +244,7 @@ class CopyableRichLog(RichLog):
                 if content not in ("", None):
                     self._pending_msgs += 1
                     self._refresh_hint()
+        start = len(self.lines)
         result = super().write(content, *args, **kwargs)
         plain = renderable_to_plain(content)
         if plain:
@@ -237,6 +252,9 @@ class CopyableRichLog(RichLog):
                 self._plain_lines.append(line)
         elif plain == "" and content == "":
             self._plain_lines.append("")
+        if getattr(self, "max_lines", None) is None and len(self.lines) > start:
+            # tui-ux20: 注册 native 块（max_lines 时 native 重绑 lines，旧 start/end 失效）
+            self._items.append({"kind": "native", "source": content, "start": start, "end": len(self.lines)})
         self._sync_plain_lines_from_strips()
         return result
 
@@ -248,6 +266,10 @@ class CopyableRichLog(RichLog):
         self._stick = True
         self._pending_msgs = 0
         self._hide_hint()
+        # tui-ux20: 块注册表/预布局 FIFO 随清（native clear 已清 lines/_deferred_renders）
+        self._items.clear()
+        self._pending_writes.clear()
+        self._reflow_width = 0
         return super().clear(*args, **kwargs)
 
     def _at_bottom(self, tol: int = 2) -> bool:
@@ -305,6 +327,10 @@ class CopyableRichLog(RichLog):
         # when sticking, re-snap to bottom after refresh so real-time
         # follow survives viewport resizes (dock/hint layout changes)
         super().on_resize(event)
+        # tui-ux20: 宽度变化 → 按新内容区宽全量重折（仅高度变化不重折）
+        if (self._size_known and getattr(self, "max_lines", None) is None
+                and event.size.width > 0 and event.size.width != self._reflow_width):
+            self._reflow_all()
         if self._stick and not self._snap_scheduled:
             self._snap_scheduled = True
             self.call_after_refresh(self._snap_after_resize)
@@ -368,28 +394,86 @@ class CopyableRichLog(RichLog):
             self.screen.clear_selection()
         self.refresh()
 
-    def _write_variant_strips(self, text: str) -> tuple[list[Strip], int]:
-        # 把一个 markup 文本折行成本 widget 宽度下的 strip 列表（对齐 RichLog 原生 write 管道）
-        from rich.console import Console
-        width = max(1, self.size.width)
-        local = Console(width=width)
-        opts = local.options
-        t = Text.from_markup(text)
-        measured = measure_renderables(local, opts, [t]).maximum
-        render_width = max(measured, width)
-        segments = list(local.render(t, opts.update_width(render_width)))
+    def _content_width(self) -> int:
+        """tui-ux20: 内容区宽（widget 宽 − 竖滚条槽；布局前回落 widget 宽）。"""
+        width = self.scrollable_content_region.width
+        return width if width > 0 else max(1, self.size.width)
+
+    def _render_strips(self, content, width: int) -> list[Strip]:
+        """镜像原生 write 管道：按 width 精确折行（无 measure 无界、无 min_width 下限）。"""
+        console = self.app.console if self.app is not None else Console(
+            width=width, legacy_windows=False, highlight=False
+        )
+        renderable = self._make_renderable(content)
+        opts = console.options
+        if isinstance(renderable, Text) and not self.wrap:
+            opts = opts.update(overflow="ignore", no_wrap=True)
+        opts = opts.update_width(width)
+        segments = console.render(renderable, opts)
         lines = [list(ln) for ln in Segment.split_lines(segments)]
         if not lines:
-            return [Strip.blank(render_width)], render_width
-        strips = [s.adjust_cell_length(render_width) for s in Strip.from_lines(lines)]
-        row_w = max((sum(seg.cell_length for seg in s._segments) for s in strips), default=render_width)  # noqa: SLF001
-        return strips, max(render_width, row_w)
+            return [Strip.blank(width)]
+        return [s.adjust_cell_length(width) for s in Strip.from_lines(lines)]
+
+    def _write_variant_strips(self, text: str) -> tuple[list[Strip], int]:
+        """tui-ux19r2 保留签名：按内容区宽折行（materialize 旧路径用）。"""
+        width = self._content_width()
+        return self._render_strips(text, width), width
+
+    def _drain_pending_writes(self) -> None:
+        """tui-ux20: drain 预布局 FIFO（入队顺序：native write / 工具条目 materialize）。"""
+        while self._pending_writes:
+            kind, payload = self._pending_writes.pop(0)
+            if kind == "native":
+                self.write(payload)
+            else:
+                self.write_tool_entry(payload["source"][0], payload["source"][1], pre_layout_pending=payload)
+        self._deferred_renders.clear()
+
+    def _reflow_all(self) -> None:
+        """tui-ux20: 按当前内容区宽重折所有块并整体重写 lines（滚动保持：贴底仍贴底，否则保 y）。"""
+        self._drain_pending_writes()
+        self._materialize_pending_entries()
+        width = self._content_width()
+        if width < 1:
+            return
+        old_y = int(self.scroll_offset.y)
+        was_bottom = self._stick or self._at_bottom()
+        new_lines: list[Strip] = []
+        for item in self._items:
+            if item["kind"] == "tool":
+                collapsed, expanded = item["source"]
+                item["strips"] = [self._render_strips(collapsed, width), self._render_strips(expanded, width)]
+                item["pending"] = None
+                shown = item["strips"][1] if item["active"] else item["strips"][0]
+            else:
+                shown = self._render_strips(item["source"], width)
+            item["start"] = len(new_lines)
+            new_lines.extend(shown)
+            item["end"] = len(new_lines)
+        del self.lines[:]
+        self.lines.extend(new_lines)
+        self._widest_line_width = width  # 赋值非 max：收窄才生效
+        self._reflow_width = self.size.width
+        self._line_cache.clear()
+        self.virtual_size = Size(width, len(self.lines))
+        if was_bottom:
+            self._pending_msgs = 0
+            self.scroll_end(animate=False, immediate=True, x_axis=False)
+        else:
+            self.scroll_to(0, min(old_y, self.max_scroll_y), animate=False, immediate=True)
+        self._refresh_hint()
+        self.clear_user_selection()
+        self._sync_plain_lines_from_strips()
+        self.refresh()
 
     def _materialize_pending_entries(self) -> None:
         # tui-ux19r2: materialize entries written while size was unknown -
         # splice dual variants in place, shift later entries by the row
         # delta, and re-stick to the bottom when stuck.
         for entry in self._tool_entries:
+            if entry["start"] == 0 and entry["end"] == 0:  # tui-ux20: 占位由 drain 处理
+                continue
             if entry["strips"] is not None:
                 continue
             collapsed, expanded = entry["pending"]
@@ -414,27 +498,38 @@ class CopyableRichLog(RichLog):
         self._sync_plain_lines_from_strips()
         self.refresh()
 
-    def write_tool_entry(self, collapsed: str, expanded: str) -> None:
-        # tui-ux19：注册一条可点击工具条目（折叠态上屏，展开态待命）。须在 UI 线程调用。
+    def write_tool_entry(self, collapsed: str, expanded: str, pre_layout_pending: dict | None = None) -> None:
+        """tui-ux19: 注册可点击工具条目（折叠上屏、展开待命）。须 UI 线程调用。
+        tui-ux20: 预布局条目只入队（on_show drain+materialize）；布局后直接入块注册表（resize 可 reflow）。"""
         if getattr(self, "max_lines", None) is not None:
             self.write(collapsed)
             return
-        if not self._size_known:
-            # tui-ux19r2: pre-layout pending entry: plain write + register;
-            # on_show materializes the dual variants in place
-            start = len(self.lines)
-            self.write(collapsed)
-            self._tool_entries.append({
-                "active": False, "start": start, "end": len(self.lines),
-                "strips": None, "pending": (collapsed, expanded),
-            })
+        if not self._size_known and pre_layout_pending is None:
+            entry = {"kind": "tool", "source": (collapsed, expanded), "active": False,
+                     "start": 0, "end": 0, "strips": None, "pending": (collapsed, expanded)}
+            self._pending_writes.append(("tool", entry))
+            self._tool_entries.append(entry)  # 共享 dict；drain 时才入 _items
             return
-        c_strips, c_w = self._write_variant_strips(collapsed)
-        e_strips, e_w = self._write_variant_strips(expanded)
+        width = self._content_width()
+        c_strips = self._render_strips(collapsed, width)
+        e_strips = self._render_strips(expanded, width)
         start = len(self.lines)
-        self.lines.extend(c_strips)
-        self._tool_entries.append({"active": False, "start": start, "end": start + len(c_strips), "strips": [c_strips, e_strips]})
-        self._widest_line_width = max(getattr(self, "_widest_line_width", 0), c_w, e_w)
+        if pre_layout_pending is not None:
+            # tui-ux20 drain 路径：回填占位条目并入块注册表（顺序=drain 顺序=lines 顺序）
+            entry = pre_layout_pending
+            entry["start"] = start
+            entry["end"] = start + len(c_strips)
+            entry["strips"] = [c_strips, e_strips]
+            entry["pending"] = None
+            self.lines.extend(c_strips)
+            self._items.append(entry)
+        else:
+            entry = {"kind": "tool", "source": (collapsed, expanded), "active": False,
+                     "start": start, "end": start + len(c_strips), "strips": [c_strips, e_strips], "pending": None}
+            self._tool_entries.append(entry)
+            self._items.append(entry)
+            self.lines.extend(c_strips)
+        self._widest_line_width = max(getattr(self, "_widest_line_width", 0), width)
         self.virtual_size = Size(self._widest_line_width, len(self.lines))
         if self._at_bottom() or self._stick:
             self.scroll_end(animate=False, immediate=True, x_axis=False)
@@ -457,10 +552,11 @@ class CopyableRichLog(RichLog):
         self.lines[start:end] = new_strips
         entry["active"] = not entry["active"]
         entry["end"] = start + len(new_strips)
-        for other in self._tool_entries:
-            if other is not entry and other["start"] >= end:
-                other["start"] += delta
-                other["end"] += delta
+        if delta:
+            for other in self._tool_entries:
+                if other is not entry and other["start"] >= end:
+                    other["start"] += delta
+                    other["end"] += delta
         self._line_cache.clear()
         self.virtual_size = Size(self._widest_line_width, len(self.lines))
         if self._stick or self._at_bottom():

@@ -1289,6 +1289,7 @@ class JarvisApp(App):
                         with Container(id="messages_box"):
                             yield CopyableRichLog(
                                 id="messages",
+                                min_width=1,  # tui-ux20: 原生 78 列下限是固定折行根因
                                 wrap=True,
                                 markup=True,
                                 auto_scroll=True,
