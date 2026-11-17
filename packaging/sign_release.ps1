@@ -1,4 +1,4 @@
-# JARVIS GUI 发布签名 + SHA-256 清单 + VirusTotal 自查清单
+﻿# JARVIS GUI 发布签名 + SHA-256 清单 + VirusTotal 自查清单
 #
 # 用法（在仓库根目录，PowerShell 7；需要已导入的签名证书）：
 #   # ① 导入 PFX 证书（一次性，或 CI 用 Base64 机密 + certutil）
@@ -16,7 +16,7 @@ param(
     [string]$Thumbprint = "",
     [string]$Pfx = "",
     [string]$PfxPassword = "",
-    [string]$Version = "0.1.0",
+    [string]$Version = "0.1.1",
     [string]$OutDir = "release"
 )
 

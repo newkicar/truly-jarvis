@@ -1,6 +1,6 @@
-JARVIS GUI 便携版 · 使用说明
+﻿JARVIS GUI 便携版 · 使用说明
 
-版本 0.1.0 · Windows x64 · 免安装（解压即运行）
+版本 0.1.1 · Windows x64 · 免安装（解压即运行）
 
 一、系统要求
 - Windows 10 / 11（64 位）
@@ -64,7 +64,7 @@ JARVIS GUI 便携版 · 使用说明
   · 首次运行可能触发 Windows SmartScreen「未知发布者」→ 点「更多信息 → 仍要运行」；
   · 部分杀软对 Nuitka onedir 的 bootloader 有已知误报先例；
     下载后请用 SHA-256 校验（release 随包附 sha256-*.txt）：
-      certutil -hashfile jarvis-gui-0.1.0-win-x64-portable.zip SHA256
+      certutil -hashfile jarvis-gui-0.1.1-win-x64-portable.zip SHA256
     与 txt 中哈希一致即可信；
 - Qt LGPL 说明：Qt DLL 与 exe 同目录为动态链接形态；如需替换 Qt DLL，
   在与 exe 同级目录下替换同名 DLL 即可（随包 PySide6 版本号以
