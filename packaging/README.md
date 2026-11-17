@@ -33,6 +33,7 @@ pwsh packaging\build_gui.ps1 -Python D:\python_env\python.exe
 | 版本 | 大小 | 启动（首启向导出现） | 备注 |
 | ---- | ---- | ---- | ---- |
 | 0.1.0 | 465 MB（zip 158.9 MiB） | ≈17s | GUI-only 便携首版（平铺单夹） |
+| 0.1.1 | 465 MB（zip 159.0 MiB） | ≈19s | GUI-only 便携 v0.1.1（side+修复） |
 
 ### 0.1.0 构建修复记录（v0.1.0 首版落定）
 
