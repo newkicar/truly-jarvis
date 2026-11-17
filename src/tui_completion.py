@@ -109,13 +109,15 @@ def resolve_overlay_state(
     skills: list[SkillMeta] | None = None,
 ) -> OverlayState:
     slash = slash_query(value, cursor)
-    if slash is not None and (cursor == len(value) or value[:cursor].strip() == value[:cursor]):
+    if slash is not None:
         _idx, query = slash
         commands = filter_commands(query=query)
         items = tuple(
             SuggestionItem(insert=c.usage, label=c.usage, hint=c.summary) for c in commands
         )
-        return OverlayState(kind="slash", at_index=0, items=items)
+        # tui-ux21: at_index = actual slash position (line start or after whitespace),
+        # so Tab-accept replaces from that offset (same as "@" via at_index).
+        return OverlayState(kind="slash", at_index=slash[0], items=items)
 
     use = use_query(value, cursor)
     if use is not None:

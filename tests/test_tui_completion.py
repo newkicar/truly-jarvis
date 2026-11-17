@@ -246,3 +246,83 @@ def test_apply_suggestion_on_line_equivalent_to_single_line():
     b = apply_suggestion(text, 0, 3, "insert")
     assert a[0] == b[0]
     assert a[1] == (0, b[1])
+
+def test_resolve_slash_overlay_any_position():
+    """tui-ux21: "space + /" anywhere opens the command list; at_index = slash pos."""
+    st = resolve_overlay_state(
+        "hello /co",
+        9,
+        vault_path=None,
+        workspace_root=None,
+        memories_root=None,
+    )
+    assert st.kind == "slash"
+    assert st.at_index == 6
+    assert any(i.insert.startswith("/compact") for i in st.items)
+
+
+def test_resolve_slash_overlay_cursor_mid_query():
+    st = resolve_overlay_state(
+        "hello /his more",
+        10,
+        vault_path=None,
+        workspace_root=None,
+        memories_root=None,
+    )
+    assert st.kind == "slash"
+    assert st.at_index == 6
+    assert st.active
+
+
+def test_resolve_slash_overlay_glued_slash_no_trigger():
+    for value in ("abc/h", "file:///x"):
+        st = resolve_overlay_state(
+            value,
+            len(value),
+            vault_path=None,
+            workspace_root=None,
+            memories_root=None,
+        )
+        assert st.kind == "none", value
+
+
+def test_resolve_slash_overlay_space_closes():
+    st = resolve_overlay_state(
+        "hello /yolo ",
+        12,
+        vault_path=None,
+        workspace_root=None,
+        memories_root=None,
+    )
+    assert st.kind == "none"
+
+
+def test_apply_suggestion_slash_any_position():
+    """accept replaces from the slash position; trailing space is appended."""
+    text = "hello /his"
+    st = resolve_overlay_state(
+        text,
+        len(text),
+        vault_path=None,
+        workspace_root=None,
+        memories_root=None,
+    )
+    assert st.kind == "slash" and st.at_index == 6
+    new_text, new_cursor = apply_suggestion(text, st.at_index, len(text), "/history")
+    assert new_text == "hello /history "
+    assert new_cursor == 15
+
+
+def test_apply_suggestion_on_line_slash_second_line():
+    """multi-line input: accept rewrites only the cursor line (shared kernel)."""
+    text = "第一行\n第二 /comp"
+    cursor = (1, len("第二 /comp"))
+    line, col = line_projection(text, cursor)
+    st = resolve_overlay_state(line, col, vault_path=None, workspace_root=None, memories_root=None)
+    assert st.kind == "slash"
+    assert st.at_index == 3
+    new_text, new_cursor = apply_suggestion_on_line(text, cursor, st.at_index, "/compact [hint]")
+    lines = new_text.split("\n")
+    assert lines[0] == "第一行"
+    assert lines[1] == "第二 /compact [hint] "
+    assert new_cursor[0] == 1

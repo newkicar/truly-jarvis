@@ -5,7 +5,21 @@ from src.slash_completion import SLASH_COMMANDS, filter_commands, slash_query
 def test_slash_query_line_start():
     assert slash_query("/his") == (0, "his")
     assert slash_query("/") == (0, "")
-    assert slash_query("hello /x") is None
+
+
+def test_slash_query_any_position_after_space():
+    """tui-ux21: "space + /" anywhere on any line opens the command list."""
+    assert slash_query("hello /x") == (6, "x")
+    text = "第一行\n第二 /comp"
+    assert slash_query(text) == (text.index("/"), "comp")
+    # cursor mid-query: only text up to the cursor participates
+    assert slash_query("hello /his more", 10) == (6, "his")
+
+
+def test_slash_query_glued_slash_never_triggers():
+    """non-whitespace before "/" (paths, URLs) never opens the list."""
+    assert slash_query("abc/h") is None
+    assert slash_query("file:///x") is None
 
 
 def test_filter_commands_prefix():

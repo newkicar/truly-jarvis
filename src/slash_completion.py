@@ -39,14 +39,25 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
 
 
 def slash_query(value: str, cursor: int | None = None) -> tuple[int, str] | None:
-    """行首 / 命令补全：返回 (slash_index, query)。"""
+    """tui-ux21: anywhere-position slash completion (mirrors at_query). Returns (slash_index, query).
+
+    Triggers when the nearest "/" before the cursor is at line start OR preceded by
+    whitespace (typing space + "/" anywhere on any line pops the command list);
+    a non-whitespace char before "/" (abc/, file:///) never triggers. The query after
+    "/" closes on the first space (arg-typing stage, same semantics as "@").
+    An empty query shows the full command list.
+    """
     pos = len(value) if cursor is None else cursor
-    text = value[:pos]
-    if not text.startswith("/"):
+    idx = value.rfind("/", 0, pos)
+    if idx == -1:
         return None
-    if " " in text:
+    if idx > 0 and not value[idx - 1].isspace():
         return None
-    return 0, text[1:]
+    query = value[idx + 1 : pos]
+    if any(ch.isspace() for ch in query):
+        return None
+    return idx, query
+
 
 
 def filter_commands(
