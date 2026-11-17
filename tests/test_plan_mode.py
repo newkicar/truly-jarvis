@@ -7,6 +7,7 @@ from src.plan_mode import (
     PLAN_TOOLS,
     PlanModeMiddleware,
     current_mode,
+    effective_mode,
     set_mode,
 )
 
@@ -189,3 +190,29 @@ async def test_prompt_marker_shows_mode_label():
         await pilot.pause()
         assert "-plan" not in marker.classes
         assert "PLAN" not in str(marker.render())
+
+
+def test_effective_mode_side_membership_forces_plan():
+    from src.permissions import side_open
+
+    state = {"mode": "act", "thread_id": "t-main"}
+    assert effective_mode(state, "t-main") == "act"
+    assert effective_mode(state, "") == "act"
+    assert effective_mode(state, None) == "act"
+    side_open(state, "t-side", "t-main")
+    assert effective_mode(state, "t-side") == "plan"
+
+
+def test_effective_mode_non_side_follows_global():
+    from src.permissions import side_open
+
+    state = {"thread_id": "t-main"}
+    side_open(state, "t-side", "t-main")
+    # 全局 plan -> 主线与 side 都是 plan
+    set_mode(state, "plan")
+    assert effective_mode(state, "t-main") == "plan"
+    assert effective_mode(state, "t-side") == "plan"
+    # 全局切回 act -> 主线 act，side 成员仍 plan（强制只读）
+    set_mode(state, "act")
+    assert effective_mode(state, "t-main") == "act"
+    assert effective_mode(state, "t-side") == "plan"

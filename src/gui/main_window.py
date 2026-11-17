@@ -633,7 +633,7 @@ class MainWindow(QMainWindow):
         from src import permissions, plan_mode
 
         state = self.presenter.runtime.permission_state
-        mode = plan_mode.current_mode(state)
+        mode = plan_mode.effective_mode(state, self.active_tid or "")
         yolo = permissions.yolo_active(state, self.active_tid or "")
         from src.gui import theme as _theme_mod
 

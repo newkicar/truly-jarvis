@@ -1183,7 +1183,7 @@ class JarvisApp(App):
             pass
 
     def _update_sub_title(self) -> None:
-        from src.plan_mode import current_mode
+        from src.plan_mode import effective_mode
         from src.permissions import yolo_active
 
         parts = [self.thread_id]
@@ -1191,7 +1191,7 @@ class JarvisApp(App):
             parts.append(f"MCP:{self._mcp_tool_count}")
         if self.config and getattr(self.config, "project_root", None):
             parts.append(str(self.config.project_root.name))
-        parts.append(current_mode(self.permission_state).capitalize())
+        parts.append(effective_mode(self.permission_state, self.thread_id).capitalize())
         if self.sched is not None:
             try:
                 n = len(self.sched.get_jobs())
@@ -1958,10 +1958,10 @@ class JarvisApp(App):
 
     def _refresh_mode_indicator(self) -> None:
         """输入框左侧模式文字标记（对标 opencode prompt 的 agent 名标签）。"""
-        from src.plan_mode import current_mode
+        from src.plan_mode import effective_mode
 
         marker = self.query_one("#prompt", Static)
-        if current_mode(self.permission_state) == "plan":
+        if effective_mode(self.permission_state, self.thread_id) == "plan":
             marker.update("[b] PLAN [/b]")
             marker.add_class("-plan")
         else:

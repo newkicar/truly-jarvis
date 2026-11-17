@@ -10,6 +10,8 @@ Plan 模式两道闸：
    行为由系统提示词约束。
 2. wrap_model_call：往当轮 system 尾部追加规划约束提示词（StepBudgetMiddleware
    手法），不写入持久历史。
+3. side 线程（effective_mode）：side_threads 成员即强制 plan（只读），全局
+   模式键不因 side 开/关而变——对主线模式零影响（对标 codex 隔离）。
 """
 from __future__ import annotations
 
@@ -44,6 +46,19 @@ def set_mode(state: dict, mode: str) -> None:
     state[MODE_KEY] = mode
 
 
+def effective_mode(state: dict, thread_id: str | None) -> str:
+    """线程级生效模式：side 成员即永久 plan（只读），非 side 线程跟随全局模式。
+
+    side 隔离（对标 codex）：side 会话只读由 side_threads 成员身份驱动，
+    全局 state["mode"] 键不因 side 开/关而变——对主线模式零影响。
+    """
+    from src.permissions import side_active
+
+    if side_active(state or {}, str(thread_id or "")):
+        return "plan"
+    return current_mode(state)
+
+
 class PlanModeMiddleware(GuardMiddleware):
     """Plan 模式闸门：state 驱动，运行时切换即时生效（无需重建 agent）。
 
@@ -59,7 +74,8 @@ class PlanModeMiddleware(GuardMiddleware):
         return "plan-mode"
 
     def block(self, view: ToolCallView) -> str | None:
-        if current_mode(self.state) == "plan" and view.name in PLAN_TOOLS:
+        tid = str((self.state or {}).get("thread_id") or "")
+        if effective_mode(self.state, tid) == "plan" and view.name in PLAN_TOOLS:
             return (
                 f"Error: 当前处于 Plan 模式，{view.name} 已被禁用。"
                 "请完成规划分析（可用 write_todos 记录任务分解），"
@@ -76,7 +92,8 @@ class PlanModeMiddleware(GuardMiddleware):
         return request.override(system_message=SystemMessage(content=merged))
 
     def _prepare(self, request):
-        if current_mode(self.state) == "plan":
+        tid = str((self.state or {}).get("thread_id") or "")
+        if effective_mode(self.state, tid) == "plan":
             request = self._with_plan_prompt(request)
         return request
 

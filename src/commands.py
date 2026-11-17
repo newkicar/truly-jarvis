@@ -997,7 +997,8 @@ def fork(agent, thread_id: str, checkpoint_id: str):
 
 def open_side(agent, thread_id: str, state: dict) -> tuple[str, str | None]:
     """/side 开侧边会话：fork 当前 thread head（悬挂时回退最近 terminal），
-    注入 [side] 边界 SystemMessage，自动切 Plan（只读），task/execute 由 SideTaskGuard 拦截。
+    注入 [side] 边界 SystemMessage；只读由 side 成员身份驱动（plan_mode.effective_mode，
+    对标 codex），task/execute 由 SideTaskGuard 拦截。不碰全局 mode 键——主线模式零影响。
 
     门控序（spec）：空会话拒 -> 已在 side 拒 -> 已有 side 拒。
     返回 (指引文案, 新 thread_id | None)。
@@ -1053,14 +1054,11 @@ def open_side(agent, thread_id: str, state: dict) -> tuple[str, str | None]:
     except Exception:
         return "side 开侧边会话失败: 无法分叉当前会话历史", None
 
-    from src.plan_mode import current_mode, set_mode
-    from src.permissions import SIDE_MODE_BEFORE_KEY
-
+    # 只读由 side 成员身份驱动（plan_mode.effective_mode，对标 codex）：
+    # 全局 mode 键不碰——主线模式全程不受 side 开/关影响。
     side_open(state, new_tid, thread_id)
-    state[SIDE_MODE_BEFORE_KEY] = current_mode(state)
-    set_mode(state, "plan")
     return (
-        f"已开 side 会话 {new_tid}（继承主线历史，默认只读）；"
+        f"已开 side 会话 {new_tid}（继承主线历史，只读；主线模式不受影响）；"
         "/side close 返回主线（side 会话即删除，不留存）",
         new_tid,
     )
@@ -1070,20 +1068,17 @@ def close_side(agent, thread_id: str, state: dict) -> tuple[str, str | None]:
     """/side close 回主线：关闭 = 删除（side 是临时问一嘴，关了就没了）。
 
     非 side 调用 -> 拒绝；删除走 delete_session（第三参 = parent 主线 tid，
-    保证「删当前会话则新建」逻辑不误触发、不误删主线）。模式恢复：
-    回退到开 side 前主线自己的模式（MVP 快照语义）。
+    保证「删当前会话则新建」逻辑不误触发、不误删主线）。只读随成员移除解除；
+    主线 mode 键全程未被改动（side 隔离，对标 codex）。
     返回 (文案, parent_tid | None)。
     """
-    from src.plan_mode import set_mode
-    from src.permissions import SIDE_MODE_BEFORE_KEY, side_close, side_parent
+    from src.permissions import side_close, side_parent
 
     parent = side_parent(state, thread_id)
     if parent is None:
         return "当前不在 side 会话", None
     delete_session(agent, thread_id, parent)
     side_close(state, thread_id)
-    prev = state.pop(SIDE_MODE_BEFORE_KEY, "act") or "act"
-    set_mode(state, prev)
     return f"已删除 side 会话并返回主线 {parent}", parent
 
 

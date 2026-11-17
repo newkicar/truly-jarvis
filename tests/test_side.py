@@ -2,9 +2,9 @@
 
 覆盖：
 - open_side：terminal head fork / 悬挂 head 回退最近 terminal / 空会话拒 /
-  已在 side 拒 / 已有 side 拒；自动 Plan + 状态登记 + mode_before_side 快照
+  已在 side 拒 / 已有 side 拒；只读由 side 成员驱动 + 状态登记（主线模式不受影响）
 - close_side：关闭 = 删除（delete_session 第三参=主线 tid，不误触发「删当前则新建」、
-  不误删主线；回主线、恢复模式）/ 非 side 拒
+  不误删主线；回主线，主线模式全程未动）/ 非 side 拒
 - side_parent_status 三态
 - dispatch_command /side 分支（开 / 关（=删除）/ --discard 遗留别名 / 非法子参 / 权限层缺失）
 - SideTaskGuardMiddleware：side 内拦 task+execute / 非 side 放行 / close 即解除（零重建）
@@ -17,7 +17,6 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from src import commands
 from src.permissions import (
-    SIDE_MODE_BEFORE_KEY,
     SIDE_PARENTS_KEY,
     SIDE_THREADS_KEY,
     SideTaskGuardMiddleware,
@@ -127,19 +126,23 @@ def test_open_side_forks_terminal_head():
     assert "t-main" in forked[0].content
     assert [m.id for m in forked[1:5]] == ["m1", "a1", "m2", "a2"]
     assert "t-main" not in agent.threads  # 主线未被写入
-    # 状态登记 + 自动 Plan + 模式快照
+    # 状态登记（只读由 side 成员驱动；不碰主线 mode 键，对标 codex 隔离）
     assert side_active(state, new_tid)
     assert side_parent(state, new_tid) == "t-main"
-    assert state["mode"] == "plan"
-    assert state[SIDE_MODE_BEFORE_KEY] == "act"
+    assert "mode" not in state
 
 
-def test_open_side_snapshots_prior_plan_mode():
+def test_open_side_keeps_mainline_plan_mode():
     agent = _SideAgent(_msgs())
-    state = {"mode": "plan"}
+    state = {"mode": "plan"}  # 主线处于 plan
     _, new_tid = commands.open_side(agent, "t-main", state)
     assert new_tid.startswith("side-") and new_tid != "t-main"
-    assert state[SIDE_MODE_BEFORE_KEY] == "plan"
+    # 开 side 不碰主线模式键（side 隔离，对标 codex）
+    assert state["mode"] == "plan"
+    from src.plan_mode import effective_mode
+
+    assert effective_mode(state, new_tid) == "plan"
+    assert effective_mode(state, "t-main") == "plan"
 
 
 def test_open_side_pending_head_falls_back_to_terminal():
@@ -223,7 +226,7 @@ def test_open_side_rejects_blank_conversation():
     assert new_tid is None
     assert "空会话无法开侧边会话" in text
     assert "mode" not in state
-    assert SIDE_MODE_BEFORE_KEY not in state
+    assert "mode_before_side" not in state
 
 
 def test_open_side_rejects_already_in_side():
@@ -249,8 +252,6 @@ def _side_state():
     return {
         SIDE_THREADS_KEY: {"t-side"},
         SIDE_PARENTS_KEY: {"t-side": "t-main"},
-        "mode": "plan",
-        SIDE_MODE_BEFORE_KEY: "act",
     }
 
 
@@ -271,19 +272,20 @@ def test_close_side_deletes_session(monkeypatch):
     assert "已删除 side 会话并返回主线 t-main" in text
     assert not side_active(state, "t-side")
     assert side_parent(state, "t-side") is None
-    assert state["mode"] == "act"
-    assert SIDE_MODE_BEFORE_KEY not in state
+    assert "mode" not in state
+    assert "mode_before_side" not in state
 
 
-def test_close_side_restores_prior_mode(monkeypatch):
+def test_close_side_does_not_touch_mainline_mode(monkeypatch):
     agent = _SideAgent(_msgs())
     state = _side_state()
-    state[SIDE_MODE_BEFORE_KEY] = "plan"  # 开 side 前主线处于 plan
+    state["mode"] = "plan"  # 主线处于 plan（模拟 Tab 全局切换）
     monkeypatch.setattr(
         commands, "delete_session",
         lambda a, target, current: (f"已删除会话 {target}", None),
     )
     _, _ = commands.close_side(agent, "t-side", state)
+    # close 不碰主线模式键（side 隔离，对标 codex）
     assert state["mode"] == "plan"
 
 
@@ -442,7 +444,7 @@ def test_side_task_guard_blocks_execute_in_side():
 
 
 def test_side_task_guard_releases_after_close(monkeypatch):
-    state = {"thread_id": "t-main", "mode": "act", SIDE_MODE_BEFORE_KEY: "act"}
+    state = {"thread_id": "t-main"}
     side_open(state, "t-side", "t-main")
     state["thread_id"] = "t-side"
     mw = SideTaskGuardMiddleware(state)
@@ -456,3 +458,20 @@ def test_side_task_guard_releases_after_close(monkeypatch):
     commands.close_side(_SideAgent(_msgs()), "t-side", state)
     assert mw.block(ToolCallView(name="task", id="c1")) is None
     assert mw.block(ToolCallView(name="execute", id="c2")) is None
+
+def test_side_thread_write_blocked_mainline_unaffected():
+    """核心隔离断言：side 成员强制 plan（写工具拦），主线线程不受影响、全局 mode 键不动。"""
+    from src.plan_mode import PlanModeMiddleware
+
+    state = {"thread_id": "t-main", "mode": "act"}
+    side_open(state, "t-side", "t-main")
+    mw = PlanModeMiddleware(state)
+    # side 线程：写工具被 Plan 拦截
+    state["thread_id"] = "t-side"
+    out = mw.block(ToolCallView(name="write_file", id="c1"))
+    assert out is not None and "Plan" in out
+    # 主线线程：不受 side 影响（全局 act）
+    state["thread_id"] = "t-main"
+    assert mw.block(ToolCallView(name="write_file", id="c1")) is None
+    # 全局 mode 键全程未动
+    assert state["mode"] == "act"

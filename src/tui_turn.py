@@ -13,7 +13,7 @@ from textual.worker import get_current_worker
 from textual.widgets import RichLog
 
 from src import commands, streaming
-from src.plan_mode import current_mode
+from src.plan_mode import effective_mode
 from src.tui_format import AiStreamThrottler, format_tool_call, reasoning_block_markup, tool_detail_block, tool_detail_worth_expanding
 
 
@@ -44,7 +44,7 @@ class TurnPresenter:
         self.started = time()
         # 模式标注取流开始时的快照（中途 Tab 切换不改变本轮回复的归属）；
         # 先于 log 的 UI 往返捕获，与重构前顺序一致。
-        self.start_mode = current_mode(app.permission_state)
+        self.start_mode = effective_mode(app.permission_state, app.thread_id)
         self.log: RichLog | None = app.call_from_thread(
             app.query_one, "#messages", RichLog
         )

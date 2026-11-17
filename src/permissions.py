@@ -39,7 +39,6 @@ YOLO_THREADS_KEY = "yolo_threads"
 # 只动集合成员，零 agent 重建。
 SIDE_THREADS_KEY = "side_threads"
 SIDE_PARENTS_KEY = "side_parents"
-SIDE_MODE_BEFORE_KEY = "mode_before_side"
 
 
 def _match_pattern(pattern: str, value: str) -> bool:
