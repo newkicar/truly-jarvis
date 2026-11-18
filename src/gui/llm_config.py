@@ -303,14 +303,11 @@ MANAGED_ENV_KEYS = ("BASE_URL", "API_KEY", "MODEL_ID")
 
 
 def _env_line_key(line: str) -> str | None:
-    """env 行首键（与 parse_env_text 同一算法：首个 = / : 分隔符之前、大写化）。"""
-    s = line.strip()
-    if not s or s.startswith("#"):
-        return None
-    first = min((i for i in (s.find(":"), s.find("=")) if i != -1), default=-1)
-    if first == -1:
-        return None
-    return s[:first].strip().upper() or None
+    """env 行首键（同 parse_env_text 算法）。tui-ux27：内核上移 src.config._env_line_key；
+    此处委托，保证 `from src.gui.llm_config import _env_line_key` 的既有导入面（测试）兼容。"""
+    from src.config import _env_line_key as _impl
+
+    return _impl(line)
 
 
 def sync_install_env(cfg: LlmConfig, env_path: Path | str | None = None) -> Path | None:
@@ -328,45 +325,22 @@ def sync_install_env(cfg: LlmConfig, env_path: Path | str | None = None) -> Path
 
     约定：API key 明文进安装目录 .env = 与源码用户项目 .env 同款约定（向导
     「不落明文」承诺只覆盖 config.json/keyring 层；.env 是用户显式配置面）。
+
+    tui-ux27：行级 upsert 内核上移 src.config.upsert_env_file（TUI 首启引导共用）；
+    本函数退化为薄封装（键集/头注释/失败语义不变）。
     """
     from src.project_paths import install_root
+    from src.config import upsert_env_file
 
     target = Path(env_path) if env_path is not None else install_root() / ".env"
     values = {"BASE_URL": cfg.base_url, "API_KEY": cfg.api_key, "MODEL_ID": cfg.model_id}
     try:
-        lines: list[str] = []
-        if target.is_file():
-            lines = target.read_text(encoding="utf-8").splitlines()
-
-        new_lines: list[str] = []
-        written: set[str] = set()
-        has_tavily = False
-        for raw in lines:
-            key = _env_line_key(raw)
-            if key in values:
-                new_lines.append(f"{key}={values[key]}")
-                written.add(key)
-            else:
-                new_lines.append(raw)
-                if key == "TAVILY_KEY":
-                    has_tavily = True
-
-        if not lines:
-            new_lines.insert(0, "# JARVIS 环境变量（GUI 向导自动生成/更新）")
-        for key in MANAGED_ENV_KEYS:
-            if key not in written:
-                new_lines.append(f"{key}={values[key]}")
-        if not has_tavily:
-            new_lines.append("TAVILY_KEY=")
-
-        text = "\n".join(new_lines)
-        if new_lines:
-            text += "\n"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        tmp = target.with_name(target.name + ".tmp")
-        tmp.write_text(text, encoding="utf-8")
-        tmp.replace(target)
-        return target
+        return upsert_env_file(
+            target,
+            values,
+            header="# JARVIS 环境变量（GUI 向导自动生成/更新）",
+            ensure_keys=("TAVILY_KEY",),
+        )
     except OSError as exc:
         logging.warning("安装目录 .env 同步写失败（%s）: %s", target, exc)
         return None

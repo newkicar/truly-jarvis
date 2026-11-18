@@ -131,6 +131,73 @@ def parse_env_file(env_file: Path) -> dict[str, str]:
     return parse_env_text(env_file.read_text(encoding="utf-8"))
 
 
+# ---------------------------------------------------------------- env 行级工具（tui-ux27：首启 .env 自动引导 + GUI 向导共用内核）
+
+
+def _env_line_key(line: str) -> str | None:
+    """env 行首键（与 parse_env_text 同一算法：首个 = / : 分隔符之前、strip、大写化）。
+
+    注释行 / 空行 / 无分隔符行 → None。行级判定（防 API_KEY 与 SOK_API_KEY 子串互串）。
+    """
+    s = line.strip()
+    if not s or s.startswith("#"):
+        return None
+    first = min((i for i in (s.find(":"), s.find("=")) if i != -1), default=-1)
+    if first == -1:
+        return None
+    return s[:first].strip().upper() or None
+
+
+def upsert_env_file(
+    target: Path,
+    values: dict[str, str],
+    *,
+    header: str | None = None,
+    ensure_keys: tuple[str, ...] = (),
+) -> Path:
+    """原子 upsert .env：既有行按 _env_line_key 原地重写 values 键（= / : 分隔都认）；其余行原样保留。
+
+    - values 中文件未出现过的键尾插 `KEY=value`；
+    - ensure_keys 中既不在文件也不在 values 的键尾插 `KEY=`（空值合法，
+      load_config 缺键判定按「键不存在」，空串不算缺）；
+    - 新文件（原无内容）且给 header → 首行插注释；
+    - 原子写：tmp → replace；OSError 原样抛出（吞不吞由调用方定，如 GUI best-effort 兜底）。
+    """
+    lines: list[str] = []
+    if target.is_file():
+        lines = target.read_text(encoding="utf-8").splitlines()
+
+    new_lines: list[str] = []
+    written: set[str] = set()
+    for raw in lines:
+        key = _env_line_key(raw)
+        if key in values:
+            new_lines.append(f"{key}={values[key]}")
+            written.add(key)
+        else:
+            new_lines.append(raw)
+
+    if not lines and header:
+        new_lines.insert(0, header)
+    for key, value in values.items():
+        if key not in written:
+            new_lines.append(f"{key}={value}")
+    present = {_env_line_key(ln) for ln in new_lines}
+    for key in ensure_keys:
+        if key not in present:
+            new_lines.append(f"{key}=")
+            present.add(key)
+
+    text = "\n".join(new_lines)
+    if new_lines:
+        text += "\n"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(target.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(target)
+    return target
+
+
 class ConfigError(RuntimeError):
     """配置加载失败（如项目 jarvis.json 损坏）——带可操作的修复指引。"""
 
