@@ -196,10 +196,19 @@ def main(argv=None) -> int:
         config = load_config()
     except (KeyError, FileNotFoundError):
         # P2: 首次运行——自动生成项目配置 + skills/ + 全局目录
+        # tui-ux27: 首启 .env 自动引导（TUI/CLI 侧兜底；GUI 侧为 gui-ux26 向导）
         from src.project_init import auto_init_project
+        from src.env_bootstrap import bootstrap_missing_env, guidance_text, missing_env_report
 
         auto_init_project()
-        config = load_config()
+        bootstrap_missing_env()
+        try:
+            config = load_config()
+        except KeyError as exc:
+            target, missing = missing_env_report()
+            print(f"[配置] {exc}", file=sys.stderr)
+            print(guidance_text(target, missing), file=sys.stderr)
+            return 1
 
     # javis-global-memory: one-time migration of old project-dir memory/ to global ~/.jarvis/memory/ (idempotent, never deletes target)
     try:
