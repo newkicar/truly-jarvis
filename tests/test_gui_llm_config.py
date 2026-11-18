@@ -190,3 +190,92 @@ def test_llm_config_to_chat_model_method():
     m = llm_config.LlmConfig("https://gw/v1", "sk", "m-1").to_chat_model()
     assert isinstance(m, ChatOpenAI)
     assert m.model_name == "m-1"
+
+# ---------------------------------------------------------------- 安装目录 .env 同步（gui-ux26）
+
+import shutil
+import uuid
+from pathlib import Path
+
+from src.config import parse_env_text
+from src.gui.llm_config import _env_line_key, sync_install_env
+from tests.gui_fakes import TEST_ROOT
+
+
+def _envsync_dir() -> Path:
+    d = TEST_ROOT / f"envsync-{uuid.uuid4().hex[:10]}"
+    d.mkdir(parents=True)
+    return d
+
+
+def test_sync_install_env_creates_file_with_managed_keys():
+    d = _envsync_dir()
+    try:
+        cfg = llm_config.LlmConfig("https://gw.example.com/v1", "sk-ab12", "mimo-v2.5")
+        p = sync_install_env(cfg, env_path=d / ".env")
+        assert p == d / ".env" and p.is_file()
+        kv = parse_env_text(p.read_text(encoding="utf-8"))
+        assert kv["BASE_URL"] == "https://gw.example.com/v1"
+        assert kv["API_KEY"] == "sk-ab12"
+        assert kv["MODEL_ID"] == "mimo-v2.5"
+        assert kv["TAVILY_KEY"] == ""  # 缺键尾插空值（load_config 缺键判定不含空串）
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_sync_install_env_updates_managed_and_preserves_others():
+    d = _envsync_dir()
+    try:
+        p = d / ".env"
+        p.write_text(
+            "# user comment\n"
+            "SOK_API_KEY=sok-keep\n"
+            "SOK_SERVER_URL=http://127.0.0.1:8000\n"
+            "TAVILY_KEY: tvly-keep\n"
+            "BASE_URL=old\n",
+            encoding="utf-8",
+        )
+        cfg = llm_config.LlmConfig("https://new.example.com/v1", "sk-new", "model-x")
+        assert sync_install_env(cfg, env_path=p) == p
+        text = p.read_text(encoding="utf-8")
+        kv = parse_env_text(text)
+        assert kv["BASE_URL"] == "https://new.example.com/v1"
+        assert kv["API_KEY"] == "sk-new"
+        assert kv["MODEL_ID"] == "model-x"
+        # 既有行（注释 / SOK / TAVILY，含冒号式）原样保留
+        assert "# user comment" in text
+        assert "SOK_API_KEY=sok-keep" in text
+        assert "SOK_SERVER_URL=http://127.0.0.1:8000" in text
+        assert "TAVILY_KEY: tvly-keep" in text
+        # 每个键恰好 1 行（行级判定；防 SOK_API_KEY 子串误计）
+        lines = text.splitlines()
+        for key in ("BASE_URL", "API_KEY", "MODEL_ID", "TAVILY_KEY", "SOK_API_KEY", "SOK_SERVER_URL"):
+            assert sum(1 for ln in lines if _env_line_key(ln) == key) == 1, key
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_sync_install_env_rewrites_colon_style_managed_key():
+    d = _envsync_dir()
+    try:
+        p = d / ".env"
+        p.write_text("MODEL_ID: old-m\n", encoding="utf-8")
+        assert sync_install_env(llm_config.LlmConfig("http://x", "k", "new-m"), env_path=p) == p
+        text = p.read_text(encoding="utf-8")
+        assert "MODEL_ID=new-m" in text
+        assert "old-m" not in text
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_sync_install_env_write_failure_returns_none():
+    d = _envsync_dir()
+    try:
+        blocker = d / "blocker"
+        blocker.write_text("x", encoding="utf-8")
+        p = blocker / "sub" / ".env"  # 父级是普通文件 → mkdir 抛 NotADirectoryError⊂OSError
+        assert sync_install_env(llm_config.LlmConfig("http://x", "k", "m"), env_path=p) is None
+        assert not p.exists()
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+

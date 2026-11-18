@@ -1,7 +1,7 @@
 """LLM 首启 5 步向导（工单 02）：欢迎+安全承诺 → 选 provider → 填地址密钥 → 测试连接 → 选默认模型。
 
 可跳过（欢迎页）；key_ref 悬空启动时从第 3 步（EndpointPage）重入。
-保存 = save_llm_config（key 进 Credential Manager/DPAPI，config.json 只存 key_ref）。
+保存 = save_llm_config（key 进 Credential Manager/DPAPI，config.json 只存 key_ref），并同步生成/更新安装目录 .env（gui-ux26，best-effort 不崩保存流）。
 """
 from __future__ import annotations
 
@@ -137,6 +137,8 @@ class LlmWizard(QWizard):
     def save(self) -> llm_config.LlmConfig:
         cfg = self.current_config()
         llm_config.save_llm_config(cfg, self._key_store, self._home)
+        # gui-ux26：best-effort 同步安装目录 .env（失败函数内部 warning，不阻断保存）
+        llm_config.sync_install_env(cfg)
         return cfg
 
 
