@@ -85,7 +85,10 @@ def has_query_no_match(widget, state: OverlayState) -> bool:
     text = widget.toPlainText()
     row, col = rowcol_from_cursor(widget)
     line, line_col = tui_completion.line_projection(text, (row, col))
-    q = line[state.at_index + 1 : line_col]
+    # gui-ux25: skill kind 的 at_index 即 query 起点（「/use 」之后），不加 1；
+    # slash/path kind 的 at_index 是「/」「@」位置，query 起点 = at_index + 1。
+    start = state.at_index if state.kind == "skill" else state.at_index + 1
+    q = line[start : line_col]
     return len(q.strip()) > 0
 
 

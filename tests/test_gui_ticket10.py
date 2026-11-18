@@ -598,3 +598,75 @@ def test_desync_has_query_no_match():
         assert not has_query_no_match(_DesyncEdit(text2, len(text2)), st2)
     finally:
         cleanup_home(home)
+
+
+# ---------------------------------------------------------------- gui-ux25: /use 任意位置泛化（对齐 tui-ux24 内核）
+def test_use_skill_multiline_any_position(qapp):
+    """gui-ux25: 续行/句中「空格 + /use」触发 skill 补全（对齐 tui-ux24 内核）；
+    Tab 接受只改光标行（共享内核回归，与 @ / 的 gui-ux22 用例同族）。"""
+    from src.gui.completion import accept_suggestion, resolve_for_input
+    from src.skill_discovery import SkillMeta
+
+    home = new_home()
+    try:
+        rt = _fake_runtime()
+        p = GuiPresenter(rt, UiBridge())
+        win = MainWindow(p, p.bridge)
+        edit = win.input_bar.edit
+        edit.setPlainText("第一行\n句中 /use ")
+        edit.moveCursor(QTextCursor.MoveOperation.End)  # 光标在续行行尾
+        skills = [
+            SkillMeta(
+                name="book-meeting-room",
+                description="订会议室",
+                virtual_path="/workspace/skills/book-meeting-room/SKILL.md",
+                layer="project",
+            )
+        ]
+        st = resolve_for_input(edit, skills=skills, config=rt.config)
+        assert st.kind == "skill"
+        assert st.at_index == 8  # 行内偏移：「句中 」3 + 「/use 」5
+        sel = next(i.insert for i in st.items if "book-meeting-room" in i.insert)
+        assert accept_suggestion(edit, st, sel)
+        lines = edit.toPlainText().split("\n")
+        assert lines[0] == "第一行"  # 其它行未动
+        assert lines[1].startswith("句中 /use book-meeting-room")
+    finally:
+        cleanup_home(home)
+
+
+def test_skill_single_char_no_match_popup_shows_hint_row(qapp, monkeypatch):
+    """gui-ux25 回归（has_query_no_match skill kind off-by-one）：skill 查询
+    单字符无匹配时弹层须显示「No matching items」行而非整体消失
+    （旧代码 at_index+1 跳过 query 首字符 → 空串误判 → 静默无反馈）。"""
+    from src.gui.completion import has_query_no_match, resolve_for_input
+    from src.skill_discovery import SkillMeta
+
+    rt = _fake_runtime()
+    p = GuiPresenter(rt, UiBridge())
+    monkeypatch.setattr(
+        p, "skills_catalog",
+        lambda: [
+            SkillMeta(
+                name="alpha",
+                description="",
+                virtual_path="/workspace/skills/alpha/SKILL.md",
+                layer="project",
+            )
+        ],
+    )
+    win = MainWindow(p, p.bridge)
+    win.show()
+    qapp.processEvents()
+    edit = win.input_bar.edit
+    edit.setPlainText("/use z")  # z 对 alpha 四档模糊全不中 → 候选为空
+    edit.moveCursor(QTextCursor.MoveOperation.End)
+    win._refresh_completion_now()
+    qapp.processEvents()
+    pop = win.completion_popup
+    st = resolve_for_input(edit, skills=p.skills_catalog(), config=rt.config)
+    assert st.kind == "skill" and not st.items
+    assert has_query_no_match(edit, st)
+    assert pop.isVisible()
+    assert pop.count() == 1
+    assert pop.item(0).text() == "No matching items"
