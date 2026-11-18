@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass, field
@@ -293,6 +294,82 @@ def save_llm_config(cfg: LlmConfig, key_store: KeyStore, home: Path | None = Non
         },
     })
     return path
+
+
+# ---------------------------------------------------------------- 安装目录 .env 同步（gui-ux26）
+
+#: 管理键（原地重写为向导值；既有行无论 = 或 : 分隔都认）
+MANAGED_ENV_KEYS = ("BASE_URL", "API_KEY", "MODEL_ID")
+
+
+def _env_line_key(line: str) -> str | None:
+    """env 行首键（与 parse_env_text 同一算法：首个 = / : 分隔符之前、大写化）。"""
+    s = line.strip()
+    if not s or s.startswith("#"):
+        return None
+    first = min((i for i in (s.find(":"), s.find("=")) if i != -1), default=-1)
+    if first == -1:
+        return None
+    return s[:first].strip().upper() or None
+
+
+def sync_install_env(cfg: LlmConfig, env_path: Path | str | None = None) -> Path | None:
+    """同步生成/更新安装目录 .env（gui-ux26；向导保存时调用，best-effort 不崩保存流）。
+
+    - 目标 = 显式 env_path，否则 install_root()/".env"（frozen=Nuitka exe 目录，
+      CPython=源码仓库根——便携版缺 .env 时裸 load_config 调用点的兜底面）；
+    - 管理键 BASE_URL/API_KEY/MODEL_ID 原地重写为向导值（= 形式，原行无论
+      = 或 : 分隔都认，与 parse_env_text 同一算法）；
+    - TAVILY_KEY 与其他键/注释/空行原样保留；TAVILY_KEY 缺则尾部补 `TAVILY_KEY=`
+      （空值合法，load_config 缺键判定不含空串）；
+    - 首建插注释头；原子写（tmp → replace）；
+    - 写失败（OSError）仅 logging.warning 并返回 None，不阻断保存流（主入口仍由
+      load_config 的 install .env 兜底 + env_overrides 覆盖）。
+
+    约定：API key 明文进安装目录 .env = 与源码用户项目 .env 同款约定（向导
+    「不落明文」承诺只覆盖 config.json/keyring 层；.env 是用户显式配置面）。
+    """
+    from src.project_paths import install_root
+
+    target = Path(env_path) if env_path is not None else install_root() / ".env"
+    values = {"BASE_URL": cfg.base_url, "API_KEY": cfg.api_key, "MODEL_ID": cfg.model_id}
+    try:
+        lines: list[str] = []
+        if target.is_file():
+            lines = target.read_text(encoding="utf-8").splitlines()
+
+        new_lines: list[str] = []
+        written: set[str] = set()
+        has_tavily = False
+        for raw in lines:
+            key = _env_line_key(raw)
+            if key in values:
+                new_lines.append(f"{key}={values[key]}")
+                written.add(key)
+            else:
+                new_lines.append(raw)
+                if key == "TAVILY_KEY":
+                    has_tavily = True
+
+        if not lines:
+            new_lines.insert(0, "# JARVIS 环境变量（GUI 向导自动生成/更新）")
+        for key in MANAGED_ENV_KEYS:
+            if key not in written:
+                new_lines.append(f"{key}={values[key]}")
+        if not has_tavily:
+            new_lines.append("TAVILY_KEY=")
+
+        text = "\n".join(new_lines)
+        if new_lines:
+            text += "\n"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(target.name + ".tmp")
+        tmp.write_text(text, encoding="utf-8")
+        tmp.replace(target)
+        return target
+    except OSError as exc:
+        logging.warning("安装目录 .env 同步写失败（%s）: %s", target, exc)
+        return None
 
 
 def load_llm_config(key_store: KeyStore, home: Path | None = None) -> LoadResult:

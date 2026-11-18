@@ -180,7 +180,11 @@ def load_config(
 
     missing = [k for k in REQUIRED_ENV_KEYS if k not in env]
     if missing:
-        raise KeyError(f"缺少必需配置项（.env 或 env_overrides）: {', '.join(missing)}")
+        raise KeyError(
+            f"缺少必需配置项（.env 或 env_overrides）: {', '.join(missing)}。"
+            "请将 .env 放到项目根目录或安装目录；GUI 版完成首启向导"
+            "（保存 LLM 配置时）会自动生成安装目录 .env。"
+        )
 
     if json_file.is_file():
         try:

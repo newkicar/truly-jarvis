@@ -27,7 +27,7 @@ try {
     if ($LASTEXITCODE -eq 0) { Write-Host "[1/4] tag $Tag 已存在" }
     else {
         Write-Host "[1/4] 创建 tag $Tag …"
-        git tag -a $Tag -m "${Tag}：/use skill 补全任意位置锚定（tui-ux24，TUI+GUI 共享内核）+ GUI skill 单字符无匹配弹层显示（gui-ux25）"
+        git tag -a $Tag -m "${Tag}：/use skill 补全任意位置锚定（tui-ux24，TUI+GUI 共享内核）+ GUI skill 单字符无匹配弹层显示（gui-ux25）+ 首启向导生成安装目录 .env（gui-ux26）"
     }
 
     # ② push main
