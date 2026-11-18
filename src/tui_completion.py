@@ -74,19 +74,23 @@ def _style_item(
     return SuggestionItem(insert=s.path, label=s.path, hint=s.hint)
 
 def use_query(value: str, cursor: int | None = None) -> tuple[int, str] | None:
-    """tui-ux9: /use skill 补全触发：截至光标的文本形如 ``/use <q>``（``/use`` 后恰好一个空格、q 内无空格）→ ``(5, q)``；否则 None。
+    """tui-ux9: /use skill 补全触发（tui-ux24 任意位置锚定，对齐 slash_query/at_query）：
+    「/use 」后恰好 query（q 内无空格）→ (at_index, q)（at_index = 真实 query 起点）；否则 None。
 
-    无尾随空格（``/use`` / ``/uses``）→ slash 补全语义，返回 None；
-    已进入说明段（q 内含第二个空格）→ 返回 None（关闭 overlay）。
+    「/use 」须位于文本开头或前一字符为空白；无尾随空格（``/use`` / ``/uses``）→ slash 语义；
+    说明段（q 内第二个空格）→ None（关 overlay）。
     """
     pos = len(value) if cursor is None else cursor
     text = value[:pos]
-    if not text.startswith("/use "):
+    idx = text.rfind("/use ")
+    if idx == -1:
         return None
-    query = text[5:]
+    if idx > 0 and not text[idx - 1].isspace():
+        return None
+    query = text[idx + 5 :]
     if " " in query:
         return None
-    return 5, query
+    return idx + 5, query
 
 
 def _skill_item(skill: SkillMeta) -> SuggestionItem:

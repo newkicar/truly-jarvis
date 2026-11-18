@@ -326,3 +326,71 @@ def test_apply_suggestion_on_line_slash_second_line():
     assert lines[0] == "第一行"
     assert lines[1] == "第二 /compact [hint] "
     assert new_cursor[0] == 1
+
+# ---------------------------------------------------------------------------
+# tui-ux24: /use 任意位置锚定泛化（对齐 slash_query/at_query 规则）
+# ---------------------------------------------------------------------------
+
+def _use_resolve(text, cursor, skills):
+    return resolve_overlay_state(
+        text, cursor, vault_path=None, workspace_root=None, memories_root=None, skills=skills
+    )
+
+
+def test_use_skill_any_position_trigger():
+    catalog = [_use_skill("book-meeting"), _use_skill("alpha")]
+    # 句中 / 续行：「空格 + /use」任意位置触发（at_index = 真实 query 起点）
+    assert use_query("hello /use ", 11) == (11, "")
+    assert use_query("abc /use bk", 11) == (9, "bk")
+    st = _use_resolve("hello /use ", 11, catalog)
+    assert st.kind == "skill"
+    assert st.at_index == 11
+    assert st.active
+    assert [i.insert for i in st.items] == [s.name for s in fuzzy_filter_skills(catalog, "")]
+    st2 = _use_resolve("abc /use bk", 11, catalog)
+    assert st2.kind == "skill"
+    assert st2.at_index == 9
+    assert [i.insert for i in st2.items] == [s.name for s in fuzzy_filter_skills(catalog, "bk")]
+
+
+def test_use_skill_glued_use_no_trigger():
+    catalog = [_use_skill("alpha")]
+    assert use_query("x/use ", 6) is None  # 前一字符非空白不触发
+    assert _use_resolve("x/use ", 6, catalog).kind == "none"
+
+
+def test_use_skill_description_segment_closes_anywhere():
+    catalog = [_use_skill("alpha")]
+    assert use_query("hello /use bk more", 18) is None
+    assert _use_resolve("hello /use bk more", 18, catalog).kind == "none"
+
+
+def test_use_skill_bare_and_prefix_stay_slash_anywhere():
+    catalog = [_use_skill("alpha")]
+    assert use_query("hello /uses", 10) is None  # 无尾随空格 → slash 语义
+    assert _use_resolve("hello /uses", 10, catalog).kind == "slash"
+    assert use_query("hello /use", 10) is None
+    assert _use_resolve("hello /use", 10, catalog).kind == "slash"
+
+
+def test_apply_suggestion_skill_prefix_preserved():
+    text = "hello /use "
+    new_text, new_cursor = apply_suggestion(text, 11, 11, "book-meeting")
+    assert new_text == "hello /use book-meeting "  # 前缀「hello 」保住
+    assert new_cursor == 24
+
+
+def test_apply_suggestion_on_line_skill_second_line():
+    """多行输入：续行句中 /use 接受建议只改光标行（共享内核回归）。"""
+    line = "句中 /use "
+    text = "第一行\n" + line
+    cursor = (1, len(line))
+    proj_line, col = line_projection(text, cursor)
+    st = _use_resolve(proj_line, col, [_use_skill("book-meeting")])
+    assert st.kind == "skill"
+    assert st.at_index == 8  # 行内偏移（「句中 」3 字符 + "/use " 5 字符）
+    new_text, new_cursor = apply_suggestion_on_line(text, cursor, st.at_index, "book-meeting")
+    lines = new_text.split("\n")
+    assert lines[0] == "第一行"  # 其它行未动
+    assert lines[1] == "句中 /use book-meeting "
+    assert new_cursor[0] == 1
