@@ -77,7 +77,9 @@ class InputBar(QWidget):
         """裸 Esc：hook() True=消费（如关掉补全弹层，保留文本）；False=原生（无操作）。"""
         self._esc_hook = hook
 
-    # ---- 键位（事件过滤）：裸 Enter/Return=提交整框；Shift+Enter/Alt+Enter=框内换行（原生）。
+    # ---- 键位（事件过滤）：裸 Enter/Return=提交整框；Shift+Enter/Alt+Enter=框内换行。
+    #      换行显式插入 \n（Alt+Return 原生 QPlainTextEdit 不换行——行为级测试实证，
+    #      故不再依赖原生；选区在则替换选区，与原生按键语义一致）。
     #      Ctrl+C/V/X/A 等修饰组合不拦截，走 Qt 原生（选区复制保留）。
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
         from PySide6.QtGui import QKeyEvent
@@ -86,7 +88,8 @@ class InputBar(QWidget):
             key = event.key()
             if key in (Qt.Key_Return, Qt.Key_Enter):
                 if event.modifiers() & (Qt.ShiftModifier | Qt.AltModifier):
-                    return False  # 换行走原生
+                    self._insert_newline()
+                    return True
                 self._submit()
                 return True
             if key == Qt.Key_Tab and not (event.modifiers() & (Qt.ShiftModifier | Qt.ControlModifier)):
@@ -99,6 +102,10 @@ class InputBar(QWidget):
                 if self._image_paste_hook is not None and self._image_paste_hook():
                     return True  # 图片/路径已入附件条
         return super().eventFilter(obj, event)
+
+    def _insert_newline(self) -> None:
+        """Shift+Enter / Alt+Enter：框内插入换行（选区在则替换选区，光标后追加 \n）。"""
+        self.edit.insertPlainText("\n")
 
     def _submit(self) -> None:
         text = self.edit.toPlainText()

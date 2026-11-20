@@ -55,27 +55,36 @@ def test_enter_submits_and_clears(qtbot):
     assert bar.edit.toPlainText() == ""
 
 
-def test_shift_enter_not_intercepted(qtbot):
+def test_shift_enter_consumed_and_inserts_newline(qtbot):
+    """Shift+Enter：eventFilter 消费事件并显式插入 \n（不再依赖原生——确定性优先）。"""
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QKeyEvent
+
+    from PySide6.QtGui import QTextCursor
 
     bar = InputBar(); qtbot.addWidget(bar)
     bar.edit.setPlainText("a")
+    bar.edit.moveCursor(QTextCursor.MoveOperation.End)  # 模拟用户停在末尾（setPlainText 会重置光标到 0）
     ev = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key_Return, Qt.ShiftModifier)
-    assert not bar.eventFilter(bar.edit, ev)  # 放行（换行交 QPlainTextEdit 原生处理）
+    assert bar.eventFilter(bar.edit, ev)  # 消费（显式插入换行）
+    assert bar.edit.toPlainText() == "a\n"
 
 
-def test_alt_enter_not_intercepted(qtbot):
-    """Alt+Enter 与 Shift+Enter 同义：放行（换行交 QPlainTextEdit 原生处理），不提交。"""
+def test_alt_enter_consumed_and_inserts_newline(qtbot):
+    """Alt+Enter 与 Shift+Enter 同义：消费事件并显式插入 \n，不提交。"""
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QKeyEvent
+
+    from PySide6.QtGui import QTextCursor
 
     bar = InputBar(); qtbot.addWidget(bar)
     submitted: list[str] = []
     bar.submit_requested.connect(submitted.append)
     bar.edit.setPlainText("a")
+    bar.edit.moveCursor(QTextCursor.MoveOperation.End)  # 模拟用户停在末尾（setPlainText 会重置光标到 0）
     ev = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key_Return, Qt.AltModifier)
-    assert not bar.eventFilter(bar.edit, ev)  # 放行（原生换行）
+    assert bar.eventFilter(bar.edit, ev)  # 消费（显式插入换行）
+    assert bar.edit.toPlainText() == "a\n"
     assert submitted == []
 
 
@@ -106,3 +115,35 @@ def test_fill_text_backfills_only_when_empty(qtbot):
     # 空串 → no-op
     bar.fill_text("")
     assert bar.edit.toPlainText() == "这个人叫什么"
+
+
+def test_shift_enter_inserts_newline(qtbot):
+    """行为级固化：Shift+Enter 在输入框真插入换行且不误提交。"""
+    from PySide6.QtCore import Qt
+
+    bar = InputBar(); qtbot.addWidget(bar)
+    bar.show()
+    submitted: list[str] = []
+    bar.submit_requested.connect(submitted.append)
+    bar.edit.setPlainText("abc")
+    bar.edit.setFocus()
+    qtbot.keyClick(bar.edit, Qt.Key_Return, Qt.ShiftModifier)
+    qtbot.keyClick(bar.edit, Qt.Key_X)
+    assert "\n" in bar.edit.toPlainText()
+    assert submitted == []
+
+
+def test_alt_enter_inserts_newline(qtbot):
+    """行为级：Alt+Enter 与 Shift+Enter 同义——真插入换行、不误提交（用户实测 GUI 无反应的红灯）。"""
+    from PySide6.QtCore import Qt
+
+    bar = InputBar(); qtbot.addWidget(bar)
+    bar.show()
+    submitted: list[str] = []
+    bar.submit_requested.connect(submitted.append)
+    bar.edit.setPlainText("abc")
+    bar.edit.setFocus()
+    qtbot.keyClick(bar.edit, Qt.Key_Return, Qt.AltModifier)
+    qtbot.keyClick(bar.edit, Qt.Key_X)
+    assert "\n" in bar.edit.toPlainText(), "Alt+Enter 应插入换行"
+    assert submitted == [], "Alt+Enter 不得提交"

@@ -269,7 +269,7 @@ class ChatPane(QScrollArea):
 
     def _make_placeholder(self) -> "CapLabel":
         ph = CapLabel(
-            "新会话\n在下方输入框里输入消息开始对话（Enter 发送，Shift+Enter 换行）"
+            "新会话\n在下方输入框里输入消息开始对话（Enter 发送，Shift+Enter / Alt+Enter 换行）"
         )
         ph.setObjectName("pane-placeholder")
         ph.setAlignment(Qt.AlignmentFlag.AlignCenter)

@@ -93,7 +93,7 @@ def build_doctor_report(
         DoctorRow(
             "输入通道", "键盘/IME/粘贴", STATUS_OK,
             "Windows 原生输入通道（无 ConPTY）",
-            "粘贴 = Ctrl+V（OS 剪贴板，文本/图片）；Shift+Enter 换行",
+            "粘贴 = Ctrl+V（OS 剪贴板，文本/图片）；Shift+Enter / Alt+Enter 换行",
         )
     )
 

@@ -207,8 +207,10 @@ class JarvisTextArea(PasteTextArea):
         # tui-ux13：Shift+Enter 框内换行；Ctrl+J 为常绑退路
         #（ConPTY 对 shift 修饰键透传不保证，ctrl+j 退路在案）。
         Binding("shift+enter", "newline", "换行", show=False),
-        # Alt+Enter：另一常见换行习惯；ConPTY 对 alt 修饰键透传同样不保证，
-        # 与 ctrl+j 退路同款理由（真实终端交付需用户实测）。
+        # Alt+Enter：另一常见换行习惯。终端层限制：git bash(mintty)/conhost
+        # 将 Alt+Enter 拦截为终端级全屏切换快捷键（事件被终端吃掉、应用层
+        # 无法覆盖）；Windows Terminal 等透传 alt 的终端有效；ctrl+j 常绑
+        # 退路始终可用（真实终端交付需用户实测）。
         Binding("alt+enter", "newline", "换行(alt 习惯)", show=False),
         Binding("ctrl+j", "newline", "换行(退路)", show=False),
     ]

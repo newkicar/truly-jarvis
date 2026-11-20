@@ -253,7 +253,7 @@ class MainWindow(QMainWindow):
         self.image_strip = ImageStrip()
         ml.addWidget(self.image_strip)
         self.input_bar = InputBar()
-        self.input_bar.edit.setPlaceholderText("输入消息（Enter 发送，Shift+Enter 换行）")
+        self.input_bar.edit.setPlaceholderText("输入消息（Enter 发送，Shift+Enter / Alt+Enter 换行）")
         self.input_bar.set_image_paste_hook(self._try_image_paste)
         self.input_bar.submit_requested.connect(self._on_input_submit)
         self.input_bar.cancel_requested.connect(self._cancel_active)
