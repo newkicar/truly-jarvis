@@ -293,6 +293,24 @@ class ChatPane(QScrollArea):
             ph.setParent(None)
             self._placeholder = None
 
+    def _clear_content(self) -> None:
+        """重建前置（gui-ux16）：丢弃全部内容部件，只留底部 spacer（spacer 恒为末位）。
+
+        流式瞬态（AI 标签/缓冲/思考块）一并复位——后续 ai_delta/thinking_delta 会重建；
+        审批卡随布局移除（停在 CardSession.wait 的 worker 已由 _rebuild_pane 的
+        wake_parked 先行唤醒放弃）。running/awaiting_card/stopped 徽标态不在此重置
+        （main_window._refresh_running_badge 单一管理）。"""
+        self._ai_label = None
+        self._ai_buf = ""
+        self._dirty = False
+        self._thinking_box = None
+        self._placeholder = None
+        while self._vbox.count() > 1:
+            item = self._vbox.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)  # 出布局必须脱离父部件，否则 Qt 继续持有绘制
+
     def append_user(self, text: str, image_paths: list[str] | None = None) -> None:
         self._close_thinking()
         self._hide_placeholder()
@@ -434,7 +452,11 @@ class ChatPane(QScrollArea):
         self.snap_to_bottom()  # 审批卡强制显形（单生产调用点）
 
     def rebuild_from_records(self, records: list) -> None:
-        """工单 06：从检查点记录重建（user/AI 文本 + 工具行，工具行默认折叠）。"""
+        """工单 06：从检查点记录重建（user/AI 文本 + 工具行，工具行默认折叠）。
+
+        幂等（gui-ux16）：先清后追加——不先清则每次 undo/重建把（变短的）全量历史
+        再叠加一遍，对话框「越撤回越长」。"""
+        self._clear_content()
         for r in records:
             if r.kind == "user":
                 self.append_user(r.text)

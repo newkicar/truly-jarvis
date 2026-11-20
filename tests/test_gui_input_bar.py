@@ -76,3 +76,19 @@ def test_input_bar_single_layout_no_double_set(qtbot):
     assert bar.btn_send.parentWidget() is bar
     bar.show()
     assert bar.sizeHint().height() > 0
+
+def test_fill_text_backfills_only_when_empty(qtbot):
+    """gui-ux16 undo 回填：仅空框写入（不覆盖进行中草稿），光标置于末尾；空串 no-op。"""
+    bar = InputBar()
+    qtbot.addWidget(bar)
+    bar.show()
+    # 空框 → 写入且光标到末尾
+    bar.fill_text("这个人叫什么")
+    assert bar.edit.toPlainText() == "这个人叫什么"
+    assert bar.edit.textCursor().position() == len("这个人叫什么")
+    # 有草稿 → 拒写（保留用户正在编辑的内容）
+    bar.fill_text("新草稿")
+    assert bar.edit.toPlainText() == "这个人叫什么"
+    # 空串 → no-op
+    bar.fill_text("")
+    assert bar.edit.toPlainText() == "这个人叫什么"

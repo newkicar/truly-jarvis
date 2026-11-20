@@ -354,8 +354,14 @@ class MainWindow(QMainWindow):
         agent = self.presenter.runtime.agent
 
         def _run() -> str:
+            # gui-ux16（对标 codex）：先取后撤——undo 之后被撤消息已不在 checkpoint，
+            # get_state 的最近 human 变成上上轮，所以必须在 undo 前抓「即将撤回的那条」；
+            # 成功才回填（契约：成功 ⇔ 以「已撤回」开头，见 commands.undo docstring）
+            restored = commands.last_user_input(agent, tid)
             msg = commands.undo(agent, tid)
             b.rebuild_pane.emit(tid)  # 主线程重建 pane 记录（worker 不碰 widget）
+            if msg.startswith("已撤回") and restored:
+                b.input_set.emit(restored)  # 队列信号 → 主线程写输入框
             return msg
 
         self.presenter.run_command(_run, tid)
@@ -410,6 +416,10 @@ class MainWindow(QMainWindow):
             p.rebuild_from_records(replay.thread_record(self.presenter.runtime.agent, tid))
         except Exception:  # noqa: BLE001 — 重建失败保留原 pane，不崩 app
             pass
+
+    def _on_input_set(self, text: str) -> None:
+        """undo 回填（gui-ux16）：被撤回的用户消息进输入框，可改可再发。"""
+        self.input_bar.fill_text(text)
 
     # ---- 工单 09：时间旅行（渲染入口）
     def _on_snapshot(self) -> None:
@@ -1276,6 +1286,16 @@ class MainWindow(QMainWindow):
             # 自检走对话框（可滚动/可选中），不塞状态栏（多行文本会顶爆布局、把输入框挤出屏）
             self._on_doctor()
             return True
+        if first == '/undo':
+            # gui-ux16：输入框/菜单 /undo 与 Esc 级联统一走 _on_undo——检查点撤回 + pane
+            # 重建 + 输入框回填一体；不再落入 _execute_slash（该路径只 notify 不重建 pane）
+            if len(stripped.split(None, 1)) > 1:
+                self.status_label.setText(
+                    "用法: /undo（无参）；/undo 只撤回最近 1 条，多轮请反复调用"
+                )
+                return True
+            self._on_undo()
+            return True
         self._execute_slash(payload)
         return True
 
@@ -1380,6 +1400,7 @@ class MainWindow(QMainWindow):
         b.create_card.connect(self._on_create_card)
         b.focus_input.connect(self._on_focus_input)
         b.rebuild_pane.connect(self._rebuild_pane)
+        b.input_set.connect(self._on_input_set)
         b.switch_session.connect(self._on_switch_session)
         b.task_done.connect(self._on_task_done)
         b.queued_flush.connect(self._on_queued_flush)

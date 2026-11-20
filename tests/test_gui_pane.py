@@ -293,3 +293,38 @@ def test_image_row_wraps_in_horizontal_scroller(qtbot):
     w = p._image_row(["missing-thumbnail.png"] * 8)
     assert isinstance(w, QScrollArea)
     assert w.widgetResizable
+
+def test_rebuild_from_records_is_idempotent(qtbot):
+    """gui-ux16：重建幂等（先清后追加）——反复 rebuild 历史不叠加（旧「越撤回越长」根因）；
+    流式瞬态（AI 标签/思考块）随重建复位，后续 ai_delta/thinking_delta 从零重建；
+    重建为空 → 占位复原（与 test_rebuilt_empty_history_placeholder_stays 语义一致）。"""
+    from src.gui.pane import ChatPane
+    from src.gui.replay import Record, ToolRecord
+
+    pane = ChatPane("t-idem")
+    qtbot.addWidget(pane)
+    recs = [
+        Record(kind="user", text="这个人叫什么"),
+        Record(kind="ai", text="这个人叫 Alice"),
+        Record(kind="tool", tool=ToolRecord(name="ls", args_text="dir", error=False, output="ok")),
+        Record(kind="user", text="他叫什么"),
+    ]
+    pane.rebuild_from_records(recs)
+    n0 = pane._vbox.count()
+    assert n0 == 5  # 4 条内容 + 末位 spacer
+    # 反复重建（模拟连续 undo/切会话）→ 行数恒定，不再叠加
+    pane.rebuild_from_records(recs)
+    assert pane._vbox.count() == n0
+    pane.rebuild_from_records(recs)
+    assert pane._vbox.count() == n0
+    # 重建后流式瞬态已复位：ai_delta/thinking_delta 从零重建
+    assert pane._ai_label is None
+    assert pane._thinking_box is None
+    pane.ai_delta("新流")
+    assert pane._ai_label is not None
+    pane.thinking_delta("在想")
+    assert pane._thinking_box is not None
+    # 重建为空 → 占位复原（placeholder + spacer）
+    pane.rebuild_from_records([])
+    assert pane._vbox.count() == 2
+    assert pane._placeholder is not None

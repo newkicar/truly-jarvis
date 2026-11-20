@@ -247,3 +247,69 @@ def test_set_auto_compaction_empty_state_hints_status(qapp):
         assert "活动项目" in win.status_label.text()
     finally:
         cleanup_home(home)
+
+def test_undo_backfills_input_box_on_success(qapp, monkeypatch):
+    """gui-ux16：undo 成功 → 被撤回的用户消息经 input_set 回填输入框（对标 codex：可改可再发）。"""
+    from src import commands
+    from src.gui import replay
+
+    win, p, rt, home = _win(qapp)
+    try:
+        monkeypatch.setattr(commands, "undo", lambda agent, tid, n=1: "已撤回 1 条")
+        monkeypatch.setattr(commands, "last_user_input", lambda agent, tid: "这个人叫什么")
+        monkeypatch.setattr(replay, "thread_record", lambda agent, tid, **k: [])
+        monkeypatch.setattr(p, "run_command", lambda fn, tid: fn())
+        win._switch_to("sess-bf")
+        captured = []
+        win.bridge.input_set.connect(captured.append)
+        win._on_undo()
+        assert captured == ["这个人叫什么"]
+    finally:
+        cleanup_home(home)
+
+
+def test_undo_no_input_backfill_on_failure_or_empty(qapp, monkeypatch):
+    """gui-ux16：撤回失败 / 空白无目标 / 无用户消息可取 → 一律不回填输入框。"""
+    from src import commands
+    from src.gui import replay
+
+    cases = [
+        ("撤回失败：消息缺少 id，无法定位（请 /delete-session 新开会话）", "这个人叫什么", "失败不回填"),
+        ("没有可撤回的消息", "这个人叫什么", "空白无目标不回填"),
+        ("已撤回 1 条", "", "无用户消息可取不回填"),
+    ]
+    for undo_ret, last_in, note in cases:
+        win, p, rt, home = _win(qapp)
+        try:
+            monkeypatch.setattr(commands, "undo", lambda agent, tid, n=1: undo_ret)
+            monkeypatch.setattr(commands, "last_user_input", lambda agent, tid: last_in)
+            monkeypatch.setattr(replay, "thread_record", lambda agent, tid, **k: [])
+            monkeypatch.setattr(p, "run_command", lambda fn, tid: fn())
+            win._switch_to("sess-bf2")
+            captured = []
+            win.bridge.input_set.connect(captured.append)
+            win._on_undo()
+            assert captured == [], note
+        finally:
+            cleanup_home(home)
+
+
+def test_slash_undo_routes_to_on_undo(qapp, monkeypatch):
+    """gui-ux16：输入框 /undo 与菜单/Esc 级联统一走 _on_undo（检查点撤回 + pane 重建 + 输入框回填一体）。"""
+    from src.gui import replay
+
+    win, p, rt, home = _win(qapp)
+    try:
+        monkeypatch.setattr(replay, "thread_record", lambda agent, tid, **k: [])
+        monkeypatch.setattr(p, "run_command", lambda fn, tid: fn())
+        win._switch_to("sess-s")
+        hits = []
+        monkeypatch.setattr(win, "_on_undo", lambda: hits.append(1))
+        assert win._route_slash("/undo") is True
+        assert hits == [1]
+        # 带参 → 不执行，提示用法
+        assert win._route_slash("/undo 2") is True
+        assert hits == [1]
+        assert "用法: /undo（无参）" in win.status_label.text()
+    finally:
+        cleanup_home(home)

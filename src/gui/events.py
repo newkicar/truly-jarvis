@@ -38,6 +38,8 @@ class UiBridge(QObject):
     focus_input = Signal(str)
     # undo 等消息层操作后 → 主线程重建该 thread 的 pane 记录（工单 08）
     rebuild_pane = Signal(str)
+    # undo 成功 → 把被撤回的最后一条用户消息回填输入框（gui-ux16，对标 codex：可改可再发）
+    input_set = Signal(str)
     # 分支（fork）出新会话 → 主线程切换（工单 09）：new_tid, note
     switch_session = Signal(str, str)
     # 任务完成三通道通知载荷（TaskDoneEvent：会话回合/定时任务，含后台项目；queued 信号 worker→主线程安全）

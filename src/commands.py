@@ -1104,6 +1104,9 @@ def undo(agent, thread_id: str, n: int = 1) -> str:
     读当前 head 的 messages，定位倒数第 n 条 HumanMessage，删除它及其后全部
     （RemoveMessage + as_node="model"，fork 先例）。反复调用每次再撤一轮，
     撤到空白后继续调用返回「没有可撤回的消息」而非异常。
+
+    返回契约（UI 判成败的唯一依据）：成功 ⇔ 以「已撤回」开头；「没有可撤回的消息」= 空白无目标；
+    其余文案（含「撤回失败」）= 失败。UI 仅在成功且 last_user_input 非空时回填输入框。
     """
     from langchain_core.messages import HumanMessage, RemoveMessage
 
@@ -1116,12 +1119,14 @@ def undo(agent, thread_id: str, n: int = 1) -> str:
     n = max(1, min(n, len(human_idxs)))
     cut = human_idxs[-n]
     removals = [RemoveMessage(id=m.id) for m in messages[cut:] if getattr(m, "id", None)]
-    if removals:
-        agent.update_state(
-            thread_config(thread_id),
-            {"messages": removals},
-            as_node="model",
-        )
+    if not removals:
+        # 目标区段消息全部无 id（RemoveMessage 需 id 定位）：未做任何修改，报失败而非假成功
+        return "撤回失败：消息缺少 id，无法定位（请 /delete-session 新开会话）"
+    agent.update_state(
+        thread_config(thread_id),
+        {"messages": removals},
+        as_node="model",
+    )
     suffix = "（已超出，撤回至空白）" if clamped else ""
     return f"已撤回 {n} 条消息（仅消息层；文件未动；HITL 悬挂已作废）{suffix}"
 

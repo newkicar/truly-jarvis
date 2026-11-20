@@ -6,7 +6,7 @@ Ctrl+C/V/X/A 走 Qt 原生（选中文本即复制，事件过滤焦点归还，
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtGui import QKeyEvent, QTextCursor
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QPlainTextEdit,
@@ -109,3 +109,12 @@ class InputBar(QWidget):
 
     def set_cancel_enabled(self, enabled: bool) -> None:
         self.btn_cancel.setEnabled(enabled)
+
+    def fill_text(self, text: str) -> None:
+        """undo 回填（gui-ux16）：仅输入框为空才写入（不覆盖进行中草稿），
+        光标移到末尾并聚焦，用户可直接修改再提交。"""
+        if not text or self.edit.toPlainText().strip():
+            return
+        self.edit.setPlainText(text)
+        self.edit.moveCursor(QTextCursor.MoveOperation.End)
+        self.edit.setFocus()
