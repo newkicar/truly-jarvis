@@ -17,7 +17,52 @@ from pathlib import Path
 from typing import Any, Callable
 
 from src.project_paths import JARVIS_JSON
-from src.gui.runtime_registry import RuntimeRegistry
+from src.gui.runtime_registry import RuntimeRegistry, normalize_root_key
+
+# ---------------------------------------------------------------- YOLO 台账（跨项目重建保持）
+
+
+class YoloLedger:
+    """app 级跨项目 YOLO 台账（纯内存、不落盘——重启全关语义不变）。
+
+    每个项目的 runtime 各持一份 permission_state["yolo_threads"]（线程级免审批，
+    tui-ux12）；多项目切换 A→B→A 时 A 的 runtime 会被关掉重建（ADR-0010），
+    内存态 YOLO 集合随之丢失——本台账在切走源项目前快照 + 目标项目重建后恢复，
+    使同 app 内跨项目切换不丢 YOLO。键用字面量 "yolo_threads"
+    （与 src/permissions.YOLO_THREADS_KEY 一致）；本文件是纯逻辑层，不 import src.permissions。
+    """
+
+    def __init__(self) -> None:
+        self._by_root: dict[str, set[str]] = {}
+
+    def record(self, root: Any, state: Any) -> None:
+        """从活 state 快照 yolo_threads 进台账。
+
+        防御：state 非 dict、或缺键/非 set → 保持台账不动（假 runtime/异常形状不误清）。
+        """
+        if not isinstance(state, dict):
+            return
+        threads = state.get("yolo_threads")
+        if not isinstance(threads, set):
+            return
+        self._by_root[normalize_root_key(root)] = set(threads)
+
+    def apply_to(self, root: Any, state: Any) -> None:
+        """把台账并入（重建后的）state（幂等，未重建也调用无害）。"""
+        if not isinstance(state, dict):
+            return
+        threads = state.get("yolo_threads")
+        if not isinstance(threads, set):
+            threads = set()
+            state["yolo_threads"] = threads
+        threads.update(self._by_root.get(normalize_root_key(root), ()))
+
+    def threads(self, root: Any) -> set[str]:
+        return set(self._by_root.get(normalize_root_key(root), ()))
+
+    def clear(self, root: Any) -> None:
+        self._by_root.pop(normalize_root_key(root), None)
+
 
 # ---------------------------------------------------------------- 打开/新建 内核（工单 02）
 

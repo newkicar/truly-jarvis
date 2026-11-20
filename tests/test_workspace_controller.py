@@ -237,3 +237,96 @@ def test_static_workspace_remove_project_noop_returns_root():
         assert ws.remove_project(r) == r
     finally:
         clean()
+
+
+# ---------------------------------------------------------------- YOLO 台账（app 级跨项目重建不丢）
+
+
+class FakeRTYolo(FakeRT):
+    """带真 runtime permission_state 形状的假 runtime（YOLO 台账测试）。"""
+
+    def __init__(self, root):
+        super().__init__(root)
+        self.permission_state = {"yolo_threads": set()}
+
+
+def _ctrl_yolo(d, root):
+    reg = ProjectRegistry(d / "projects.json")
+    rt = FakeRTYolo(root)
+    made: list = []
+
+    def factory(r):
+        f = FakeRTYolo(r)
+        made.append(f)
+        return f
+
+    reg.add(root, now=1.0)
+    ctrl = WorkspaceController(reg, factory, UiBridge())
+    return reg, ctrl, made, rt
+
+
+def _yolo_threads(ctrl, root):
+    return ctrl._manager.runtimes.get(root).runtime.permission_state["yolo_threads"]
+
+
+def test_yolo_survives_project_switch_rebuild():
+    d, clean = _home()
+    try:
+        a, b = d / "a", d / "b"
+        a.mkdir(); b.mkdir()
+        reg, ctrl, made, _ = _ctrl_yolo(d, a)
+        ctrl.switch_project(a)
+        _yolo_threads(ctrl, a).add("t1")
+        ctrl.switch_project(b)
+        assert made[0].closed is True  # a 的 runtime 被关（重建路径）
+        ctrl.switch_project(a)  # 重建后须恢复 YOLO 台账
+        assert "t1" in _yolo_threads(ctrl, a)
+        assert "t1" not in _yolo_threads(ctrl, b)
+    finally:
+        clean()
+
+
+def test_yolo_off_is_synced_on_project_switch():
+    d, clean = _home()
+    try:
+        a, b = d / "a", d / "b"
+        a.mkdir(); b.mkdir()
+        reg, ctrl, _made, _ = _ctrl_yolo(d, a)
+        ctrl.switch_project(a)
+        _yolo_threads(ctrl, a).add("t1")
+        ctrl.switch_project(b)
+        ctrl.switch_project(a)
+        assert "t1" in _yolo_threads(ctrl, a)  # on 态已恢复
+        _yolo_threads(ctrl, a).discard("t1")  # 用户主动关 YOLO
+        ctrl.switch_project(b)
+        ctrl.switch_project(a)
+        assert "t1" not in _yolo_threads(ctrl, a)  # off 态同样同步，不复活
+    finally:
+        clean()
+
+
+def test_remove_project_clears_yolo_ledger():
+    d, clean = _home()
+    try:
+        a, b = d / "a", d / "b"
+        a.mkdir(); b.mkdir()
+        reg, ctrl, _made, _ = _ctrl_yolo(d, a)
+        ctrl.switch_project(a)
+        _yolo_threads(ctrl, a).add("t1")
+        ctrl.remove_project(a)  # 显式放弃项目 → 台账清除
+        reg.add(a, now=3.0)
+        ctrl.switch_project(a)
+        assert "t1" not in _yolo_threads(ctrl, a)  # YOLO 不复活
+    finally:
+        clean()
+
+
+def test_static_workspace_sync_yolo_ledger_noop():
+    from pathlib import Path as P
+    from types import SimpleNamespace
+
+    from src.gui.workspace_controller import StaticWorkspace
+
+    fake_rt = SimpleNamespace(config=SimpleNamespace(project_root=P("x")))
+    sw = StaticWorkspace(SimpleNamespace(runtime=fake_rt), object())
+    assert sw.sync_yolo_ledger() is None

@@ -21,6 +21,7 @@ from src.gui.workspace import (
     open_project,
     pick_start_session,
     resolve_open_root,
+    YoloLedger,
 )
 from src.gui.project_registry import ProjectRegistry
 from src.gui.runtime_registry import normalize_root_key
@@ -95,6 +96,9 @@ class StaticWorkspace:
         """单项目无注册表：移除是 no-op（契约与多项目版一致：返回当前活动根，UI 切换=早退无操作）。"""
         return self._root
 
+    def sync_yolo_ledger(self) -> None:
+        """单项目无 runtime 重建：YOLO 全程内存、无台账概念（no-op，与多项目版接口一致）。"""
+
     # ---- 打开/新建（单项目无注册表：只做解析+骨架，登记/切换为 no-op，避免菜单崩）
     def resolve_root(self, chosen_dir: Any):
         from src.gui.workspace import resolve_open_root
@@ -133,6 +137,7 @@ class WorkspaceController:
         self._card_factory = card_factory
         self._presenter = None
         self._manager = WorkspaceManager(registry, self._runtime_factory)  # ADR-0010：每项目 entry 后台续跑
+        self._yolo_ledger = YoloLedger()  # app 级跨项目 YOLO 台账（纯内存、不落盘）
         self._current_root: Path | None = None
 
 
@@ -171,6 +176,16 @@ class WorkspaceController:
         available = [t for (t, _n) in self.sessions_for(root)]
         return pick_start_session(self.registry, root, available)
 
+    def _record_active_yolo(self) -> None:
+        """切走前快照活动项目的活 YOLO 集合（已关 runtime 跳过）。"""
+        e = self._manager.runtimes.active_entry()
+        if e is not None and not getattr(e.runtime, "closed", False):
+            self._yolo_ledger.record(e.root, getattr(e.runtime, "permission_state", None))
+
+    def sync_yolo_ledger(self) -> None:
+        """把当前活动项目的 YOLO 台账快照进 app 级台账（切项目自动调用，UI/测试可主动同步）。"""
+        self._record_active_yolo()
+
     # ---- 切换
     def switch_project(self, root: Any, *, proceed_if_running=None) -> Any:
         # 陈旧根（用户点树/打开项目时 jarvis.json 已被删）= 用户发起 → 重建骨架后再切
@@ -183,6 +198,7 @@ class WorkspaceController:
                 return None
         # ADR-0010：切走不再取消后台（busy runtime 保留），switch_to 恒返回目标 runtime；
         # proceed_if_running kwarg 遗留（新实现忽略）。
+        self._record_active_yolo()  # 跨项目重建：先快照旧活动 YOLO 台账，重建后 apply 到新活动（幂等）
         self._manager.switch_to(root, proceed_if_running=proceed_if_running)
         e = self._manager.runtimes.get(Path(str(root)))
         if e is not None and e.presenter is None:
@@ -195,6 +211,8 @@ class WorkspaceController:
                 e.presenter = None
         self._presenter = e.presenter if e is not None else None
         self._current_root = Path(e.root) if e is not None else None
+        if e is not None and not getattr(e.runtime, "closed", False):
+            self._yolo_ledger.apply_to(e.root, getattr(e.runtime, "permission_state", None))
         return self._presenter
 
     def set_last_active(self, root: Any, tid: str) -> None:
@@ -267,6 +285,7 @@ class WorkspaceController:
             entry.close()
             entry.presenter = None
         k = normalize_root_key(r)
+        self._yolo_ledger.clear(k)  # 显式放弃项目：其 YOLO 不复活
         was_active = self._current_root is not None and normalize_root_key(self._current_root) == k
         if was_active:
             self._manager.runtimes.deactivate()
