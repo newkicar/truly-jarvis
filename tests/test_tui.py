@@ -1051,6 +1051,29 @@ async def test_ctrl_j_newline_synonym():
 
 
 @pytest.mark.asyncio
+async def test_alt_enter_newline_synonym():
+    """tui-ux13 补强：alt+enter 与 shift+enter/ctrl+j 同义——框内插 \n（满足不同习惯用户）。"""
+    agent = _MultiLineAgent()
+    app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        inp = pilot.app.query_one("#input", JarvisTextArea)
+        inp.focus()
+        inp.text = "行 1"
+        inp.cursor_location = (0, len("行 1"))  # TextArea.text setter resets cursor to (0,0); move it to end of line
+        await pilot.press("alt+enter")
+        await pilot.pause()
+        assert inp.text == "行 1\n"
+        await pilot.press("b")
+        await pilot.pause()
+        assert inp.text == "行 1\nb"  # 续行可编
+        inp.text = "行 1\n行 2"
+        await pilot.press("enter")
+        await _wait_for_text(pilot, "AI 收到")
+        assert _last_stream_text(agent) == "行 1\n行 2"
+        assert inp.text == ""
+
+
+@pytest.mark.asyncio
 async def test_slash_command_multiline_rejected():
     """/ 命令多行 → build_submission 门禁拒收：框不清空、不投递、不执行。"""
     agent = _MultiLineAgent()

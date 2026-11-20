@@ -180,7 +180,7 @@ class PasteTextArea(TextArea):
         「可见字符」（ord>=32 且非 127）与 backspace/delete 视为文本变化。
         注意：escape（\x1b）等控制键 character 非空但不改文本，若 post 会重触发
         _refresh_suggestions、把用户刚用 escape 关闭的补全面板重新弹出（tui-ux13 回归）。
-        绑定链消费的键（shift+enter/ctrl+j 换行）由 action_newline 自行 post，不重复。
+        绑定链消费的键（shift+enter/alt+enter/ctrl+j 换行）由 action_newline 自行 post，不重复。
         """
         if isinstance(event, events.Key):
             await super().on_event(event)
@@ -195,7 +195,7 @@ class PasteTextArea(TextArea):
 
 
 class JarvisTextArea(PasteTextArea):
-    """tui-ux13 主输入框：框内多行（shift+enter/ctrl+j 插 \\n）、裸 Enter 提交、
+    """tui-ux13 主输入框：框内多行（shift+enter/alt+enter/ctrl+j 插 \\n）、裸 Enter 提交、
     Tab（补全不活跃时）切换 Plan/Act。模态内子类（ModalTextArea）不继承提交拦截。"""
 
     BINDINGS = [
@@ -207,6 +207,9 @@ class JarvisTextArea(PasteTextArea):
         # tui-ux13：Shift+Enter 框内换行；Ctrl+J 为常绑退路
         #（ConPTY 对 shift 修饰键透传不保证，ctrl+j 退路在案）。
         Binding("shift+enter", "newline", "换行", show=False),
+        # Alt+Enter：另一常见换行习惯；ConPTY 对 alt 修饰键透传同样不保证，
+        # 与 ctrl+j 退路同款理由（真实终端交付需用户实测）。
+        Binding("alt+enter", "newline", "换行(alt 习惯)", show=False),
         Binding("ctrl+j", "newline", "换行(退路)", show=False),
     ]
 
@@ -217,10 +220,10 @@ class JarvisTextArea(PasteTextArea):
             self.post_message(JarvisTextChanged(self))
 
     async def on_event(self, event: events.Event) -> None:
-        # Textual 8.x：Key.key 为合成串（"enter" / "shift+enter" / "ctrl+j"），
-        # 8.2.8 无 Key.modifiers 属性——裸 Enter 即 key == "enter"（shift 版 key 名不同）。
+        # Textual 8.x：Key.key 为合成串（"enter" / "shift+enter" / "alt+enter" / "ctrl+j"），
+        # 8.2.8 无 Key.modifiers 属性——裸 Enter 即 key == "enter"（修饰版 key 名不同）。
         if isinstance(event, events.Key) and event.key == "enter":
-            # 裸 Enter 提交（shift+enter 的 key 名为 "shift+enter"，不在此拦截，放行给绑定链）
+            # 裸 Enter 提交（shift/alt 版 key 名不同，不在此拦截，放行给绑定链）
             event.stop()
             event.prevent_default()
             self.post_message(JarvisSubmitted(self.text))

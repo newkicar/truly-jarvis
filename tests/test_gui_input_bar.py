@@ -65,6 +65,20 @@ def test_shift_enter_not_intercepted(qtbot):
     assert not bar.eventFilter(bar.edit, ev)  # 放行（换行交 QPlainTextEdit 原生处理）
 
 
+def test_alt_enter_not_intercepted(qtbot):
+    """Alt+Enter 与 Shift+Enter 同义：放行（换行交 QPlainTextEdit 原生处理），不提交。"""
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QKeyEvent
+
+    bar = InputBar(); qtbot.addWidget(bar)
+    submitted: list[str] = []
+    bar.submit_requested.connect(submitted.append)
+    bar.edit.setPlainText("a")
+    ev = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key_Return, Qt.AltModifier)
+    assert not bar.eventFilter(bar.edit, ev)  # 放行（原生换行）
+    assert submitted == []
+
+
 def test_input_bar_single_layout_no_double_set(qtbot):
     """回归（2026-10-28）：__init__ 曾对 InputBar 两次 setLayout（QHBoxLayout(self)×2）
     → Qt 告警 'Attempting to add QLayout ... which already has a layout'，且布局崩坏

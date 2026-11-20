@@ -77,7 +77,7 @@ class InputBar(QWidget):
         """裸 Esc：hook() True=消费（如关掉补全弹层，保留文本）；False=原生（无操作）。"""
         self._esc_hook = hook
 
-    # ---- 键位（事件过滤）：裸 Enter/Return=提交整框；Shift+Enter=框内换行（原生）。
+    # ---- 键位（事件过滤）：裸 Enter/Return=提交整框；Shift+Enter/Alt+Enter=框内换行（原生）。
     #      Ctrl+C/V/X/A 等修饰组合不拦截，走 Qt 原生（选区复制保留）。
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
         from PySide6.QtGui import QKeyEvent
@@ -85,7 +85,7 @@ class InputBar(QWidget):
         if obj is self.edit and isinstance(event, QKeyEvent) and event.type() == event.Type.KeyPress:
             key = event.key()
             if key in (Qt.Key_Return, Qt.Key_Enter):
-                if event.modifiers() & Qt.ShiftModifier:
+                if event.modifiers() & (Qt.ShiftModifier | Qt.AltModifier):
                     return False  # 换行走原生
                 self._submit()
                 return True
