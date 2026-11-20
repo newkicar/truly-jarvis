@@ -171,3 +171,44 @@ def test_undo_loop_to_blank_on_real_graph():
             assert "没有可撤回的消息" in commands.undo(agent, tid, 1)
     finally:
         shutil.rmtree(base, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# 2026-11-20（方向 A）：撤区段含文件写工具时，成功返回串追加 /snapshot+/rollback 指引行
+# ---------------------------------------------------------------------------
+
+def test_undo_file_tool_hint_appends_snapshot_rollback_line():
+    """undo 撤区段含 write_file/edit_file 工具调用 → 返回串第二行出现回退指引；grep 不计入。"""
+    agent = _UndoAgent()
+    agent._head_msgs[3].tool_calls = [
+        {"name": "write_file", "args": {"path": "/workspace/x"}, "id": "tc1"},
+        {"name": "grep", "args": {"pattern": "foo"}, "id": "tc2"},
+    ]
+    agent._head_msgs[5].tool_calls = [
+        {"name": "edit_file", "args": {"path": "/workspace/y"}, "id": "tc3"}
+    ]
+    text = commands.undo(agent, "t1", 2)
+    assert text.startswith("已撤回")
+    lines = text.split("\n")
+    assert len(lines) == 2
+    assert "提示：撤回区段含文件修改工具" in lines[1]
+    assert "write_file" in lines[1] and "edit_file" in lines[1]
+    assert "grep" not in text
+    assert "/snapshot" in lines[1] and "/rollback" in lines[1]
+
+
+def test_undo_plain_session_no_file_hint():
+    """回归护栏：无文件写工具的普通会话，返回串逐字不变（不带任何指引行）。"""
+    agent = _UndoAgent()
+    text = commands.undo(agent, "t1", 1)
+    assert text == "已撤回 1 条消息（仅消息层；文件未动；HITL 悬挂已作废）"
+
+
+def test_undo_execute_only_no_file_hint():
+    """execute 改文件不可靠、刻意不计入命中：仅 execute 工具调用 → 无指引行，逐字裸串。"""
+    agent = _UndoAgent()
+    agent._head_msgs[5].tool_calls = [
+        {"name": "execute", "args": {"command": "del C:\\x.txt"}, "id": "tc9"}
+    ]
+    text = commands.undo(agent, "t1", 1)
+    assert text == "已撤回 1 条消息（仅消息层；文件未动；HITL 悬挂已作废）"

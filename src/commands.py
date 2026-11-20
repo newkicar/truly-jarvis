@@ -1096,6 +1096,29 @@ def side_parent_status(agent, parent_tid: str, state: dict) -> str:
     return "主线已结束"
 
 
+# 2026-11-20（方向 A 用户决策）：undo 撤区段含文件写工具时，成功返回串追加
+# /snapshot + /rollback 回退指引行（纯提示，不自动回退文件——ADR-0005 语义不变；
+# execute 改文件不可靠，不计入命中）
+_UNDO_FILE_TOOLS = {"write_file", "edit_file", "delete"}
+
+
+def _undo_file_hint(messages, cut: int) -> str:
+    """撤回区段（messages[cut:]）含文件修改工具调用 → 返回以换行开头的指引行；无命中返回 ''。"""
+    names: set = set()
+    for m in messages[cut:]:
+        for tc in (getattr(m, "tool_calls", None) or []):
+            nm = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
+            if nm in _UNDO_FILE_TOOLS:
+                names.add(nm)
+    if not names:
+        return ""
+    joined = "、".join(sorted(names))
+    return (
+        f"\n提示：撤回区段含文件修改工具（{joined}），文件未随之回退；"
+        "需回退文件请先 /snapshot 再 /rollback <快照短id>（/snapshots 查清单）。"
+    )
+
+
 def undo(agent, thread_id: str, n: int = 1) -> str:
     """撤回最近 n 条用户消息（消息层 time travel；文件/Inbox 不动，HITL 悬挂随回退作废）。
 
@@ -1129,7 +1152,7 @@ def undo(agent, thread_id: str, n: int = 1) -> str:
     # 被撤消息复活进上下文（对标 codex：undo 后模型必须看不到已撤消息）
     agent.update_state(thread_config(thread_id), {"messages": removals})
     suffix = "（已超出，撤回至空白）" if clamped else ""
-    return f"已撤回 {n} 条消息（仅消息层；文件未动；HITL 悬挂已作废）{suffix}"
+    return f"已撤回 {n} 条消息（仅消息层；文件未动；HITL 悬挂已作废）{suffix}{_undo_file_hint(messages, cut)}"
 
 
 def compact(agent, thread_id: str, guide: str | None = None) -> str:

@@ -86,6 +86,34 @@ def test_undo_dispatches_command_and_rebuilds(qapp, monkeypatch):
         cleanup_home(home)
 
 
+def test_undo_file_hint_reaches_status_bar(qapp, monkeypatch):
+    """2026-11-20（方向 A）：undo 返回串尾部追加的回退指引行（撤区段含文件写工具）
+    经 worker notify → 状态栏整串透出（GUI 零 UI 改动；\n 保留）。"""
+    from src import commands
+    from src.gui import replay
+
+    win, p, rt, home = _win(qapp)
+    try:
+        hint = (
+            "已撤回 1 条消息（仅消息层；文件未动；HITL 悬挂已作废）\n"
+            "提示：撤回区段含文件修改工具（write_file），文件未随之回退；"
+            "需回退文件请先 /snapshot 再 /rollback <快照短id>（/snapshots 查清单）。"
+        )
+        monkeypatch.setattr(commands, "undo", lambda agent, tid, n=1: hint)
+        monkeypatch.setattr(commands, "last_user_input", lambda agent, tid: "")
+        monkeypatch.setattr(replay, "thread_record", lambda agent, tid, **k: [])
+        win._switch_to("sess-u2")
+        win._on_undo()
+        assert wait_until(
+            lambda: "提示：撤回区段含文件修改工具" in win.status_label.text(),
+            timeout=10.0,
+        )
+        assert "write_file" in win.status_label.text()
+        assert "/snapshot" in win.status_label.text()
+    finally:
+        cleanup_home(home)
+
+
 def test_yolo_slash_off_resyncs_ui_surfaces(qapp, monkeypatch):
     """命令 /yolo off 改共享 permission_state 后，菜单勾选 / [YOLO] 徽标 / 状态栏须联动。"""
     from src import permissions

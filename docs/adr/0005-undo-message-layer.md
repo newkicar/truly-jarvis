@@ -12,6 +12,7 @@
    - 实现原语与 `finalize_turn` 同款：`agent.update_state(thread_config(tid, parent_cid), None)`。
    - 边界：撤到会话第一条消息之前 = 外科式消息删除（head 上 RemoveMessage 最后一条 HumanMessage 及其后全部消息，`as_node="model"`，与 fork 先例一致）；允许撤成空白会话（thread_id 保留）。
    - **修订（2026-11-20）**：外科式删除写回去掉 `as_node="model"`——head 保持终态（`next=()`），否则下一轮 `finalize_turn` fork 回 undo 前终态 checkpoint、被撤消息复活进上下文；`compact` 同改（同一根因）。`fork`/`open_side` 保留 as_node（新线程，`finalize_turn` count<2 早退，安全）。
+   - **修订（2026-11-20，方向 A）**：commands.undo 成功返回串在撤区段含文件写工具（write_file/edit_file/delete；execute 不计）时追加 `/snapshot`+`/rollback` 回退指引行（GUI 状态栏/TUI transcript 经现有 notify/log 透传、零 UI 改动）；语义仍纯消息层，本 ADR「否决 /undo 连带文件回退」的决策不变。
    - 撤掉的 turn 若含未决 HITL 中断，随 checkpoint 一并作废（TUI 侧先走 `_bump_hitl_generation`/`_mark_hitl_resolved` 清理舞蹈）。
 2. **TUI 交互（对标 codex prime）**：空闲态（无流式 worker、无 Modal）单按 Esc 只出提示横幅「1.5s 内再按 Esc 撤回上一轮」；1.5s 内第二下 Esc = `/undo 1`；任何输入取消提示。退出仍走 ctrl+q / ctrl+c（空闲 Esc 不再退出）。
 3. **transcript（对标 codex 裁剪 scrollback）**：undo 成功后 TUI 对话区整体重建（clear + 按会话状态重渲染 + 一行「已撤回 N 条消息」横幅），不留被撤回轮次的残留。

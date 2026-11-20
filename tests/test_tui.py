@@ -765,6 +765,27 @@ async def test_slash_undo_arg_validation():
 
 
 @pytest.mark.asyncio
+async def test_slash_undo_file_tool_hint_shows_in_transcript():
+    """2026-11-20（方向 A）：撤区段含文件写工具时，/undo 结果尾部的 /snapshot+
+    /rollback 指引行经 _undo_worker → log 全文透出（TUI 零 UI 改动）。"""
+    from langchain_core.messages import AIMessage
+
+    agent = _UndoAgentTui()
+    agent._head.values["messages"][3] = AIMessage(
+        "回答 2",
+        id="m4",
+        tool_calls=[{"name": "write_file", "args": {"path": "/workspace/x"}, "id": "tc1"}],
+    )
+    app = JarvisApp(None, agent, {"default": "ask", "tools": {}})
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "/undo")
+        joined = await _wait_for_text(pilot, "提示：撤回区段含文件修改工具", steps=200)
+        assert "已撤回 1 条消息" in joined
+        assert "write_file" in joined
+        assert "/snapshot" in joined and "/rollback" in joined
+
+
+@pytest.mark.asyncio
 async def test_idle_double_esc_undoes_last_turn():
     agent = _UndoAgentTui()
     app = JarvisApp(None, agent, {"default": "ask", "tools": {}})

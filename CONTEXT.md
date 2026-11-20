@@ -44,7 +44,7 @@ _Avoid_: 与 vault 混称（workspace = 当前做的事，vault = 可选笔记�
 _Avoid_: 在 javis.json 里配 location、读 user-profile 找所在地、为问时间单独做专项 skill/工具
 
 **撤回（undo）**：
-当前线程**消息层**回退到最近 N 条用户消息之前（`/undo [N]`，TUI 空闲态 1.5s 双 Esc）；不动文件/Inbox，被撤回轮次里未决的 HITL 中断一并作废。文件层的回退是**文件快照回退**（/rollback），不是撤回。
+当前线程**消息层**回退到最近 N 条用户消息之前（`/undo [N]`，TUI 空闲态 1.5s 双 Esc）；不动文件/Inbox，被撤回轮次里未决的 HITL 中断一并作废。文件层的回退是**文件快照回退**（/rollback），不是撤回。被撤轮次含文件修改工具时，撤回结果附 /snapshot+/rollback 指引（提示行，非自动回退；execute 改文件不计入）。
 _Avoid_: 与 /rollback（文件层）、/replay（重跑）、/fork（分叉）混称
 
 **永久放行（前缀）**：
