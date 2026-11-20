@@ -1315,7 +1315,7 @@ def test_compact_success_rewrites_history():
     assert len(agent.model.prompts[0]) == 2  # gui15: System+Human 成对请求（单 SystemMessage 致网关 400 的回归）
     assert len(agent.state_updates) == 1
     cfg, values, as_node = agent.state_updates[0]
-    assert as_node == "model"
+    assert as_node is None  # head 保持终态 next=()（带 as_node 会在下一轮 finalize_turn fork 回去、旧历史复活）
     assert len(values["messages"]) == 2
     from langgraph.graph.message import REMOVE_ALL_MESSAGES
 

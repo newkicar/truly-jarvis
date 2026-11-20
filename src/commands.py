@@ -1102,7 +1102,9 @@ def undo(agent, thread_id: str, n: int = 1) -> str:
     基于 live head 状态的外科式删除（不依赖 get_state_history 的 append-only 全日志——
     那种做法在第一次 undo 之后日志尾部即失效、后续撤回永远停在同一个 checkpoint）：
     读当前 head 的 messages，定位倒数第 n 条 HumanMessage，删除它及其后全部
-    （RemoveMessage + as_node="model"，fork 先例）。反复调用每次再撤一轮，
+    （RemoveMessage 写回 head，不带 as_node——head 保持终态 next=()，否则下一轮
+    finalize_turn 见非空 next 会 fork 回 undo 前终态 checkpoint、被撤消息复活）。
+    反复调用每次再撤一轮，
     撤到空白后继续调用返回「没有可撤回的消息」而非异常。
 
     返回契约（UI 判成败的唯一依据）：成功 ⇔ 以「已撤回」开头；「没有可撤回的消息」= 空白无目标；
@@ -1122,11 +1124,10 @@ def undo(agent, thread_id: str, n: int = 1) -> str:
     if not removals:
         # 目标区段消息全部无 id（RemoveMessage 需 id 定位）：未做任何修改，报失败而非假成功
         return "撤回失败：消息缺少 id，无法定位（请 /delete-session 新开会话）"
-    agent.update_state(
-        thread_config(thread_id),
-        {"messages": removals},
-        as_node="model",
-    )
+    # 不带 as_node：head 保持终态（next=()）。若带 as_node="model"，head.next 变成
+    # model 的后继（非终态），下一轮 finalize_turn 会 fork 回 undo 前终态 checkpoint，
+    # 被撤消息复活进上下文（对标 codex：undo 后模型必须看不到已撤消息）
+    agent.update_state(thread_config(thread_id), {"messages": removals})
     suffix = "（已超出，撤回至空白）" if clamped else ""
     return f"已撤回 {n} 条消息（仅消息层；文件未动；HITL 悬挂已作废）{suffix}"
 
@@ -1232,6 +1233,9 @@ def compact(agent, thread_id: str, guide: str | None = None) -> str:
                 first_line,
             )
         )
+    # 不带 as_node：head 保持终态（next=()）。若带 as_node="model"，head.next 变成
+    # 非终态，下一轮 finalize_turn 会 fork 回 compact 前终态 checkpoint，
+    # 压缩被撤销、旧历史复活（与 undo 同一复活根因）
     agent.update_state(
         thread_config(thread_id),
         {
@@ -1240,7 +1244,6 @@ def compact(agent, thread_id: str, guide: str | None = None) -> str:
                 SystemMessage("[上下文压缩]\n" + summary),
             ]
         },
-        as_node="model",
     )
     return "已压缩上下文：原 %d 条消息 → 摘要 %d 字，旧历史已覆盖（仅消息层）%s" % (len(messages), len(summary), note)
 

@@ -1,7 +1,9 @@
 """commands.undo（消息层撤回）单测：head 外科删除语义——撤 1 / 反复撤至空白 / 撤超出 / 无消息。
 
-实现定稿（tui-ux6 #01）：undo 基于 live head 状态的外科式删除（RemoveMessage +
-as_node="model"），不依赖 get_state_history 的 append-only 日志；反复调用每次再
+实现定稿（tui-ux6 #01）：undo 基于 live head 状态的外科式删除（RemoveMessage 写回
+head，不带 as_node——head 保持终态 next=()；带 as_node 则下一轮 finalize_turn 会
+fork 回 undo 前终态 checkpoint、被撤消息复活），不依赖 get_state_history 的
+append-only 日志；反复调用每次再
 撤一轮，撤到空白后继续调用返回「没有可撤回的消息」而非异常。
 """
 import os
@@ -62,7 +64,7 @@ def test_undo_one_removes_last_turn():
     assert len(agent.updates) == 1
     cfg, values, as_node = agent.updates[0]
     assert cfg == commands.thread_config("t1")
-    assert as_node == "model"  # 外科式删除（fork 先例）
+    assert as_node is None  # head 保持终态 next=()（带 as_node="model" 会在下一轮 finalize_turn fork 回去、被撤消息复活）
     assert {rm.id for rm in values["messages"]} == {"m5", "m6"}
     assert [m.id for m in agent._head_msgs] == ["m1", "m2", "m3", "m4"]
 
@@ -107,6 +109,36 @@ class _TextFake(BaseChatModel):
     @property
     def _llm_type(self) -> str:
         return "undo-e2e-fake"
+
+
+def test_undo_does_not_resurrect_on_next_finalize():
+    """复活回归（2026-11-20，对标 codex）：undo 后 head 必须保持终态（next=()）。
+
+    否则下一轮 finalize_turn 见非空 next 会 fork 回 undo 前终态 checkpoint，
+    被撤消息复活进上下文（模型又看得见）。完整链路：两轮对话 → undo →
+    断言 head next=() → finalize_turn 返回 False → 被撤消息未复活。"""
+    base = Path(tempfile.gettempdir()) / f"jarvis_undo_next_{os.getpid()}_{int(time.time() * 1000)}"
+    base.mkdir(parents=True, exist_ok=True)
+    try:
+        os.environ["JARVIS_HOME"] = str(base / "jh")
+        cfg = make_fake_config(base)
+        with SqliteSaver.from_conn_string(str(base / "undo_next.db")) as saver:
+            agent = build_agent(cfg, model=_TextFake(), checkpointer=saver)
+            tid = "undo-next"
+            c0 = {"configurable": {"thread_id": tid}}
+            agent.invoke({"messages": [HumanMessage(content="这个人叫什么")]}, config=c0)
+            agent.invoke({"messages": [HumanMessage(content="这个人叫 Alice")]}, config=c0)
+            msgs = (agent.get_state(commands.thread_config(tid)).values or {}).get("messages") or []
+            assert any("Alice" in str(m.content) for m in msgs)
+            assert "已撤回 1 条消息" in commands.undo(agent, tid, 1)
+            head = agent.get_state(commands.thread_config(tid))
+            assert head.next == (), f"undo 后 head 必须终态，否则被撤消息会复活: {head.next!r}"
+            assert commands.finalize_turn(agent, tid) is False  # 终态 finalize 是 no-op
+            msgs = (agent.get_state(commands.thread_config(tid)).values or {}).get("messages") or []
+            assert not any("Alice" in str(m.content) for m in msgs), "被撤消息复活进上下文"
+            assert any(str(m.content) == "这个人叫什么" for m in msgs), "上一轮消息必须仍在"
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
 
 
 def test_undo_loop_to_blank_on_real_graph():

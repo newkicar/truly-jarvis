@@ -745,7 +745,7 @@ async def test_slash_undo_command_rolls_back_and_rebuilds_transcript():
         assert "已撤回 1 条消息" in joined
         assert agent.updates, "undo 应触发 update_state"
         cfg, values, as_node = agent.updates[0]
-        assert as_node == "model"  # live head 外科式删除（fork 先例；不依赖历史输入点）
+        assert as_node is None  # head 保持终态 next=()（带 as_node="model" 会在下一轮 finalize_turn fork 回去、被撤消息复活）
         assert {rm.id for rm in values["messages"]} == {"m3", "m4"}
         assert cfg["configurable"].get("checkpoint_id") is None  # thread_config 唯一出处
         assert "▌ 你" in joined and "问题 1" in joined  # tui-ux19: transcript 已按回退后状态以新渲染格式重建
