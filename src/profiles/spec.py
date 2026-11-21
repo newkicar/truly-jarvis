@@ -1,6 +1,6 @@
 """Bake a parsed AgentProfile into the frozen runtime spec consumed by build_agent.
 
-Ticket 02 of .scratch/agent-profile/. Pure and side-effect free: given a
+Ticket 02 of .scratch/agent-profile/. Pure w.r.t. agent state: emits best-effort ops events (ticket 07). Given a
 parsed AgentProfile plus the runtime Config, produce a ProfileSpec carrying
 the exact model id, prompt suffix, memory directories, skill route
 placeholders (filled in ticket 03), tool allow/deny lists, extra permission
@@ -189,15 +189,19 @@ def bake_spec(
     if profile is None:
         return None
     from src.profile_skills import resolve as _resolve_skills
+    from src.profiles.observability import ops_event as _ops_event
 
     resolved = _resolve_skills(profile.id, str(workspace), project_id=project_id, profile=profile)
+    _ops_event("skills_resolved", profile_id=profile.id, manifest_hash=resolved.manifest_hash)
     effective_hash = skill_manifest_hash or resolved.manifest_hash
     key = _cache_key(config, profile, agents_md_text, effective_hash, task_id, project_id, session_id, str(workspace))
     cached = _BAKE_CACHE.get(key)
     if cached is not None:
         _BAKE_STATS["hits"] += 1
+        _ops_event("cache_hit", profile_id=profile.id, task_id=task_id or "")
         return cached
     _BAKE_STATS["misses"] += 1
+    _ops_event("cache_miss", profile_id=profile.id, task_id=task_id or "")
 
     suffix = _identity_block(profile)
     if agents_md_text.strip():

@@ -34,6 +34,7 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("/compact", "/compact [提示]", "压缩当前会话上下文为延续性摘要（可选文字提示引导方向）"),
     SlashCommand("/dream", "/dream", "梦境沉淀：回顾近期会话，蒸馏可复用知识到 梦境知识库（默认全局 ~/.jarvis/memory/dream/）"),
     SlashCommand("/init", "/init", "生成项目指令 AGENTS.md（确定性扫描草稿，已存在则不覆盖）"),
+    SlashCommand("/profiles", "/profiles [id] [--validate]", "诊断 Agent Profile（列/校验/记忆/skill/权限）"),
 
 )
 

@@ -51,6 +51,7 @@ _HELP_COMMANDS = """\
   /rollback <id>  按 checkpoint 回退项目文件到对应 git 提交（序号 / 短 id）
   /reload-schedules  重载 schedules/*.json 定时任务配置（无需重启）
   /init        生成项目指令 AGENTS.md（确定性扫描草稿，已存在则不覆盖）
+  /profiles [id] [--validate]  诊断 Agent Profile（列/校验/记忆/skill/权限）
 直接输入文字开始对话。
 """
 
@@ -1572,4 +1573,9 @@ def dispatch_command(
         return "用法: /side | /side close（关闭即删除 side 会话）", None, None
     if cmd == "/init":
         return init_project(), None, None
+    if cmd == "/profiles":
+        from src.profiles.diagnostics import profiles_cli
+
+        code, text = profiles_cli(parts, user_home=None)
+        return text, None, None
     return f"未知命令: {cmd}（/help 查看帮助）", None, None

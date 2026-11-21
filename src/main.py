@@ -189,6 +189,13 @@ def main(argv=None) -> int:
             init_args = ["--force", *init_args]
         return run_init_cli(init_args or None)
 
+    if "--profiles" in args:
+        from src.profiles.diagnostics import profiles_cli
+
+        code, text = profiles_cli(args, user_home=None)
+        print(text)
+        return int(code)
+
     from src.project_paths import ensure_user_home
     ensure_user_home()  # 确保 ~/.jarvis/jarvis.json 存在（冷启动时全局配置合并需要）
 

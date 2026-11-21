@@ -206,6 +206,17 @@ class MemoryRouter:
                 f"(allowed: {', '.join(allowed) or 'none'})"
             )
 
+    def _emit_ops(self, kind: str, **fields: object) -> None:
+        """ticket 07: best-effort ops event (never breaks memory flows)."""
+        try:
+            from src.profiles.observability import ops_event
+
+            fields.setdefault("profile_id", self.profile_id)
+            fields.setdefault("task_id", self.task_id)
+            ops_event(kind, **fields)
+        except Exception:
+            pass
+
     # -- recall ---------------------------------------------------------------
 
     def recall(
@@ -274,6 +285,12 @@ class MemoryRouter:
                 used += entry_len
                 if used >= char_budget:
                     truncated = True
+        self._emit_ops(
+            "memory_recall",
+            scopes=len(scopes),
+            items_count=len(items),
+            truncated=truncated,
+        )
         return RecallResult(
             items=tuple(items),
             truncated=truncated,
@@ -383,6 +400,12 @@ class MemoryRouter:
         finally:
             conn.close()
         self._append_jsonl_mirror(record)
+        self._emit_ops(
+            "memory_candidate_created",
+            candidate_id=record.candidate_id,
+            target_namespace=record.target_namespace,
+            memory_type=record.memory_type,
+        )
         return record
 
     def _append_jsonl_mirror(self, record: CandidateRecord) -> Path:
@@ -440,6 +463,7 @@ class MemoryRouter:
                     (now, reviewer, candidate_id),
                 )
                 conn.execute("COMMIT")
+                self._emit_ops("memory_candidate_rejected", candidate_id=candidate_id)
                 return {"status": "rejected", "candidate_id": candidate_id, "reviewer": reviewer}
             # approve: append to the target namespace file, record the entry
             target_file = self._curate_target_file(row[1], row[4] or "")
@@ -467,6 +491,11 @@ class MemoryRouter:
                 (now, reviewer, candidate_id),
             )
             conn.execute("COMMIT")
+            self._emit_ops(
+                "memory_candidate_promoted",
+                candidate_id=candidate_id,
+                memory_id=memory_id,
+            )
             return {
                 "status": "approved",
                 "candidate_id": candidate_id,

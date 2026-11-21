@@ -486,6 +486,14 @@ class PermissionDenyMiddleware(GuardMiddleware):
             audit_dir.mkdir(parents=True, exist_ok=True)
             with (audit_dir / "permissions.jsonl").open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+            from src.profiles.observability import ops_event
+
+            ops_event(
+                "tool_permission_denied",
+                tool=tool,
+                prefix=record["prefix"],
+                thread_id=record["thread_id"],
+            )
         except Exception:
             pass
 

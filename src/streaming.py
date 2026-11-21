@@ -196,6 +196,16 @@ def collect_interrupt_decisions(
     from src.permission_hooks import resolve_permission_hook
 
     decisions: list[dict] = []
+    thread_id = str((permission_state or {}).get("thread_id") or "")
+
+    def _emit(kind: str, tool: str) -> None:
+        """ticket 07: best-effort approval ops event (never breaks approvals)."""
+        try:
+            from src.profiles.observability import ops_event
+
+            ops_event(kind, tool=tool, thread_id=thread_id)
+        except Exception:
+            pass
     for interrupt in interrupts:
         value = getattr(interrupt, "value", None) or {}
         for action in value.get("action_requests", []):
@@ -211,19 +221,26 @@ def collect_interrupt_decisions(
                 if hook is not None:
                     hook_decision, hook_msg = hook
                     if hook_decision == "allow":
+                        _emit("approval_requested", inv.name)
+                        _emit("approval_approved", inv.name)
                         decisions.append({"type": "approve"})
                         continue
                     if hook_decision == "deny":
+                        _emit("approval_requested", inv.name)
+                        _emit("approval_rejected", inv.name)
                         msg = hook_msg or REJECT_MESSAGE
                         decisions.append({"type": "reject", "message": msg})
                         continue
             result = ask_action(inv)
+            _emit("approval_requested", inv.name)
             if result is None:
                 return None
             decision = result.get("decision")
             if decision == "approve":
+                _emit("approval_approved", inv.name)
                 decisions.append({"type": "approve"})
             elif decision == "reject":
+                _emit("approval_rejected", inv.name)
                 decisions.append({"type": "reject", "message": REJECT_MESSAGE})
             elif decision == "always_approve":
                 if permission_state is not None:
@@ -235,6 +252,7 @@ def collect_interrupt_decisions(
                     )
                     if on_always_approve:
                         on_always_approve(inv.name)
+                _emit("approval_approved", inv.name)
                 decisions.append({"type": "approve"})
             elif decision == "edit":
                 edited = result.get("edited") or {}

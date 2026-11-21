@@ -84,6 +84,7 @@ class RuntimeHandle:
             )
         except Exception:
             log.warning("agent_runs audit insert failed for %s", runtime_id)
+        self._emit("runtime_created")
 
     # ------------------------------------------------------------------
     # metadata
@@ -127,6 +128,24 @@ class RuntimeHandle:
         except Exception:
             log.warning("agent_runs audit update failed for %s", self.runtime_id)
 
+    def _emit(self, kind: str, **extra) -> None:
+        """Best-effort ops event (ticket 07); never raises."""
+        try:
+            from src.profiles.observability import ops_event
+
+            ops_event(
+                kind,
+                runtime_id=self.runtime_id,
+                profile_id=self.profile_id,
+                profile_version=self.profile_version,
+                profile_hash=self.profile_hash,
+                task_id=self.task_id or "",
+                session_id=self.session_id or "",
+                **extra,
+            )
+        except Exception:
+            pass
+
     def _config(self) -> dict:
         return commands.thread_config(self.thread_id)
 
@@ -166,12 +185,15 @@ class RuntimeHandle:
         """Run one turn and return the §12.2 result dict. Raises on failure."""
         self._ensure_open()
         self._audit("running")
+        self._emit("worker_started")
         try:
             state = self.agent.invoke(self._normalize(message), self._config())
         except Exception:
             self._audit("failed", finished=True)
+            self._emit("worker_failed")
             raise
         self._audit("completed", finished=True)
+        self._emit("worker_completed")
         result, usage = self._last_ai(state)
         return {
             "runtime_id": self.runtime_id,
@@ -193,6 +215,7 @@ class RuntimeHandle:
         """
         self._ensure_open()
         self._audit("running")
+        self._emit("worker_started")
         try:
             from langgraph.runtime import RunControl
         except ImportError:
@@ -206,18 +229,22 @@ class RuntimeHandle:
             )
         except Exception:
             self._audit("failed", finished=True)
+            self._emit("worker_failed")
             raise
         try:
             for event in events:
                 yield event
         except GeneratorExit:
             self._audit("cancelled", finished=True)
+            self._emit("worker_cancelled")
             raise
         except Exception:
             self._audit("failed", finished=True)
+            self._emit("worker_failed")
             raise
         else:
             self._audit("completed", finished=True)
+            self._emit("worker_completed")
 
     def resume(self) -> dict | None:
         """Resume the thread from its checkpoint.
@@ -241,6 +268,7 @@ class RuntimeHandle:
         ) if snapshot is not None else None
         if checkpoint_id is None:
             return None
+        self._emit("checkpoint_resumed", checkpoint_id=checkpoint_id)
         return {
             "thread_id": self.thread_id,
             "checkpoint_id": checkpoint_id,
@@ -254,6 +282,7 @@ class RuntimeHandle:
         self._closed = True
         if self._audit_state not in TERMINAL_STATUSES:
             self._audit("cancelled", finished=True)
+        self._emit("worker_cancelled")
 
 
 def create(

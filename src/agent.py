@@ -601,11 +601,18 @@ def create_jarvis(
         )
     # ticket 02: profile path. Registry + bake imports stay inside this
     # branch so the default path keeps zero behavior difference.
+    # ticket 07: ops observability (the legacy path above emits nothing).
+    from src.profiles.observability import ops_event
     from src.profiles.registry import ProfileRegistry
+    from src.profiles.schema import ProfileError
     from src.profiles.spec import bake_spec
 
     registry = ProfileRegistry(workspace=root, jarvis_json_agents=config.agents)
-    loaded = registry.load(profile_id)
+    try:
+        loaded = registry.load(profile_id)
+    except ProfileError as exc:
+        ops_event("profile_validation_failed", profile_id=profile_id, error=str(exc)[:500])
+        raise
     spec = bake_spec(
         config,
         loaded.profile,
@@ -614,6 +621,18 @@ def create_jarvis(
         project_id=project_id,
         session_id=session_id,
         agents_md_text=loaded.agents_md_text,
+    )
+    ops_event(
+        "profile_loaded",
+        profile_id=spec.profile_id,
+        profile_version=spec.profile_version,
+        profile_hash=spec.profile_hash,
+    )
+    ops_event(
+        "tools_resolved",
+        profile_id=spec.profile_id,
+        tool_allow_count=len(spec.tool_allow),
+        tool_deny_count=len(spec.tool_deny),
     )
     return build_agent(
         config,
