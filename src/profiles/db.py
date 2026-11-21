@@ -94,6 +94,25 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "INSERT INTO schema_migrations (version, applied_at) VALUES (1, ?)",
             (_utc_now(),),
         )
+        max_v = 1
+    if max_v < 2:
+        # ticket 04: candidate records carry memory_type + confidence
+        # (confidence nullable by design - never fabricated).
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(memory_candidates)")}
+        if "memory_type" not in cols:
+            conn.execute(
+                "ALTER TABLE memory_candidates "
+                "ADD COLUMN memory_type TEXT NOT NULL DEFAULT ''"
+            )
+        if "confidence" not in cols:
+            conn.execute(
+                "ALTER TABLE memory_candidates "
+                "ADD COLUMN confidence TEXT"
+            )
+        conn.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (2, ?)",
+            (_utc_now(),),
+        )
     conn.commit()
 
 

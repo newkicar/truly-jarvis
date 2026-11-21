@@ -247,7 +247,9 @@ class TestDbConnect:
             versions = [r[0] for r in conn.execute(
                 "SELECT version FROM schema_migrations ORDER BY version"
             ).fetchall()]
-            assert versions == [1]
+            # ticket 04: db v2 adds memory_type + confidence
+            # to memory_candidates (fresh home migrates v1 -> v2).
+            assert versions == [1, 2]
         finally:
             conn.close()
 

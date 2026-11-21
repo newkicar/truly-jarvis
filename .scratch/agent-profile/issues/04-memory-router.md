@@ -17,6 +17,6 @@ Blocked by: 01
 
 ## Acceptance
 
-- [ ] 目标套件全绿；
-- [ ] 全量 vs 基线无新增失败；
-- [ ] commit（UTF-8 message 文件）。
+- [x] 目标套件全绿；
+- [x] 全量 vs 基线无新增失败；
+- [x] commit（UTF-8 message 文件）。
