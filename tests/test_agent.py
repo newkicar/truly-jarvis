@@ -340,6 +340,7 @@ def test_build_agent_registers_harness_profile(tmp_path, monkeypatch):
         captured.setdefault("calls", []).append((model_id, profile))
 
     monkeypatch.setattr(agent_mod, "register_harness_profile", spy_all)
+    agent_mod._HARNESS_REGISTERED.clear()
     build_agent(cfg, model=ToolCapableFake(reply="ok"))
 
     registered_keys = [k for k, _ in captured["calls"]]

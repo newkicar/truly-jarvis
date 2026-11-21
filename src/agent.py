@@ -205,6 +205,8 @@ def _register_jarvis_harness(model_id: str) -> None:
         tool_description_overrides=dict(TOOL_DESCRIPTION_OVERRIDES),
     )
     for key in (model_id, f"openai:{model_id}"):
+        if key in _HARNESS_REGISTERED:
+            continue
         register_harness_profile(key, profile)
         _HARNESS_REGISTERED.add(key)
 
@@ -213,11 +215,11 @@ def harness_profile_loaded(model_id: str) -> bool:
     return model_id in _HARNESS_REGISTERED or f"openai:{model_id}" in _HARNESS_REGISTERED
 
 
-def _make_model(config: Config) -> BaseChatModel:
+def _make_model(config: Config, model_id: str | None = None) -> BaseChatModel:
     return ChatOpenAI(
         base_url=config.base_url,
         api_key=SecretStr(config.api_key),
-        model=config.model_id,
+        model=model_id or config.model_id,
         temperature=0,
         # HTTP 层瞬断自愈（流中断后的业务级重试在 src/resilience.py 决策表）。
         max_retries=3,
@@ -225,7 +227,7 @@ def _make_model(config: Config) -> BaseChatModel:
     )
 
 
-def _make_backend(config: Config) -> CompositeBackend:
+def _make_backend(config: Config, extra_skill_routes=None) -> CompositeBackend:
     from src.path_policy import apply_unrestricted_paths
     from src.shell_backend import InheritedEnvShellBackend
 
@@ -242,11 +244,16 @@ def _make_backend(config: Config) -> CompositeBackend:
         )
     for vpath, fs_path in skill_backend_routes(config).items():
         routes[vpath] = FilesystemBackend(root_dir=str(fs_path), virtual_mode=True)
+    # ticket 02: profile skill routes (ticket 03 fills spec.skill_routes).
+    for vpath, fs_path in (extra_skill_routes or ()):
+        routes.setdefault(vpath, FilesystemBackend(root_dir=str(fs_path), virtual_mode=True))
     # #04: 虚拟前缀 → 真实目录映射（shell 守卫报错指路 + @ 引用锚点行/双路径补全）。
     prefix_map: dict[str, str] = {"/memories/": str(config.memory_dir)}
     if config.vault_path is not None:
         prefix_map["/vault/"] = str(config.vault_path)
     for vpath, fs_path in skill_backend_routes(config).items():
+        prefix_map.setdefault(vpath, str(fs_path))
+    for vpath, fs_path in (extra_skill_routes or ()):
         prefix_map.setdefault(vpath, str(fs_path))
     prefix_map.setdefault("/workspace/", str(config.project_root))
     # 虚拟前缀守卫：execute 收到这些前缀时执行前拦截（shell 不认识虚拟路径）。
@@ -292,6 +299,7 @@ def build_agent(
     permission_state: dict | None = None,
     mcp_tools: list | None = None,
     jump_in_registry=None,
+    profile_spec=None,
 ):
     """组装主代理。
 
@@ -305,7 +313,10 @@ def build_agent(
     主代理挂 MessageQueueJumpInMiddleware（before_model drain 当前 thread 缓存注入），
     子代理不挂（无队列概念）；CLI 传恒空 registry 时零开销安全。
     """
-    model = model or _make_model(config)
+    if profile_spec is not None:
+        model = model or _make_model(config, model_id=profile_spec.model_id)
+    else:
+        model = model or _make_model(config)
     checkpointer = checkpointer or InMemorySaver()
     store = store or InMemoryStore()
 
@@ -325,6 +336,18 @@ def build_agent(
         )
     if permission_state is not None:
         interrupt_on = build_permission_interrupts_from_state(permission_state)
+    elif profile_spec is not None:
+        # ticket 02: merge profile rules on top of config permissions;
+        # setdefault keeps config rules winning for already-configured
+        # deny tools (deny-wins refinement lands in ticket 05).
+        base_permissions = {**config.permissions, **profile_spec.permission_extra_rules}
+        for _deny_tool in profile_spec.tool_deny:
+            base_permissions.setdefault(_deny_tool, "deny")
+        interrupt_on, permission_state = build_permission_interrupts(
+            base_permissions,
+            hooks=config.hooks,
+            project_root=config.project_root,
+        )
     else:
         interrupt_on, permission_state = build_permission_interrupts(
             config.permissions,
@@ -344,6 +367,8 @@ def build_agent(
         else None
     )
     _register_jarvis_harness(config.model_id)
+    if profile_spec is not None and profile_spec.model_id != config.model_id:
+        _register_jarvis_harness(profile_spec.model_id)
     # 媒体守卫：文本-only 模型下 deepagents 把二进制文件的 base64 媒体块塞进
     # ToolMessage，网关回传即 400「Unsupported content part」（整轮死亡）。
     # auto/off 自动降级为占位文本继续运行；model_image_input="on"（真多模态）不挂载。
@@ -373,16 +398,39 @@ def build_agent(
     _dream_knowledge = config.memory_dir / "dream" / "knowledge.md"
     if _dream_knowledge.exists():
         memory_files.append(str(_dream_knowledge).replace("\\", "/"))
+    # ticket 02: profile memory directories (global agent memory, task/
+    # project namespaces); missing directories are skipped, *.md files
+    # stay user-editable under the JARVIS home.
+    if profile_spec is not None:
+        for _mem_dir in profile_spec.memory_dirs:
+            _mem_path = Path(_mem_dir)
+            if _mem_path.is_dir():
+                memory_files.extend(
+                    str(f).replace("\\", "/")
+                    for f in sorted(_mem_path.glob("*.md"))
+                    if f.name.lower() != "readme.md"
+                )
     memory = memory_files
 
     # #08 Plan/Act 模式闸门（与 deny_middleware 共享同一 permission_state 引用）
     from src.plan_mode import PlanModeMiddleware
 
-    backend = _make_backend(config)  # #08: 构造一次，模型 backend 与 skills middleware 共享
+    backend = _make_backend(config, extra_skill_routes=profile_spec.skill_routes if profile_spec is not None else None)  # #08: 构造一次，模型 backend 与 skills middleware 共享
     skills = skill_virtual_sources(config)
     main_tools: list = [make_quick_search_tool(config.tavily_key)]
     if mcp_tools:
         main_tools.extend(mcp_tools)
+    # ticket 02: profile tool allow/deny filter on the main agent's
+    # extra tools; an empty allow-list means unrestricted, deny always removes.
+    if profile_spec is not None:
+        _tool_allow = profile_spec.tool_allow
+        _tool_deny = set(profile_spec.tool_deny)
+        main_tools = [
+            t
+            for t in main_tools
+            if (not _tool_allow or getattr(t, "name", "") in _tool_allow)
+            and getattr(t, "name", "") not in _tool_deny
+        ]
 
     # 执行韧性（对标 codex/opencode harness，见 .scratch/javis-execution-resilience/）
     from src.resilience import (
@@ -453,11 +501,18 @@ def build_agent(
     middleware.append(SystemHeadMiddleware())
 
 
+    system_prompt = build_main_prompt(config=config)
+    if profile_spec is not None:
+        from src.profiles.spec import PROFILE_CONFLICT_NOTE
+
+        system_prompt = (
+            system_prompt + "\n" + profile_spec.prompt_suffix + "\n" + PROFILE_CONFLICT_NOTE
+        )
     compiled = create_deep_agent(
         model=model,
         backend=backend,
         subagents=[researcher, knowledge_keeper, *config_subagents],  # type: ignore[list-item]
-        system_prompt=build_main_prompt(config=config),
+        system_prompt=system_prompt,
         tools=main_tools,
         middleware=middleware,  # type: ignore[list-item]
         memory=memory,
@@ -469,6 +524,7 @@ def build_agent(
     # 步数上限强制交接（streaming.force_handoff）复用同一模型实例；
     # 不进 graph 状态，不污染历史。
     setattr(compiled, "_jarvis_model", model)
+    setattr(compiled, "_jarvis_profile_snapshot", profile_spec.snapshot if profile_spec is not None else None)
     return compiled
 
 def create_jarvis(
@@ -480,6 +536,10 @@ def create_jarvis(
     env_overrides: dict[str, str] | None = None,
     permission_state: dict | None = None,
     mcp_tools: list | None = None,
+    profile_id: str | None = None,
+    task_id: str | None = None,
+    project_id: str | None = None,
+    session_id: str | None = None,
 ):
     """ADR-0012 headless public entry point: build the Jarvis main agent rooted at an explicit workspace.
 
@@ -499,6 +559,31 @@ def create_jarvis(
     if not root.is_dir():
         raise FileNotFoundError(f"workspace does not exist or is not a directory: {workspace}")
     config = load_config(project_root=root, env_overrides=env_overrides)
+    if profile_id is None:
+        return build_agent(
+            config,
+            model=model,
+            checkpointer=checkpointer,
+            store=store,
+            permission_state=permission_state,
+            mcp_tools=mcp_tools,
+        )
+    # ticket 02: profile path. Registry + bake imports stay inside this
+    # branch so the default path keeps zero behavior difference.
+    from src.profiles.registry import ProfileRegistry
+    from src.profiles.spec import bake_spec
+
+    registry = ProfileRegistry(workspace=root, jarvis_json_agents=config.agents)
+    loaded = registry.load(profile_id)
+    spec = bake_spec(
+        config,
+        loaded.profile,
+        str(root),
+        task_id=task_id,
+        project_id=project_id,
+        session_id=session_id,
+        agents_md_text=loaded.agents_md_text,
+    )
     return build_agent(
         config,
         model=model,
@@ -506,4 +591,5 @@ def create_jarvis(
         store=store,
         permission_state=permission_state,
         mcp_tools=mcp_tools,
+        profile_spec=spec,
     )
