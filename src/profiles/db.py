@@ -176,3 +176,115 @@ def list_profile_rows(user_home: Path) -> list[dict]:
         return [dict(zip(cols, r)) for r in rows]
     finally:
         conn.close()
+
+
+_RUN_COLS = (
+    "runtime_id", "profile_id", "profile_version", "profile_hash", "task_id",
+    "session_id", "project_id", "workspace", "engine", "status", "started_at",
+    "finished_at",
+)
+
+
+def insert_agent_run(
+    user_home: Path,
+    *,
+    runtime_id: str,
+    profile_id: str,
+    profile_version: int,
+    profile_hash: str = "",
+    task_id: str | None = None,
+    session_id: str | None = None,
+    project_id: str | None = None,
+    workspace: str = "",
+    engine: str = "deepagents",
+    status: str = "created",
+) -> None:
+    """Insert an agent_runs row (idempotent: re-create refreshes in place)."""
+    conn = connect(user_home)
+    try:
+        conn.execute(
+            """INSERT INTO agent_runs
+               (runtime_id, profile_id, profile_version, profile_hash, task_id,
+                session_id, project_id, workspace, engine, status, started_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(runtime_id) DO UPDATE SET
+                profile_id = excluded.profile_id,
+                profile_version = excluded.profile_version,
+                profile_hash = excluded.profile_hash,
+                task_id = excluded.task_id,
+                session_id = excluded.session_id,
+                project_id = excluded.project_id,
+                workspace = excluded.workspace,
+                engine = excluded.engine,
+                status = excluded.status,
+                started_at = excluded.started_at""",
+            (
+                runtime_id,
+                profile_id,
+                profile_version,
+                profile_hash,
+                task_id,
+                session_id,
+                project_id,
+                workspace,
+                engine,
+                status,
+                _utc_now(),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def update_agent_run_status(
+    user_home: Path,
+    runtime_id: str,
+    status: str,
+    *,
+    finished: bool = False,
+) -> bool:
+    """Update status (+ finished_at when finished=True). True if a row was hit."""
+    conn = connect(user_home)
+    try:
+        if finished:
+            cur = conn.execute(
+                "UPDATE agent_runs SET status = ?, finished_at = ? WHERE runtime_id = ?",
+                (status, _utc_now(), runtime_id),
+            )
+        else:
+            cur = conn.execute(
+                "UPDATE agent_runs SET status = ? WHERE runtime_id = ?",
+                (status, runtime_id),
+            )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def list_agent_run_rows(
+    user_home: Path,
+    *,
+    profile_id: str | None = None,
+    status: str | None = None,
+) -> list[dict]:
+    """Return agent_runs rows (newest first) as dict list, optional filters."""
+    conn = connect(user_home)
+    try:
+        sql = "SELECT " + ", ".join(_RUN_COLS) + " FROM agent_runs"
+        clauses: list[str] = []
+        args: list = []
+        if profile_id is not None:
+            clauses.append("profile_id = ?")
+            args.append(profile_id)
+        if status is not None:
+            clauses.append("status = ?")
+            args.append(status)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY started_at DESC, runtime_id"
+        rows = conn.execute(sql, args).fetchall()
+        return [dict(zip(_RUN_COLS, r)) for r in rows]
+    finally:
+        conn.close()
