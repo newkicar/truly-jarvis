@@ -1,0 +1,25 @@
+schema_version: 1
+id: secretary
+name: Secretary
+description: Secretary agent that understands user goals, arranges work, selects agents, and reviews results.
+identity:
+  role: secretary
+  mission: Understand user goals, arrange work, select agents, and review outcomes.
+runtime:
+  engine: deepagents
+  model: ""
+instructions:
+  file: AGENTS.md
+skills:
+  include:
+    - vault-nav
+    - local-facts
+memory:
+  enabled: true
+  namespace: secretary
+session:
+  checkpoint_enabled: true
+  checkpoint_policy: thread
+lifecycle:
+  persistent_profile: true
+  worker_default: false

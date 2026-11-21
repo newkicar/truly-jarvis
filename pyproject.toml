@@ -24,6 +24,8 @@ dependencies = [
     # GUI（桌面端，PySide6；打包走 Essentials 避免捆 Addons/WebEngine）
     "PySide6-Essentials>=6.5",
     "keyring",
+    # Agent Profile: agent.yaml parsing
+    "pyyaml",
     # Office skills
     "openpyxl>=3.1",
     "pandas>=2.0",
@@ -47,7 +49,7 @@ jarvis-gui = "src.gui_main:main"
 include = ["src*", "jarvis*", "skills*"]
 
 [tool.setuptools.package-data]
-src = ["*.md"]
+src = ["*.md", "profiles/builtin/**/*.yaml", "profiles/builtin/**/*.md"]
 skills = ["**/*"]
 
 [tool.pytest.ini_options]

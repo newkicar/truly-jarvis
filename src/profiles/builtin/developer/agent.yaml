@@ -1,0 +1,26 @@
+schema_version: 1
+id: developer
+name: Developer
+description: Developer agent for code development, debugging, testing, and engineering maintenance.
+identity:
+  role: developer
+  mission: Develop, debug, test, and maintain software.
+runtime:
+  engine: deepagents
+  model: ""
+instructions:
+  file: AGENTS.md
+skills:
+  include:
+    - docx
+    - xlsx
+    - pdf
+memory:
+  enabled: true
+  namespace: developer
+session:
+  checkpoint_enabled: true
+  checkpoint_policy: thread
+lifecycle:
+  persistent_profile: true
+  worker_default: false

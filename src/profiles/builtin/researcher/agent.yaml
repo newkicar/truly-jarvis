@@ -1,0 +1,27 @@
+schema_version: 1
+id: researcher
+name: Researcher
+description: Research agent that verifies sources, compares findings, and organizes knowledge.
+identity:
+  role: researcher
+  mission: Research and verify information from multiple sources.
+runtime:
+  engine: deepagents
+  model: ""
+instructions:
+  file: AGENTS.md
+skills:
+  include:
+    - web-research
+memory:
+  enabled: true
+  namespace: researcher
+session:
+  checkpoint_enabled: true
+  checkpoint_policy: thread
+lifecycle:
+  persistent_profile: true
+  worker_default: false
+permissions:
+  approvals:
+    external_network: optional
