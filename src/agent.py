@@ -33,10 +33,13 @@ from src.deprecated_paths import DeprecatedPathMiddleware
 from src.inbox_snapshot_middleware import InboxSnapshotMiddleware
 from src.media_guard import MediaGuardMiddleware
 from src.permissions import (
+    GATED_TOOLS,
     SideTaskGuardMiddleware,
     build_permission_deny_middleware,
     build_permission_interrupts,
+    build_permission_interrupts_extended,
     build_permission_interrupts_from_state,
+    merge_permissions_deny_wins,
 )
 from src.config_agents import build_config_subagents
 from src.rag import make_semantic_search_tool
@@ -340,11 +343,20 @@ def build_agent(
         # ticket 02: merge profile rules on top of config permissions;
         # setdefault keeps config rules winning for already-configured
         # deny tools (deny-wins refinement lands in ticket 05).
-        base_permissions = {**config.permissions, **profile_spec.permission_extra_rules}
-        for _deny_tool in profile_spec.tool_deny:
-            base_permissions.setdefault(_deny_tool, "deny")
-        interrupt_on, permission_state = build_permission_interrupts(
+        # ticket 05: profile rules may only tighten config permissions
+        # (deny-wins), and profile-scoped tools become gated as well
+        # (fail-closed ask).
+        base_permissions = merge_permissions_deny_wins(
+            config.permissions,
+            profile_spec.permission_extra_rules,
+            profile_spec.tool_deny,
+        )
+        _extra = tuple(
+            _k for _k in base_permissions if _k not in GATED_TOOLS and _k not in ("*", "heuristics")
+        )
+        interrupt_on, permission_state = build_permission_interrupts_extended(
             base_permissions,
+            extra_tools=_extra,
             hooks=config.hooks,
             project_root=config.project_root,
         )
@@ -467,6 +479,11 @@ def build_agent(
     )
     if media_guard is not None:
         middleware.append(media_guard)
+    # ticket 05: profile workspace_only confines file tools to the profile workspace
+    if profile_spec is not None and profile_spec.workspace_only:
+        from src.file_guard import WorkspaceFileGuardMiddleware
+
+        middleware.append(WorkspaceFileGuardMiddleware(Path(profile_spec.workspace), block_read=True))
     # gui15 条目8: auto_compaction——上下文 token 达到阈值自动压缩（langchain SummarizationMiddleware）
     _auto_compaction = int(getattr(config, "auto_compaction", 0) or 0)
     if _auto_compaction > 0:
@@ -538,6 +555,7 @@ def build_agent(
     # 不进 graph 状态，不污染历史。
     setattr(compiled, "_jarvis_model", model)
     setattr(compiled, "_jarvis_profile_snapshot", profile_spec.snapshot if profile_spec is not None else None)
+    setattr(compiled, "_jarvis_middlewares", middleware)
     return compiled
 
 def create_jarvis(

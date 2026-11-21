@@ -14,8 +14,10 @@ javis.json 的 "permissions" 段控制哪些工具调用需要人工审批：
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import json
 import shlex
+from datetime import datetime, timezone
 from pathlib import Path
 
 from src.guard import GuardMiddleware
@@ -25,6 +27,9 @@ from src.tool_call import ToolCallView, arg_value, command, tool_call_view
 GATED_TOOLS = ("execute", "write_file", "edit_file", "delete")
 
 VALID_ACTIONS = ("allow", "ask", "deny")
+
+# ticket 05: state key holding profile-scoped (non-gated) rule tools.
+EXTRA_RULE_TOOLS_KEY = "extra_rule_tools"
 
 # YOLO 模式（tui-ux12）：线程级免审批。
 # state["yolo_threads"] = 当前开启 YOLO 的 thread_id 集合（app 内共享、纯内存、
@@ -312,6 +317,7 @@ def build_permission_interrupts(
         "yolo_threads": set(),
         SIDE_THREADS_KEY: set(),
         SIDE_PARENTS_KEY: {},
+        EXTRA_RULE_TOOLS_KEY: (),
     }
     return _build_interrupt_on(state), state
 
@@ -321,13 +327,15 @@ def build_permission_interrupts_from_state(state: dict) -> dict:
     state.setdefault(YOLO_THREADS_KEY, set())
     state.setdefault(SIDE_THREADS_KEY, set())
     state.setdefault(SIDE_PARENTS_KEY, {})
+    state.setdefault(EXTRA_RULE_TOOLS_KEY, ())
     return _build_interrupt_on(state)
 
 
 def _build_interrupt_on(state: dict) -> dict:
     interrupt_on: dict = {}
-    for tool in GATED_TOOLS:
-        rule = state["tools"][tool]
+    tools = tuple(GATED_TOOLS) + tuple(state.get(EXTRA_RULE_TOOLS_KEY) or ())
+    for tool in dict.fromkeys(tools):
+        rule = state["tools"].get(tool, state["default"])
         if isinstance(rule, str) and rule == "allow":
             interrupt_on[tool] = False  # 自动放行
         elif isinstance(rule, str) and rule == "deny":
@@ -343,6 +351,51 @@ def _build_interrupt_on(state: dict) -> dict:
                 "when": _build_when(state, tool, rule),
             }
     return interrupt_on
+
+
+def build_permission_interrupts_extended(
+    permissions: dict | None,
+    *,
+    extra_tools: tuple = (),
+    hooks: dict | None = None,
+    project_root: Path | None = None,
+) -> tuple[dict, dict]:
+    """ticket 05: extend gated rules to profile-scoped tools (fail-closed ask).
+
+    Extra tools without an explicit rule default to "ask" (never inherit a
+    "*" default that may be "allow"); explicit rules are kept.
+    """
+    interrupt_on, state = build_permission_interrupts(
+        permissions, hooks=hooks, project_root=project_root
+    )
+    extra = tuple(dict.fromkeys(extra_tools))
+    pool = permissions or {}
+    for tool in extra:
+        state["tools"].setdefault(tool, pool.get(tool) or "ask")
+    state[EXTRA_RULE_TOOLS_KEY] = extra
+    return _build_interrupt_on(state), state
+
+
+def merge_permissions_deny_wins(
+    base: dict | None,
+    extra_rules: dict | None,
+    deny_tools: tuple = (),
+) -> dict:
+    """ticket 05: profile rules may only tighten, never relax project rules.
+
+    - a base "deny" survives any non-deny profile rule for that tool;
+    - any other profile rule overwrites the base value;
+    - deny_tools are forced to "deny" last. Inputs are not mutated.
+    """
+    merged: dict = dict(base or {})
+    for key, rule in (extra_rules or {}).items():
+        if merged.get(key) == "deny" and rule != "deny":
+            continue
+        merged[key] = rule
+    for tool in deny_tools or ():
+        if merged.get(tool) != "deny":
+            merged[tool] = "deny"
+    return merged
 
 
 def build_permission_deny_middleware(state: dict) -> PermissionDenyMiddleware:
@@ -402,11 +455,39 @@ class PermissionDenyMiddleware(GuardMiddleware):
 
     def block(self, view: ToolCallView) -> str | None:
         tool = view.name
-        if tool not in GATED_TOOLS:
+        extra = self.state.get(EXTRA_RULE_TOOLS_KEY) or ()
+        if tool not in GATED_TOOLS and tool not in extra:
             return None
         if _action_for_args(self.state, tool, view.args) != "deny":
             return None
+        self._record_deny(view, tool)
         return self._deny_message(view, tool)
+
+    def _record_deny(self, view: ToolCallView, tool: str) -> None:
+        """ticket 05: best-effort deny audit line (hash + length, never raw args)."""
+        try:
+            value = (
+                command(view.args)
+                if tool == "execute"
+                else arg_value(view.args, "file_path", "path", "pattern", "command")
+            )
+            record = {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "tool": tool,
+                "action": "deny",
+                "prefix": extract_command_prefix(value) if tool == "execute" else "",
+                "value_hash": hashlib.sha1(value.encode("utf-8", "replace")).hexdigest()[:12],
+                "value_len": len(value),
+                "thread_id": str(self.state.get("thread_id") or ""),
+            }
+            from src.project_paths import user_home
+
+            audit_dir = user_home() / "audit"
+            audit_dir.mkdir(parents=True, exist_ok=True)
+            with (audit_dir / "permissions.jsonl").open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
 
     def _deny_message(self, view: ToolCallView, tool: str, *, prefix: str = "") -> str:
         """命中 deny 时生成给模型的错误消息。"""

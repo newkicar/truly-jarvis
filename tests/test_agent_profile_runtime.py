@@ -397,7 +397,11 @@ class TestBuildAgentWithSpec:
             entry = captured["interrupt_on"][tool]
             assert isinstance(entry, dict), tool
             assert entry["allowed_decisions"] == ["approve", "reject", "edit"]
-        assert "quick_search" not in captured["interrupt_on"]
+        # ticket 05: profile-scoped (fail-closed) tools are gated as ask too,
+        # a wildcard allow in config must not leak through to them.
+        entry = captured["interrupt_on"]["quick_search"]
+        assert isinstance(entry, dict)
+        assert entry["allowed_decisions"] == ["approve", "reject", "edit"]
 
 
 class TestCreateJarvis:

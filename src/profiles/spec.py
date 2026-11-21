@@ -92,7 +92,10 @@ class ProfileSpec:
     checkpoint_enabled: bool
     checkpoint_policy: str
     snapshot: ProfileSnapshot
-
+    # ticket 05: workspace_only confines file tools to the profile
+    # workspace; both default off/empty so legacy specs stay valid.
+    workspace_only: bool = False
+    workspace: str = ""
 
 def _tool_policy_hash(profile: AgentProfile) -> str:
     raw = ",".join(profile.tools.allow) + ";" + ",".join(profile.tools.deny)
@@ -226,6 +229,8 @@ def bake_spec(
         checkpoint_enabled=profile.session.checkpoint_enabled,
         checkpoint_policy=profile.session.checkpoint_policy,
         snapshot=snapshot,
+        workspace_only=profile.permissions.filesystem.workspace_only,
+        workspace=str(workspace),
     )
     _BAKE_CACHE[key] = spec
     return spec
