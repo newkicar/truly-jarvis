@@ -416,7 +416,12 @@ def build_agent(
     from src.plan_mode import PlanModeMiddleware
 
     backend = _make_backend(config, extra_skill_routes=profile_spec.skill_routes if profile_spec is not None else None)  # #08: 构造一次，模型 backend 与 skills middleware 共享
-    skills = skill_virtual_sources(config)
+    skills = list(
+        dict.fromkeys(
+            skill_virtual_sources(config)
+            + (list(profile_spec.skill_vpaths) if profile_spec is not None else [])
+        )
+    )
     main_tools: list = [make_quick_search_tool(config.tavily_key)]
     if mcp_tools:
         main_tools.extend(mcp_tools)
@@ -480,11 +485,19 @@ def build_agent(
     # #08: manual-only skill（disable-model-invocation）不进模型上下文；仅主代理挂 skills 中间件
     from src.jarvis_skills import JarvisSkillsMiddleware
 
+    _flagged = manual_only_skill_names(config)
+    # ticket 03: profile tier roots (agent/project/task) may ship manual-only
+    # skills too; scan their SKILL.md frontmatter and keep them out of the
+    # model context as well (legacy user/project roots already covered above).
+    if profile_spec is not None and profile_spec.skill_routes:
+        from src.profile_skills import scan_manual_only
+
+        _flagged = _flagged | scan_manual_only([fs for _vp, fs in profile_spec.skill_routes])
     middleware.append(
         JarvisSkillsMiddleware(
             backend=backend,
             sources=skills,
-            flagged=manual_only_skill_names(config),
+            flagged=_flagged,
         )
     )
     if inbox_snapshot is not None:

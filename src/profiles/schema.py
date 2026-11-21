@@ -312,6 +312,10 @@ def parse_profile(d: dict, *, source_path: str = "") -> AgentProfile:
         recall=recall,
         write=write,
     )
+    # SECURITY: fail closed on namespaces that could traverse outside
+    # ~/.jarvis/agents/. The design doc also allows the 'agents/<id>'
+    # spelling; namespace_segment normalizes both to one path segment.
+    namespace_segment(memory.namespace, pid)
 
     # --- tools ---
     tools_raw = _as_dict(d.get("tools"), "tools")
@@ -480,6 +484,27 @@ def validate_unique_ids(profiles: list[AgentProfile]) -> None:
         if p.id in seen:
             raise ProfileError(f"duplicate profile id: '{p.id}' (index {seen[p.id]} and {len(seen)})")
         seen[p.id] = len(seen)
+
+
+def namespace_segment(namespace: str, profile_id: str = "") -> str:
+    """Normalize memory.namespace to a single safe path segment.
+
+    'developer', 'agents/developer' and the backslash spelling all normalize
+    to 'developer'; an empty namespace falls back to the profile id. Fails closed
+    (ProfileError) when the value could resolve outside the agents/ root:
+    empty result, '.', '..', NUL bytes, or any remaining '/' nesting.
+    Used wherever the namespace becomes a path component (ticket 03 skill
+    tiers, spec memory dirs, ticket 04 memory router).
+    """
+    raw = (namespace or "").strip().replace("\\", "/")
+    if not raw:
+        raw = profile_id or ""
+    if raw.startswith("agents/"):
+        raw = raw[len("agents/"):]
+    seg = raw.strip("/")
+    if "\0" in seg or seg in ("", ".", "..") or "/" in seg:
+        raise ProfileError(f"memory.namespace is not a safe path segment: {namespace!r}")
+    return seg
 
 
 def profile_hash(profile: AgentProfile, agents_md_text: str = "") -> str:

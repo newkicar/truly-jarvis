@@ -17,7 +17,7 @@ import hashlib
 import importlib.metadata
 from dataclasses import dataclass
 
-from src.profiles.schema import AgentProfile, profile_hash
+from src.profiles.schema import AgentProfile, profile_hash, namespace_segment
 
 #: Appended to the system prompt whenever a profile is active. The note
 #: states the precedence contract: profile text wins over the base prompt
@@ -73,7 +73,8 @@ class ProfileSpec:
 
     memory_dirs are POSIX-style strings; missing directories are skipped by
     the caller. skill_routes is (virtual_prefix, filesystem_path) pairs and
-    stays empty until ticket 03 wires the skill manifest in.
+    ticket 03 resolves the tier manifest (common < agent < project < task);
+    skill_routes/skill_vpaths/skill_manifest_hash carry its real values.
     """
 
     profile_id: str
@@ -83,6 +84,8 @@ class ProfileSpec:
     prompt_suffix: str
     memory_dirs: tuple[str, ...]
     skill_routes: tuple[tuple[str, str], ...]
+    skill_vpaths: tuple[str, ...]
+    skill_manifest_hash: str
     tool_allow: tuple[str, ...]
     tool_deny: tuple[str, ...]
     permission_extra_rules: dict[str, str]
@@ -115,7 +118,7 @@ def _memory_dirs(profile: AgentProfile, task_id: str | None, project_id: str | N
     home = user_home()
     dirs: list[str] = []
     if profile.memory.enabled:
-        namespace = profile.memory.namespace or profile.id
+        namespace = namespace_segment(profile.memory.namespace, profile.id)
         dirs.append((home / "agents" / namespace / "memory").as_posix())
     if task_id:
         dirs.append((home / "tasks" / task_id).as_posix())
@@ -176,12 +179,17 @@ def bake_spec(
     """Bake a parsed profile into the runtime spec. None profile -> None.
 
     Missing/empty AGENTS.md text keeps the suffix identity-only (no error).
-    Results are cached per content key; skill_manifest_hash is carried in
-    the key so ticket 03 can invalidate on manifest change.
+    Results are cached per content key; the effective skill manifest hash
+    (caller override, else the freshly resolved tier manifest) is carried in the
+    key so bakes invalidate on manifest change.
     """
     if profile is None:
         return None
-    key = _cache_key(config, profile, agents_md_text, skill_manifest_hash, task_id, project_id, session_id, str(workspace))
+    from src.profile_skills import resolve as _resolve_skills
+
+    resolved = _resolve_skills(profile.id, str(workspace), project_id=project_id, profile=profile)
+    effective_hash = skill_manifest_hash or resolved.manifest_hash
+    key = _cache_key(config, profile, agents_md_text, effective_hash, task_id, project_id, session_id, str(workspace))
     cached = _BAKE_CACHE.get(key)
     if cached is not None:
         _BAKE_STATS["hits"] += 1
@@ -209,7 +217,9 @@ def bake_spec(
         model_id=profile.runtime.model or config.model_id,
         prompt_suffix=suffix,
         memory_dirs=_memory_dirs(profile, task_id, project_id),
-        skill_routes=(),
+        skill_routes=resolved.skill_routes,
+        skill_vpaths=resolved.skill_vpaths,
+        skill_manifest_hash=effective_hash,
         tool_allow=tuple(profile.tools.allow),
         tool_deny=tuple(profile.tools.deny),
         permission_extra_rules=_permission_extra_rules(profile),
