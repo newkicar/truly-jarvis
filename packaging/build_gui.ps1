@@ -44,11 +44,27 @@ if ($LASTEXITCODE -ne 0) { Write-Host '[WARN] uninstall 未全部成功 —— �
 
 # ---------- [3/8] Nuitka 编译 ----------
 Write-Host '[3/8] Nuitka 编译（暖缓存 30-90 分钟；日志 build\nuitka.out.log / .err.log）' -ForegroundColor Cyan
-$env:__NUITKA_CACHE_DIR__ = (Join-Path $repo '.build\nuitka-cache')
+# Nuitka 缓存隔离（环境变量名经 Nuitka 4.3.4 nuitka\utils\AppDirs.py 源码核实，2026-11-22）：
+#   全局缓存基目录读 $env:NUITKA_CACHE_DIR。旧脚本的 $env:__NUITKA_CACHE_DIR__ 拼写不是 Nuitka 读取的变量，一直无效，
+#   全局 C 对象缓存实际仍在 AppData Local，与其他项目共享（锁争用来源）。
+#   SCons MSVC 配置缓存：Nuitka SconsInterface.py 无条件设置 SCONS_CACHE_MSVC_CONFIG 指向按型缓存目录；
+#   按型变量名 = NUIKTA_CACHE_DIR_ 前缀 + 基名「-」换「_」并大写，即 $env:NUITKA_CACHE_DIR_SCONS_MSVC_CONFIG。
+#   SCons 4.10.1 的 FileLock 是 lockfile 方案（os.open 以 O_CREAT|O_EXCL 创建 <file>.lock，非 msvcrt 字节锁）；
+#   全局共享 AppData 缓存 + AV 高扫描区下，锁文件创建失败或残留即 5 秒等待超时 -> FATAL: SConsLockFailure（2026-11-22 事故，构建两次中断）。
+#   两级缓存均隔离到项目内 .build\；首次运行 vcvars 重新探测一次，略增时。勿对本项目并发跑 Nuitka 构建。
+$env:NUITKA_CACHE_DIR = (Join-Path $repo ".build\nuitka-cache")
+New-Item -ItemType Directory -Force -Path $env:NUITKA_CACHE_DIR | Out-Null
+$env:NUITKA_CACHE_DIR_SCONS_MSVC_CONFIG = (Join-Path $repo ".build\scons-msvc-config")
+New-Item -ItemType Directory -Force -Path $env:NUITKA_CACHE_DIR_SCONS_MSVC_CONFIG | Out-Null
 $env:VSLANG = '1033'  # MSVC cl/link 英文输出，避免本地化噪声触发 Nuitka 英文模式过滤器误判（纯降噪，非根因）
 New-Item -ItemType Directory -Force -Path 'build\nuitka-out' | Out-Null
 Remove-Item 'build\nuitka.out.log', 'build\nuitka.err.log' -ErrorAction SilentlyContinue
-$nuArgs = '-m nuitka --standalone --enable-plugin=pyside6 --windows-console-mode=disable --include-data-dir=skills=skills --include-data-file=skills\__init__.py=skills\__init__.py --output-dir=build\nuitka-out --output-filename=jarvis-gui --jobs=4 --assume-yes-for-downloads --nofollow-import-to=langchain_quickjs --nofollow-import-to=quickjs_rs --nofollow-import-to=wasmtime --include-package=langchain_core --include-package=langchain --include-package=langchain_openai --include-package=openai --include-package=anthropic --include-package=langchain_anthropic --include-package=langchain_mcp_adapters --include-package=langgraph --include-package=langgraph_sdk --include-package=deepagents --include-package=mcp --include-package=pydantic --include-package=pydantic_core --include-package=pydantic_settings --include-package=httpx --include-package=keyring --include-package=apscheduler --include-package=aiosqlite --nofollow-import-to=chromadb --nofollow-import-to=langchain_quickjs --nofollow-import-to=quickjs_rs --nofollow-import-to=wasmtime src\gui_main.py'
+# skills 随包：用 --include-raw-dir（不套默认后缀/目录过滤）。
+# 历史 --include-data-dir 会被 Nuitka default_ignored_suffixes 静默滤掉 .py / __pycache__，
+# 导致 skill-outlook-controller 等技能 scripts\*.py 缺失进包（2026-11-22 修复）。
+# raw-dir 不做任何过滤，先清理运行时生成的 __pycache__，防止生成物进包。
+Get-ChildItem 'skills' -Recurse -Directory -Filter '__pycache__' | Remove-Item -Recurse -Force
+$nuArgs = '-m nuitka --standalone --enable-plugin=pyside6 --windows-console-mode=disable --include-raw-dir=skills=skills --include-data-file=skills\__init__.py=skills\__init__.py --output-dir=build\nuitka-out --output-filename=jarvis-gui --jobs=4 --assume-yes-for-downloads --nofollow-import-to=langchain_quickjs --nofollow-import-to=quickjs_rs --nofollow-import-to=wasmtime --include-package=langchain_core --include-package=langchain --include-package=langchain_openai --include-package=openai --include-package=anthropic --include-package=langchain_anthropic --include-package=langchain_mcp_adapters --include-package=langgraph --include-package=langgraph_sdk --include-package=deepagents --include-package=mcp --include-package=pydantic --include-package=pydantic_core --include-package=pydantic_settings --include-package=httpx --include-package=keyring --include-package=apscheduler --include-package=aiosqlite --nofollow-import-to=chromadb --nofollow-import-to=langchain_quickjs --nofollow-import-to=quickjs_rs --nofollow-import-to=wasmtime src\gui_main.py'
 $proc = Start-Process -FilePath $py -ArgumentList $nuArgs -WorkingDirectory $repo `
     -RedirectStandardOutput 'build\nuitka.out.log' -RedirectStandardError 'build\nuitka.err.log' -Wait -PassThru
 if ($proc.ExitCode -ne 0) {
@@ -116,6 +132,12 @@ if (-not $SkipVerify) {
     if (-not (Test-Path (Join-Path $stage 'skills\__init__.py'))) { Fail 'skills\__init__.py 不在 exe 同级' }
     $skillDirs = (Get-ChildItem (Join-Path $stage 'skills') -Directory).Count
     if ($skillDirs -lt 1) { Fail 'skills 下无子目录' }
+    # .py 过滤回归断言（raw-dir 应原样携带全部 .py；防止参数误改回 --include-data-dir 后再次静默缺失）
+    $srcPy = (Get-ChildItem 'skills' -Recurse -File -Filter '*.py').Count
+    $dstPy = (Get-ChildItem (Join-Path $stage 'skills') -Recurse -File -Filter '*.py').Count
+    if ($srcPy -ne $dstPy) { Fail ("skills .py 数量不一致（源 $srcPy / 包内 $dstPy）——检查 --include-raw-dir=skills=skills 是否被误改回 --include-data-dir") }
+    $pccache = (Get-ChildItem (Join-Path $stage 'skills') -Recurse -Directory -Filter '__pycache__').Count
+    if ($pccache -gt 0) { Fail ("skills 包内残留 __pycache__（$pccache 处）") }
     foreach ($bad in 'textual', 'google_genai', 'langchain_google_genai', 'src') {
         if (Test-Path (Join-Path $stage $bad)) { Fail ("dist\jarvis-gui\" + $bad + ' 残留（不应存在）') }
     }
