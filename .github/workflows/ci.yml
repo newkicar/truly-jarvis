@@ -50,30 +50,46 @@ jobs:
           TAVILY_KEY=tvly-test
           EOF
 
-      - name: Run tests
+      - name: Run tests (non-GUI subset)
         shell: bash
         run: |
-          set -o pipefail
           set +e
-          # -X faulthandler: print native stack on SIGSEGV (diagnose PySide6
-          # offscreen interpreter-exit native teardown crash; trace lands in
-          # pytest-output.txt / uploaded artifact).
-          python -X faulthandler -m pytest tests/ -q --tb=short --timeout=300 2>&1 | tee pytest-output.txt
+          # -X faulthandler: 原生崩溃留痕（faulthandler 帧落在 pytest-output.txt）。
+          # -u: stdout 无缓冲——摘要行若停在用户态缓冲、进程中途 abort 即丢失，
+          # 无摘要行则 139/134 容忍不成立（本机实证：缓冲版摘要缺失、-u 版幸存）。
+          # 非 GUI 进程不收集/不导入 test_gui_*.py（--ignore-glob 按相对路径 glob 排除）
+          # → 完全不碰 PySide6/Qt；崩族容忍保留（139/134 + 全绿摘要放行，保险路径）。
+          python -X faulthandler -u -m pytest tests/ --ignore-glob='tests/test_gui_*.py' -q --tb=short --timeout=300 2>&1 | tee pytest-output.txt
           rc=${PIPESTATUS[0]}
           set -e
-          # Known native-crash class (AGENTS.md known issue): the suite can finish
-          # fully green ("N passed"), then CPython exit-phase PySide6 offscreen
-          # native object teardown SIGSEGVs (rc=139) with zero test failures.
-          # Accept green ONLY when rc=139 AND the pytest summary line contains
-          # "passed" and no "failed"/"error"; any real failure still exits red.
-          # 摘要行必须锚定 ^[0-9]+（pytest 结果行以数字开头）：faulthandler 追加在
-          # pytest-output.txt 尾部的 "Fatal Python error: Segmentation fault" 等
-          # 行含 "error" 字样，不锚定会被误当摘要行，把全绿 run 误判为红
-          # （实证 run 41963866063：1188 passed 全绿仍因 rc=139 误红）。
-          if [ "$rc" -eq 139 ]; then
-            summary_line=$(tail -n 40 pytest-output.txt | grep -E '^[0-9]+ (passed|failed|error)' | tail -n 1 || true)
+          if [ "$rc" -eq 139 ] || [ "$rc" -eq 134 ]; then
+            # tail -n 100：崩溃时 faulthandler 在摘要行之后追加 C 栈 trace，40 行窗口在部分平台可能刚好错过摘要行。
+            summary_line=$(tail -n 100 pytest-output.txt | grep -E '^[0-9]+ (passed|failed|error)' | tail -n 1 || true)
             if echo "$summary_line" | grep -q 'passed' && ! echo "$summary_line" | grep -Eq 'failed|error'; then
-              echo "::warning:pytest SIGSEGV at interpreter teardown (exit 139), but suite summary is all-pass: $summary_line - accepting green run (faulthandler trace in pytest-output.txt for diagnosis)"
+              echo "::warning:pytest SIGSEGV/Aborted at interpreter teardown (exit $rc), but suite summary is all-pass: $summary_line - accepting green run (faulthandler trace in pytest-output.txt for diagnosis)"
+              exit 0
+            fi
+          fi
+          exit $rc
+
+      - name: Run tests (GUI subset)
+        shell: bash
+        run: |
+          set +e
+          # GUI 子集单独进程：进程内禁自动 GC 周期（tests/conftest.py 收集钩子，
+          # shiboken C 级 finalizer 崩族缓解；残余崩点 = pytest_unconfigure 的
+          # gc_collect_harder 显式全量收集，属退出期容忍族）；-u 无缓冲保证全绿
+          # 摘要行在中途 abort 时幸存（缓冲版实证丢失 → 容忍误红）；139/134 + 全绿
+          # 摘要 = 已知容忍族放行（摘要锚定 ^[0-9]+，faulthandler 尾部 "error" 字样不误判）。
+          # bash glob 在 CI（ubuntu）下展开为逐文件实参，安全。
+          python -X faulthandler -u -m pytest tests/test_gui_*.py -q --tb=short --timeout=300 2>&1 | tee pytest-output-gui.txt
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -eq 139 ] || [ "$rc" -eq 134 ]; then
+            # tail -n 100：摘要行之后还有 faulthandler C 栈 trace，40 行窗口可能刚好错过摘要行。
+            summary_line=$(tail -n 100 pytest-output-gui.txt | grep -E '^[0-9]+ (passed|failed|error)' | tail -n 1 || true)
+            if echo "$summary_line" | grep -q 'passed' && ! echo "$summary_line" | grep -Eq 'failed|error'; then
+              echo "::warning:pytest GUI-subset native teardown crash (exit $rc), but suite summary is all-pass: $summary_line - accepting green run (faulthandler trace in pytest-output-gui.txt)"
               exit 0
             fi
           fi
@@ -82,13 +98,17 @@ jobs:
       - name: Save pytest output on failure
         if: failure()
         run: |
-          echo "---- tail of pytest output ----"
+          echo "---- tail of pytest output (non-GUI) ----"
           tail -n 400 pytest-output.txt || true
+          echo "---- tail of pytest output (GUI) ----"
+          tail -n 400 pytest-output-gui.txt || true
         shell: bash
 
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: pytest-output
-          path: pytest-output.txt
+          path: |
+            pytest-output.txt
+            pytest-output-gui.txt
 

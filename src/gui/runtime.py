@@ -51,6 +51,14 @@ class GuiRuntime:
 
     def close(self) -> None:
         self.closed = True
+        # 级联关调度器门（SchedulerGate 由 build_runtime 挂在 runtime 上；不级联则
+        # apscheduler 非 daemon 线程泄漏贯穿后续测试，CI GC 期 SIGSEGV 根因）。
+        # RegistryEntry.close() 先 shutdown 再 close()，双调幂等（shutdown 置 _sched=None）。
+        if self.gate is not None:
+            try:
+                self.gate.shutdown()
+            except Exception:
+                pass
         if self.saver_ctx is not None:
             self.saver_ctx.__exit__(None, None, None)
             self.saver_ctx = None
@@ -200,7 +208,11 @@ class SchedulerGate:
 
     def shutdown(self) -> None:
         if self._sched is not None:
-            self._sched.shutdown(wait=False)
+            # wait=True：join apscheduler 主循环线程（非 daemon，不 join 则泄漏贯穿
+            # 后续测试）；CI GC 期 SIGSEGV 根因之一（faulthandler 崩点时该线程存活）。
+            # 测试场景无运行中 job，join 即时完成；生产退出也受益于干净 join
+            # （只 join 主循环线程，job executor 线程池不在此等待范围）。
+            self._sched.shutdown(wait=True)
             self._sched = None
 
 
