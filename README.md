@@ -113,6 +113,32 @@ jarvis -n
 | `/snapshots` | 列出文件快照 |
 | `/rollback <id>` | 回退项目文件 + 还原该会话写过的 Inbox |
 | `/reload-schedules` | 热重载 `schedules/*.json` |
+| `/profiles [id] [--validate]` | 列出三层全部身份 / 严格校验单个身份 |
+
+---
+
+## Agent Profile（多重身份）
+
+内置 3 重身份（`src/profiles/builtin/<id>/` 随包分发，每个含 `agent.yaml` + `AGENTS.md`）：
+
+| id | 角色 | 职责 | 携带技能 |
+|----|------|------|------|
+| `secretary` | 秘书 | 理解用户目标、安排工作、选择代理、验收结果 | vault-nav、local-facts |
+| `researcher` | 研究员 | 多源检索、验证与整理信息 | web-research |
+| `developer` | 开发者 | 代码开发、调试、测试与维护 | docx、xlsx、pdf |
+
+### 三层发现（低层被高层覆盖；安全段只能收紧、不能放宽）
+
+1. **builtin**：`src/profiles/builtin/<id>/` — 内置身份
+2. **user**：`~/.jarvis/agents/<id>/`（可被 `JARVIS_HOME` 重定向）
+3. **project**：`<workspace>/.jarvis/agents/<id>/` — 最高优先；只能收紧安全段（permissions / approvals / workspace_only），放宽即被拒绝或按收紧生效
+
+### 自定义身份
+
+- **复制改写**：把内置目录（如 `src/profiles/builtin/developer/`）整体复制到 `~/.jarvis/agents/developer/` 再改，用户层即覆盖同 id 的内置身份；同 id 的项目层再覆盖用户层。
+- **定义新身份**：不必是内置 id——新建 `~/.jarvis/agents/<新id>/`（用户层）或 `<workspace>/.jarvis/agents/<新id>/`（项目层），至少放 `agent.yaml`（`schema_version: 1`）+ `AGENTS.md`（身份说明）；该身份可用的技能 / 记忆放同目录 `skills/`、`memory/`。
+- **校验与诊断**：TUI / CLI 输入 `/profiles` 列出三层全部身份，`/profiles <id> --validate` 严格校验单个；命令行 `jarvis --profiles` 等效。
+- **运行时选用**：headless / 上层经 `create_jarvis(profile_id="developer", ...)` 或 `jarvis_runtime.create("developer", workspace, task_id=...)` 选定身份——多 Worker 并发时记忆 / checkpoint / 工作目录各自隔离；默认 `profile_id=None`（普通 TUI / CLI）行为与升级前完全一致。
 
 ---
 
