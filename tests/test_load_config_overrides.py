@@ -23,7 +23,8 @@ def _hermetic_install_root(monkeypatch):
     空目录，使本文件行为 = 无 .env 的全新环境（CI 等价）。
     """
     empty_root = TEST_ROOT / "install-root-empty"
-    empty_root.mkdir(exist_ok=True)
+    # parents=True：CI 全新检出无 gitignore 的 .scratch/gui-test-tmp 父目录（本机已有）
+    empty_root.mkdir(parents=True, exist_ok=True)
     # resolve_env_file / resolve_jarvis_json 走 project_paths 自身命名空间，
     # load_config 兜底走 config 绑定 —— 两处都钉死。
     monkeypatch.setattr("src.project_paths.install_root", lambda: empty_root)
