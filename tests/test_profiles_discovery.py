@@ -1,10 +1,12 @@
 """Public discovery face tests (src/profiles/discovery.list_profiles / ProfileInfo).
 
-Discipline: no tmp_path / tempfile.mkdtemp; self-made directory
-(C:/Users/uida0712/jarvis_pytest_v015_disco), rmtree at fixture start.
+Discipline: no tmp_path / tempfile.mkdtemp; self-made directory under the
+current user profile (~/jarvis_pytest_disco, rmtree at fixture start).
+Override via JARVIS_TEST_DISCO_BASE for a machine-specific location.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -14,7 +16,12 @@ import pytest
 
 from src.profiles.discovery import list_profiles
 
-BASE = Path("C:/Users/uida0712/jarvis_pytest_v015_disco")
+BASE = Path(
+    os.environ.get(
+        "JARVIS_TEST_DISCO_BASE",
+        os.path.join(os.path.expanduser("~"), "jarvis_pytest_disco"),
+    )
+)
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 ALPHA_YAML = """schema_version: 1
@@ -135,6 +142,14 @@ def test_list_profiles_is_read_only(env):
     list_profiles(user_home=env.uh)
     assert _snapshot(env.uh) == before_uh
     assert _snapshot(env.ws) == before_ws
+
+
+def test_blank_string_paths_eq_none():
+    """空串/纯空白入参等同 None（不产生 Path(".") 相对 cwd 的层目录）。"""
+
+    for uh_arg in ("", "   "):
+        assert list_profiles(user_home=uh_arg) == list_profiles(user_home=None)
+    assert list_profiles(workspace="  ") == list_profiles(workspace=None)
 
 
 def test_lazy_export_does_not_pull_src_agent(env):

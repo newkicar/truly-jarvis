@@ -11,6 +11,20 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+def _clean_path(value: Path | str | None) -> Path | None:
+    """None / 空串 / 纯空白串 一律视为未提供（返回 None）。
+
+    防止 str 输入退化为 Path("") == Path(".")（相对当前 cwd 的错误层目录）；
+    Path 对象原样保留。
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+        return Path(value) if value else None
+    return value
+
+
 @dataclass(frozen=True)
 class ProfileInfo:
     """Agent Profile 的结构化只读投影。"""
@@ -31,15 +45,15 @@ def list_profiles(
 ) -> list[ProfileInfo]:
     """三层发现（builtin->user->project），结构化返回，只读。
 
-    user_home 缺省 ~/.jarvis（尊重 JARVIS_HOME）；
-    workspace 缺省则不含 project 层。
+    user_home 缺省 ~/.jarvis（尊重 JARVIS_HOME）；空串/纯空白入参等同 None；
+    workspace 缺省（或空串）则不含 project 层。
     解析失败的 pid 直接传播 ProfileError（保持 Registry.get 失败语义）。
     """
     from .registry import ProfileRegistry
 
     reg = ProfileRegistry(
-        user_home=Path(user_home) if user_home is not None else None,
-        workspace=Path(workspace) if workspace is not None else None,
+        user_home=_clean_path(user_home),
+        workspace=_clean_path(workspace),
     )
     infos: list[ProfileInfo] = []
     for pid in reg.list():

@@ -6,11 +6,12 @@ jarvis-gui Nuitka onedir 便携包构建（GUI-only；入口 src\gui_main.py，-
   skills 随包置于 exe 同级；frozen 形态 install_root() = exe 所在目录（src\project_paths.py）
 
 用法：
-  powershell -NoProfile -File packaging\build_gui.ps1 [-SkipZip] [-SkipVerify]
+  powershell -NoProfile -File packaging\build_gui.ps1 [-Version 0.1.6] [-SkipZip] [-SkipVerify]
 
 前置：.build\venv-base（Py 3.14 + Nuitka 4.3.4 + PySide6 + 项目依赖），本机 MSVC。
 #>
 param(
+    [string]$Version = "0.1.6",
     [switch]$SkipZip,
     [switch]$SkipVerify
 )
@@ -20,6 +21,9 @@ $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
 
 function Fail($msg) { Write-Host "[FAIL] $msg" -ForegroundColor Red; exit 1 }
+
+if ($Version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { Fail "Version must be x.y.z (e.g. 0.1.6), got: $Version" }
+Write-Host "build version: $Version" -ForegroundColor DarkGray
 
 # ---------- [1/8] 前置检查 ----------
 Write-Host '[1/8] 前置检查' -ForegroundColor Cyan
@@ -71,7 +75,7 @@ Write-Host "staging: $totalMb MB / $fileCount 文件（exe $exeMb MB）"
 Write-Host '[5/8] 生成 packaging\runtime-info.txt' -ForegroundColor Cyan
 $ver = (& $py --version 2>&1 | Out-String).Trim()
 $runtimeInfo = @(
-    'version: 0.1.4',
+    "version: $Version",
     ('build-time: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm')),
     "python: $ver",
     'nuitka: 4.3.4',
@@ -82,7 +86,7 @@ $runtimeInfo = @(
 Set-Content 'packaging\runtime-info.txt' $runtimeInfo -Encoding utf8
 
 # ---------- [6/8] zip + SHA-256 ----------
-$zipName = 'jarvis-gui-0.1.4-win-x64-portable.zip'
+$zipName = "jarvis-gui-$Version-win-x64-portable.zip"
 if (-not $SkipZip) {
     Write-Host '[6/8] zip + SHA-256 (release\)' -ForegroundColor Cyan
     $zipStage = 'build\zip-staging'
