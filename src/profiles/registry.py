@@ -161,6 +161,20 @@ class ProfileRegistry:
             return self._legacy_profile(pid)
         raise ProfileError(f"unknown profile: '{pid}'")
 
+    def layer_of(self, pid: str) -> str:
+        """Label of the highest layer providing an agent.yaml for pid.
+
+        Mirrors get() priority (project > user > builtin) by walking
+        reversed(_layers_for). Legacy-only ids (no agent.yaml in any
+        layer) report "legacy". Raises ProfileError for unknown pids.
+        """
+        for layer_dir, label in reversed(self._layers_for(pid)):
+            if (layer_dir / self.AGENT_YAML).is_file():
+                return label
+        if pid in self._legacy_agents:
+            return "legacy"
+        raise ProfileError(f"unknown profile: {pid!r}")
+
     def _legacy_profile(self, pid: str) -> AgentProfile:
         """Create a read-only virtual profile from jarvis.json agents section."""
         entry = self._legacy_agents[pid]
