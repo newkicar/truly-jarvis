@@ -22,6 +22,14 @@ from src.config import (
 )
 
 
+def _isolated_jarvis_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """JARVIS_HOME 指向空目录，隔离本机真实 ~/.jarvis 全局配置（测试机器可移槽；gui15 段 _isolated_home 同款纪律）。"""
+    home = tmp_path / "jarvis_home"
+    home.mkdir()
+    monkeypatch.setenv("JARVIS_HOME", str(home))
+    return home
+
+
 def test_parse_env_colon_separated(tmp_path: Path):
     env_file = tmp_path / ".env"
     env_file.write_text("base_url:https://example.com\napi_key:sk-123\n", encoding="utf-8")
@@ -94,7 +102,8 @@ def test_load_config_builds_dataclass(tmp_path: Path):
     assert cfg.tavily_key == "tvly-test"
 
 
-def test_load_config_absolutizes_paths(tmp_path: Path):
+def test_load_config_absolutizes_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    _isolated_jarvis_home(tmp_path, monkeypatch)
     env_file = tmp_path / ".env"
     env_file.write_text("base_url:https://x.com\napi_key:k\nmodel_id:m\ntavily_key:t\n", encoding="utf-8")
     json_file = tmp_path / "jarvis.json"
@@ -137,8 +146,9 @@ def test_load_config_missing_required_key_raises(tmp_path: Path):
         load_config(env_file=env_file, json_file=json_file)
 
 
-def test_load_config_parses_mcps_dict(tmp_path: Path):
+def test_load_config_parses_mcps_dict(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """mcps 应按 OpenCode 风格 dict（{"servers": {...}}）解析，而非旧 list。"""
+    _isolated_jarvis_home(tmp_path, monkeypatch)
     env_file = tmp_path / ".env"
     env_file.write_text("base_url:https://x.com\napi_key:k\nmodel_id:m\ntavily_key:t\n", encoding="utf-8")
     json_file = tmp_path / "jarvis.json"
@@ -260,8 +270,9 @@ def test_load_config_knowledge_base_preferred_over_legacy(tmp_path: Path):
     assert cfg.vault_path == (tmp_path / "new-kb").resolve()
 
 
-def test_load_config_knowledge_base_falls_back_to_obsidian_vault(tmp_path: Path):
+def test_load_config_knowledge_base_falls_back_to_obsidian_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """未写 knowledge_base 时回退 obsidian_vault（兼容家里电脑旧配置）。"""
+    _isolated_jarvis_home(tmp_path, monkeypatch)
     env_file = _write_min_env(tmp_path)
     json_file = _write_json(tmp_path, {"obsidian_vault": str(tmp_path / "vault")})
     cfg = load_config(env_file=env_file, json_file=json_file)

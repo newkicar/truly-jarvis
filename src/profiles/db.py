@@ -81,46 +81,67 @@ CREATE TABLE IF NOT EXISTS memory_candidates (
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
-    """Apply pending migrations (idempotent)."""
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS schema_migrations ("
-        "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
-    )
-    rows = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchall()
-    max_v = rows[0][0] if rows and rows[0][0] is not None else 0
-    if max_v < 1:
-        conn.executescript(_DDL_VERSION_1)
+    """Apply pending migrations (idempotent, serialized).
+
+    The whole read-apply block runs under BEGIN IMMEDIATE so concurrent
+    migrators on the same database serialize: each one observes the
+    version markers published by the previous one before deciding what
+    to apply.  Version inserts use OR IGNORE so a double-apply can
+    never raise a UNIQUE violation.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
         conn.execute(
-            "INSERT INTO schema_migrations (version, applied_at) VALUES (1, ?)",
-            (_utc_now(),),
+            "CREATE TABLE IF NOT EXISTS schema_migrations ("
+            "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
         )
-        max_v = 1
-    if max_v < 2:
-        # ticket 04: candidate records carry memory_type + confidence
-        # (confidence nullable by design - never fabricated).
-        cols = {r[1] for r in conn.execute("PRAGMA table_info(memory_candidates)")}
-        if "memory_type" not in cols:
+        rows = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchall()
+        max_v = rows[0][0] if rows and rows[0][0] is not None else 0
+        if max_v < 1:
+            for stmt in _DDL_VERSION_1.split(";"):
+                stmt = stmt.strip()
+                if stmt:
+                    conn.execute(stmt)
             conn.execute(
-                "ALTER TABLE memory_candidates "
-                "ADD COLUMN memory_type TEXT NOT NULL DEFAULT ''"
+                "INSERT OR IGNORE INTO schema_migrations "
+                "(version, applied_at) VALUES (1, ?)",
+                (_utc_now(),),
             )
-        if "confidence" not in cols:
+            max_v = 1
+        if max_v < 2:
+            # ticket 04: candidate records carry memory_type + confidence
+            # (confidence nullable by design - never fabricated).
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(memory_candidates)")}
+            if "memory_type" not in cols:
+                conn.execute(
+                    "ALTER TABLE memory_candidates "
+                    "ADD COLUMN memory_type TEXT NOT NULL DEFAULT ''"
+                )
+            if "confidence" not in cols:
+                conn.execute(
+                    "ALTER TABLE memory_candidates "
+                    "ADD COLUMN confidence TEXT"
+                )
             conn.execute(
-                "ALTER TABLE memory_candidates "
-                "ADD COLUMN confidence TEXT"
+                "INSERT OR IGNORE INTO schema_migrations "
+                "(version, applied_at) VALUES (2, ?)",
+                (_utc_now(),),
             )
-        conn.execute(
-            "INSERT INTO schema_migrations (version, applied_at) VALUES (2, ?)",
-            (_utc_now(),),
-        )
-    conn.commit()
+        conn.commit()
+    except BaseException:
+        try:
+            conn.rollback()
+        except sqlite3.Error:
+            pass
+        raise
 
 
 def connect(user_home: Path) -> sqlite3.Connection:
     """Open (or create) agent-meta.sqlite and run migrations."""
     user_home.mkdir(parents=True, exist_ok=True)
     db_path = meta_db_path(user_home)
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
+    conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("PRAGMA journal_mode=WAL")
     _migrate(conn)
     return conn

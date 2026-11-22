@@ -516,8 +516,13 @@ class MemoryRouter:
 
     def _connect(self) -> sqlite3.Connection:
         """Fresh autocommit connection (schema ensured via shared connect())."""
-        connect(self.user_home)  # creates dir + migrations, then closes
-        conn = sqlite3.connect(str(meta_db_path(self.user_home)), isolation_level=None)
+        ensure = connect(self.user_home)  # creates dir + migrations
+        ensure.close()  # never leak the ensure-connection
+        conn = sqlite3.connect(
+            str(meta_db_path(self.user_home)),
+            isolation_level=None,
+            timeout=30.0,
+        )
         conn.execute("PRAGMA journal_mode=WAL")
         return conn
 
