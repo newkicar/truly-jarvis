@@ -495,21 +495,26 @@ def build_agent(
 
         middleware.append(WorkspaceFileGuardMiddleware(Path(profile_spec.workspace), block_read=True))
     # dotdir: 上下文压缩改走 deepagents 自带 summarizer（被裁历史外置 .jarvis/conversation_history/ + ContextOverflowError 自愈）
+    # keep-first：压缩时开头 keep_first_messages（默认 0）条消息逐字钉进 summary，
+    # 中间段走 LLM 总结（src/context_compaction.py；0 = 纯上游行为）
     _auto_compaction = int(getattr(config, "auto_compaction", 0) or 0)
+    _kf_raw = getattr(config, "keep_first_messages", 0)
     try:
-        from deepagents.middleware.summarization import (
-            SummarizationMiddleware,
-            create_summarization_middleware,
-        )
+        _keep_first = max(0, int(_kf_raw))
+    except (TypeError, ValueError):
+        _keep_first = 0
+    try:
+        from src.context_compaction import build_compaction_middleware
 
-        if _auto_compaction > 0:
-            middleware.insert(
-                2,
-                SummarizationMiddleware(model, backend=backend, trigger=("tokens", _auto_compaction)),
-            )
-        else:
-            # 未配置 = deepagents 默认（profile 有 max_input_tokens 时按比例，否则固定值兜底）
-            middleware.insert(2, create_summarization_middleware(model, backend))
+        middleware.insert(
+            2,
+            build_compaction_middleware(
+                model,
+                backend,
+                keep_first=_keep_first,
+                auto_compaction=_auto_compaction,
+            ),
+        )
     except Exception as exc:  # noqa: BLE001 环境不可用时跳过压缩，不影响启动
         logging.warning("上下文压缩中间件不可用，跳过: %s", exc)
     middleware.append(StepBudgetMiddleware(config.execution_max_steps))

@@ -6,12 +6,12 @@ jarvis-gui Nuitka onedir 便携包构建（GUI-only；入口 src\gui_main.py，-
   skills 随包置于 exe 同级；frozen 形态 install_root() = exe 所在目录（src\project_paths.py）
 
 用法：
-  powershell -NoProfile -File packaging\build_gui.ps1 [-Version 0.1.6] [-SkipZip] [-SkipVerify]
+  powershell -NoProfile -File packaging\build_gui.ps1 [-Version 0.1.7] [-SkipZip] [-SkipVerify]
 
 前置：.build\venv-base（Py 3.14 + Nuitka 4.3.4 + PySide6 + 项目依赖），本机 MSVC。
 #>
 param(
-    [string]$Version = "0.1.6",
+    [string]$Version = "0.1.7",
     [switch]$SkipZip,
     [switch]$SkipVerify
 )
@@ -22,7 +22,7 @@ Set-Location $repo
 
 function Fail($msg) { Write-Host "[FAIL] $msg" -ForegroundColor Red; exit 1 }
 
-if ($Version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { Fail "Version must be x.y.z (e.g. 0.1.6), got: $Version" }
+if ($Version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { Fail "Version must be x.y.z (e.g. 0.1.7), got: $Version" }
 Write-Host "build version: $Version" -ForegroundColor DarkGray
 
 # ---------- [1/8] 前置检查 ----------

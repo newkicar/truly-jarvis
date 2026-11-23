@@ -105,6 +105,8 @@ class Config:
     notifications: dict = field(default_factory=dict)
     # dotdir: LLM 模型上下文上限（token）；>0 时 deepagents 自带压缩按 fraction 触发（0.85/0.10），0=不启用
     context_limit: int = 0
+    # dotdir keep-first: 压缩时开头逐字保留进 summary 的消息条数（0 = 不钉头，纯上游行为）；默认 0
+    keep_first_messages: int = 0
 
 
 def parse_env_text(text: str) -> dict[str, str]:
@@ -352,6 +354,15 @@ def load_config(
     if context_limit < 0:
         context_limit = 0
 
+    _kfm_raw = data.get("keep_first_messages", 0)
+    try:
+        keep_first_messages = int(_kfm_raw)
+    except (TypeError, ValueError):
+        logging.warning("keep_first_messages 非整数，忽略: %r", _kfm_raw)
+        keep_first_messages = 0
+    if keep_first_messages < 0:
+        keep_first_messages = 0
+
     cfg = Config(
         project_root=root,
         base_url=base_url,
@@ -376,6 +387,7 @@ def load_config(
         auto_compaction=auto_compaction,
         notifications=notifications_cfg,
         context_limit=context_limit,
+        keep_first_messages=keep_first_messages,
     )
     ensure_user_home()
     set_runtime_project_root(cfg.project_root)
