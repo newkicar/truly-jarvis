@@ -88,6 +88,23 @@ async def _type_and_enter(pilot, text):
     await pilot.press("enter")
 
 
+async def _wait_streaming_active(pilot, app, timeout=5.0):
+    """前置等待：按 Esc 取消前确保流式 worker 进行中（CI 时序漂移面消除）。
+
+    CI 事件循环延迟可能让短流提前跑完；worker 已结束再按 Esc 会落入
+    「空闲双 Esc 撤回」路径（_undo_worker 重建/清空 transcript），取消类
+    断言即成 flake（CI test_escape_cancels_streaming 实证）。
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        worker = app._turn_workers.get(app.thread_id)
+        if worker is not None and not worker.is_finished:
+            return
+        if time.monotonic() >= deadline:
+            pytest.fail("流式 worker 未在超时内进入进行中状态")
+        await pilot.pause()
+
+
 @pytest.mark.asyncio
 async def test_app_starts_and_quits():
     app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
@@ -209,7 +226,7 @@ async def test_escape_cancels_streaming():
 
                 def interleave(self, *kinds):
                     for item in self._items:
-                        time.sleep(0.2)
+                        time.sleep(0.6)
                         yield item
 
             return S()
@@ -219,6 +236,7 @@ async def test_escape_cancels_streaming():
         await _type_and_enter(pilot, "慢请求")
         await pilot.pause()
         await asyncio.sleep(0.1)
+        await _wait_streaming_active(pilot, app)
         app.action_cancel()  # tui-ux15：Esc#1 prime 取消（仅提醒，不取消）
         assert "已取消" not in "".join(l.text for l in pilot.app.query_one(CopyableRichLog).lines)
         app.action_cancel()  # Esc#2 实际取消（drain 收尾）
@@ -249,7 +267,7 @@ async def test_escape_cancel_banner_replaces_spinner():
 
                 def interleave(self, *kinds):
                     for item in self._items:
-                        time.sleep(0.4)
+                        time.sleep(0.6)
                         yield item
 
             return S()
@@ -259,6 +277,7 @@ async def test_escape_cancel_banner_replaces_spinner():
         await _type_and_enter(pilot, "慢请求")
         await pilot.pause()
         await asyncio.sleep(0.1)
+        await _wait_streaming_active(pilot, app)
         app.action_cancel()  # tui-ux15：Esc#1 prime 取消（不写 banner）
         app.action_cancel()  # Esc#2 实际取消（同步写 banner）
         # tui-ux7 CI-flake 修复：banner 由 action_cancel 在 UI 线程*同步*写入
@@ -270,7 +289,7 @@ async def test_escape_cancel_banner_replaces_spinner():
         banner_text = str(spinner.render())
         assert "思考中" not in banner_text
         assert "已取消" in banner_text
-        await asyncio.sleep(0.9)
+        await asyncio.sleep(1.4)  # 流 0.6x2=1.2s；t_esc<1.2s 时 t_esc+1.4 恒覆盖 drain 收尾
         await pilot.pause()
         spinner = pilot.app.query_one("#status_spinner", Static)
         assert not str(spinner.render())
@@ -307,7 +326,7 @@ async def test_esc_cancel_triggers_kill_active_immediately(monkeypatch):
 
                 def interleave(self, *kinds):
                     for item in self._items:
-                        time.sleep(0.4)
+                        time.sleep(0.6)
                         yield item
 
             return S()
@@ -317,6 +336,7 @@ async def test_esc_cancel_triggers_kill_active_immediately(monkeypatch):
         await _type_and_enter(pilot, "慢请求")
         await pilot.pause()
         await asyncio.sleep(0.1)
+        await _wait_streaming_active(pilot, app)
         app.action_cancel()  # Esc#1 prime：不触发 kill_active
         assert len(calls) == 0
         app.action_cancel()  # Esc#2 取消：立即 kill_active（drain 语义仍管 LLM/graph）
