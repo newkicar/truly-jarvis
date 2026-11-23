@@ -1,8 +1,8 @@
-"""工单 11：记忆目录全局化对齐（GUI 展示层 + 配置路径一致）。
+"""工单 11：记忆目录对齐（GUI 展示层 + 配置路径一致）。
 
-主线 javis-global-memory（0019eac）已在 rebase 基线上：memory_dir 缺省/哨兵值
-"memory"/空 → JARVIS_HOME/memory（默认 ~/.jarvis/memory），GUI 不重复实现迁移
-逻辑，只负责「向导文案说明落点 + 自检页可读到同一路径」。
+memory_dir 缺省/哨兵值（"memory"/空）→ 项目根 .jarvis/memory（dotdir 语义）；全局
+~/.jarvis/memory 仅作一次性 copy-seed 源（迁移逻辑在 src/memory_dir.py）。GUI 不重复
+实现迁移，只负责「向导文案说明落点 + 自检页可读到同一路径」。
 """
 from __future__ import annotations
 
@@ -36,13 +36,13 @@ def test_welcome_page_mentions_global_paths(qapp):
     assert "记忆" in text
 
 
-def test_config_memory_dir_sentinel_points_to_jarvis_home(monkeypatch):
+def test_config_memory_dir_sentinel_points_to_project_dotdir(monkeypatch):
     home, jarvis_home = _new_home_with_home(monkeypatch)
     try:
-        # new_home 的 jarvis.json 不含 memory_dir → 哨兵语义，落全局
+        # new_home 的 jarvis.json 不含 memory_dir → 哨兵语义，落项目 .jarvis/memory
         cfg = load_config(project_root=home)
-        assert cfg.memory_dir == (jarvis_home / "memory").resolve()
-        assert cfg.memory_dir != (home / "memory").resolve()
+        assert cfg.memory_dir == (home / ".jarvis" / "memory").resolve()
+        assert cfg.memory_dir != (jarvis_home / "memory").resolve()
 
         # 显式相对路径 = 项目根（项目级信息记忆可显式选择）
         (home / "jarvis.json").write_text(

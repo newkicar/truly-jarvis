@@ -6,7 +6,8 @@ import sys
 from pathlib import Path
 
 JARVIS_JSON = "jarvis.json"
-CHECKPOINTS_DIR = "checkpoints"
+# 0.1.x 遗留布局：checkpoints/ 直接放项目根；下版本起统一进 .jarvis/（迁移见 migrate_project_dotdir）
+CHECKPOINTS_DIR = ".jarvis/checkpoints"
 
 
 def resolve_checkpoint_db(project_root: Path, db_name: str = "checkpoints.sqlite") -> Path:
@@ -165,3 +166,84 @@ def load_project_instructions(project_root: Path | None = None) -> str:
     if project_section:
         sections.append(project_section)
     return "\n\n".join(sections)
+
+
+DOTDIR = ".jarvis"
+
+
+def _merge_session_jsons(old_bytes: bytes, new_bytes: bytes) -> bytes | None:
+    """两份 sessions.json 字节 → 合并后的 UTF-8 编码；不可并（非 JSON / 非 dict）返回 None。"""
+    import json
+
+    try:
+        old = json.loads(old_bytes.decode("utf-8"))
+        new = json.loads(new_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return None
+    if not isinstance(old, dict) or not isinstance(new, dict):
+        return None
+    merged = dict(old)  # 源独有键保留
+    merged.update(new)  # 冲突键目标（.jarvis/ 侧）胜
+    return json.dumps(merged, ensure_ascii=False, indent=2).encode("utf-8")
+
+
+def migrate_project_dotdir(config) -> list[str]:
+    """一次性把遗留的项目级状态文件迁移进 {project_root}/.jarvis/（幂等，绝不覆盖异构目标）。
+
+    - 遗留 checkpoints/（整目录或逐文件）→ .jarvis/checkpoints/
+    - 遗留 sessions.json → .jarvis/sessions.json（相同→删源；两边 dict→union 合并后删源；否则留源 warn）
+    返回人类可读 note 列表（调用方打印、不阻塞）；全新项目无遗留 → []。
+    源与目标同名文件字节相同 = 视为已迁移（保留源，下版本清理）。
+    """
+    root = Path(config.project_root).resolve()
+    notes: list[str] = []
+
+    # ---- checkpoints/ 目录 ----
+    old_cp = root / "checkpoints"
+    new_cp = root / DOTDIR / "checkpoints"
+    if old_cp.is_dir():
+        if not new_cp.exists():
+            new_cp.parent.mkdir(parents=True, exist_ok=True)
+            old_cp.rename(new_cp)
+            notes.append(f"checkpoints/ 已迁移 → {new_cp.relative_to(root)}")
+        else:
+            for f in sorted(old_cp.iterdir()):
+                dst = new_cp / f.name
+                if not f.is_file():
+                    continue
+                if dst.exists():
+                    if dst.read_bytes() == f.read_bytes():
+                        continue  # 相同 = 已迁移，跳过（保留源）
+                    notes.append(f"checkpoints/{f.name} 两边内容不同，目标未动，请人工合并（源保留）")
+                else:
+                    f.rename(dst)
+                    notes.append(f"checkpoints/{f.name} 已迁移 → {new_cp.relative_to(root)}/{f.name}")
+            try:
+                old_cp.rmdir()  # 源清空才删；有残留（同字节跳过/冲突保留）则留下
+            except OSError:
+                pass
+
+    # ---- sessions.json ----
+    old_sj = root / "sessions.json"
+    new_sj = root / DOTDIR / "sessions.json"
+    if old_sj.is_file():
+        if not new_sj.exists():
+            new_sj.parent.mkdir(parents=True, exist_ok=True)
+            old_sj.rename(new_sj)
+            notes.append(f"sessions.json 已迁移 → {new_sj.relative_to(root)}")
+        else:
+            old_bytes = old_sj.read_bytes()
+            new_bytes = new_sj.read_bytes()
+            if old_bytes == new_bytes:
+                old_sj.unlink()
+                notes.append("sessions.json 与 .jarvis/ 副本相同，源已删除")
+            else:
+                merged = _merge_session_jsons(old_bytes, new_bytes)
+                if merged is not None:
+                    new_sj.write_bytes(merged)
+                    old_sj.unlink()
+                    notes.append("sessions.json 已并入 .jarvis/（冲突键以 .jarvis/ 为准，源已删除）")
+                else:
+                    notes.append("sessions.json 两边不可自动合并，目标未动，请人工处理（源保留）")
+
+    return notes

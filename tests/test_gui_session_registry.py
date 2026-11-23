@@ -26,7 +26,7 @@ def _tmp_dir():
 def test_registry_path():
     from pathlib import Path
 
-    assert registry_path(Path("/p")) == Path("/p/sessions.json")
+    assert registry_path(Path("/p")) == Path("/p/.jarvis/sessions.json")
 
 
 def test_registry_roundtrip():

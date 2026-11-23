@@ -1,4 +1,4 @@
-"""javis-global-memory: config sentinel semantics + one-shot memory-dir migration tests (T2/T3)."""
+"""dotdir: config sentinel 语义（缺省/哨兵 → 项目级 .jarvis/memory）+ 一次性 memory 迁移与 copy-seed 测试。"""
 
 import json
 import os
@@ -37,10 +37,10 @@ def _mk_project(home, with_memory=True):
     return project, global_mem
 
 
-def _run_migrate(monkeypatch, home, project, global_mem):
+def _run_migrate(monkeypatch, home, project):
     monkeypatch.setenv(ENV_JARVIS_HOME, str(home))
     assert user_home().resolve() == home.resolve()
-    cfg = _fake_config(global_mem, project)
+    cfg = _fake_config(project / ".jarvis" / "memory", project)
     return maybe_migrate_memory(cfg)
 
 
@@ -48,10 +48,12 @@ def test_migrate_moves_top_level_md(monkeypatch):
     home = _workdir()
     try:
         project, global_mem = _mk_project(home)
-        notes = _run_migrate(monkeypatch, home, project, global_mem)
-        assert (global_mem / "agent-memory.md").is_file()
+        notes = _run_migrate(monkeypatch, home, project)
+        assert (project / ".jarvis" / "memory" / "agent-memory.md").is_file()
         assert not (project / "memory").exists()
         assert any("moved agent-memory.md" in n for n in notes)
+        # 全局为空 → 无 copy-seed 日志
+        assert not any("copy-seed" in n for n in notes)
     finally:
         shutil.rmtree(home, ignore_errors=True)
 
@@ -60,13 +62,14 @@ def test_migrate_same_content_is_idempotent(monkeypatch):
     home = _workdir()
     try:
         project, global_mem = _mk_project(home)
-        (global_mem / "agent-memory.md").write_text("# project memory", encoding="utf-8")
-        notes1 = _run_migrate(monkeypatch, home, project, global_mem)
-        # same name same content: source stays, no move, no rename
+        (project / ".jarvis" / "memory" / "agent-memory.md").parent.mkdir(parents=True)
+        (project / ".jarvis" / "memory" / "agent-memory.md").write_text("# project memory", encoding="utf-8")
+        notes1 = _run_migrate(monkeypatch, home, project)
+        # 同名同内容：源留原地、不 move、不更名
         assert (project / "memory/agent-memory.md").is_file()
-        assert not (global_mem / "agent-memory__proj.md").exists()
+        assert not (project / ".jarvis" / "memory" / "agent-memory__proj.md").exists()
         assert any("同名同内容" in n for n in notes1)
-        notes2 = _run_migrate(monkeypatch, home, project, global_mem)
+        notes2 = _run_migrate(monkeypatch, home, project)
         assert notes2 == notes1
     finally:
         shutil.rmtree(home, ignore_errors=True)
@@ -76,10 +79,12 @@ def test_migrate_same_name_diff_content_renames(monkeypatch):
     home = _workdir()
     try:
         project, global_mem = _mk_project(home)
-        (global_mem / "agent-memory.md").write_text("# global other", encoding="utf-8")
-        notes = _run_migrate(monkeypatch, home, project, global_mem)
-        assert (global_mem / "agent-memory.md").read_text(encoding="utf-8") == "# global other"
-        assert (global_mem / "agent-memory__proj.md").read_text(encoding="utf-8") == "# project memory"
+        target_dir = project / ".jarvis" / "memory"
+        target_dir.mkdir(parents=True)
+        (target_dir / "agent-memory.md").write_text("# target other", encoding="utf-8")
+        notes = _run_migrate(monkeypatch, home, project)
+        assert (target_dir / "agent-memory.md").read_text(encoding="utf-8") == "# target other"
+        assert (target_dir / "agent-memory__proj.md").read_text(encoding="utf-8") == "# project memory"
         assert any("同名异容" in n for n in notes)
     finally:
         shutil.rmtree(home, ignore_errors=True)
@@ -92,8 +97,8 @@ def test_migrate_dream_subdir_per_file(monkeypatch):
         dream = project / "memory/dream"
         dream.mkdir(parents=True)
         (dream / "knowledge.md").write_text("# dream", encoding="utf-8")
-        _run_migrate(monkeypatch, home, project, global_mem)
-        assert (global_mem / "dream/knowledge.md").is_file()
+        _run_migrate(monkeypatch, home, project)
+        assert (project / ".jarvis" / "memory" / "dream/knowledge.md").is_file()
         assert not (project / "memory/dream").exists()
     finally:
         shutil.rmtree(home, ignore_errors=True)
@@ -106,8 +111,8 @@ def test_migrate_rag_index_moved_when_target_absent(monkeypatch):
         rag = project / "memory/rag-index"
         rag.mkdir(parents=True)
         (rag / "index.sqlite").write_text("x", encoding="utf-8")
-        notes = _run_migrate(monkeypatch, home, project, global_mem)
-        assert (global_mem / "rag-index/index.sqlite").is_file()
+        notes = _run_migrate(monkeypatch, home, project)
+        assert (project / ".jarvis" / "memory" / "rag-index/index.sqlite").is_file()
         assert any("moved rag-index/" in n for n in notes)
     finally:
         shutil.rmtree(home, ignore_errors=True)
@@ -120,10 +125,10 @@ def test_migrate_rag_index_kept_when_target_exists(monkeypatch):
         rag = project / "memory/rag-index"
         rag.mkdir(parents=True)
         (rag / "index.sqlite").write_text("old", encoding="utf-8")
-        target = global_mem / "rag-index"
-        target.mkdir()
+        target = project / ".jarvis" / "memory" / "rag-index"
+        target.mkdir(parents=True)
         (target / "index.sqlite").write_text("new", encoding="utf-8")
-        notes = _run_migrate(monkeypatch, home, project, global_mem)
+        notes = _run_migrate(monkeypatch, home, project)
         assert (target / "index.sqlite").read_text(encoding="utf-8") == "new"
         assert (rag / "index.sqlite").is_file()
         assert any("目标已存在" in n for n in notes)
@@ -153,8 +158,37 @@ def test_migrate_no_project_memory_dir_noop(monkeypatch):
     home = _workdir()
     try:
         project, global_mem = _mk_project(home, with_memory=False)
-        notes = _run_migrate(monkeypatch, home, project, global_mem)
+        notes = _run_migrate(monkeypatch, home, project)
         assert notes == []
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
+
+
+def test_copy_seed_applies_when_target_empty(monkeypatch):
+    home = _workdir()
+    try:
+        project, global_mem = _mk_project(home, with_memory=False)
+        (global_mem / "shared-pref.md").write_text("# shared", encoding="utf-8")
+        notes = _run_migrate(monkeypatch, home, project)
+        # 播种落位，全局原件仍在（拷贝而非移动）
+        assert (project / ".jarvis" / "memory" / "shared-pref.md").is_file()
+        assert (global_mem / "shared-pref.md").is_file()
+        assert any("copy-seed" in n for n in notes)
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
+
+
+def test_copy_seed_skipped_when_target_nonempty(monkeypatch):
+    home = _workdir()
+    try:
+        project, global_mem = _mk_project(home, with_memory=False)
+        (global_mem / "shared-pref.md").write_text("# shared", encoding="utf-8")
+        target_dir = project / ".jarvis" / "memory"
+        target_dir.mkdir(parents=True)
+        (target_dir / "local.md").write_text("# local", encoding="utf-8")
+        notes = _run_migrate(monkeypatch, home, project)
+        assert not (target_dir / "shared-pref.md").exists()
+        assert any(("copy-seed" in n and "跳过" in n) for n in notes)
     finally:
         shutil.rmtree(home, ignore_errors=True)
 
@@ -170,22 +204,22 @@ def _load_cfg(tmp, json_dict, monkeypatch):
     return load_config(env_file=env, json_file=jf)
 
 
-def test_config_missing_memory_dir_defaults_global(monkeypatch):
+def test_config_missing_memory_dir_defaults_project_dotdir(monkeypatch):
     base = _workdir()
     try:
         cfg = _load_cfg(base, {}, monkeypatch)
-        expected = Path(os.environ[ENV_JARVIS_HOME]) / "memory"
-        assert cfg.memory_dir == expected.resolve()
+        expected = (base / ".jarvis" / "memory").resolve()
+        assert cfg.memory_dir == expected
     finally:
         shutil.rmtree(base, ignore_errors=True)
 
 
-def test_config_sentinel_memory_string_defaults_global(monkeypatch):
+def test_config_sentinel_memory_string_defaults_project_dotdir(monkeypatch):
     base = _workdir()
     try:
         cfg = _load_cfg(base, {"memory_dir": "memory"}, monkeypatch)
-        expected = Path(os.environ[ENV_JARVIS_HOME]) / "memory"
-        assert cfg.memory_dir == expected.resolve()
+        expected = (base / ".jarvis" / "memory").resolve()
+        assert cfg.memory_dir == expected
     finally:
         shutil.rmtree(base, ignore_errors=True)
 
@@ -195,7 +229,7 @@ def test_config_explicit_relative_resolves_to_project_root(monkeypatch):
     try:
         cfg = _load_cfg(base, {"memory_dir": "my-mem"}, monkeypatch)
         assert cfg.memory_dir == (base / "my-mem").resolve()
-        assert cfg.memory_dir != (Path(os.environ[ENV_JARVIS_HOME]) / "memory").resolve()
+        assert cfg.memory_dir != (base / ".jarvis" / "memory").resolve()
     finally:
         shutil.rmtree(base, ignore_errors=True)
 

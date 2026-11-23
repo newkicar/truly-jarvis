@@ -1,9 +1,13 @@
-'''项目级 memory 目录一次性迁移到用户全局目录（javis-global-memory T2）。
+'''dotdir：旧项目级 memory/ 一次性并入 .jarvis/memory，外加全局 copy-seed 播种。
 
-config.py 的 memory_dir 哨兵语义之后，生效记忆目录默认为 ~/.jarvis/memory（跨项目复用）。
-本模块负责把旧的 {project_root}/memory 合并进全局目录：
-永不删除目标、永不 raise、幂等（同名同内容不动作）。
-main.py 在 load_config 之后调用，返回日志行写 stderr；异常只告警不阻塞启动。
+config.py 的 memory_dir 哨兵语义（dotdir 起）：缺省记忆目录 = 项目级 {project_root}/.jarvis/memory。
+本模块负责两件事（main.py 在 load_config 之后调用，返回日志行写 stderr；异常只告警不阻塞启动）：
+1. 合并旧布局 {project_root}/memory 进 .jarvis/memory：顶层文件/ dream/ 子目录逐文件按
+   _merge_file 规则（无目标→move；同名同内容→跳过留源；同名异容→更名 __{project} 落位），
+   rag-index/ 目标已存→留原地（索引可重建）、目标无→整目录移；其他子目录留原地仅记日志。
+2. copy-seed：全局 ~/.jarvis/memory 非空且目标为空 → 一次性整目录拷贝进 .jarvis/memory
+   （全局目录永不修改、永不动）。合并先于播种；目标已有内容则跳过播种。
+全程幂等、永不删除目标、永不 raise。
 '''
 import shutil
 from pathlib import Path
@@ -18,7 +22,7 @@ def _merge_file(src, dst_dir, project_name, notes, label):
     dst = dst_dir / src.name
     if not dst.exists():
         shutil.move(str(src), str(dst))
-        notes.append('moved ' + label + ' → global')
+        notes.append('moved ' + label + ' → .jarvis/memory')
         return
     try:
         same = src.read_bytes() == dst.read_bytes()
@@ -40,53 +44,54 @@ def _merge_file(src, dst_dir, project_name, notes, label):
 
 
 def maybe_migrate_memory(config):
-    '''生效记忆目录为全局默认时，把 {project_root}/memory 合并进来，返回日志行（空 = 无需动作）。
+    '''生效记忆目录为项目级 .jarvis/memory 时，合并旧 {project_root}/memory 并 copy-seed 全局记忆。
 
-    显式配置的目录（非全局默认）不迁移；源 == 目标短路；
-    顶层常规文件按 _merge_file 规则合并；dream/ 子目录逐文件同规则；
-    rag-index/ 目标已存 → 跳过留原地（索引可增量重建）、目标无 → 整目录移；
-    其他子目录原地保留仅记日志；源目录清空后尝试 rmdir（失败忽略）。
+    显式配置的目录（memory_dir != .jarvis/memory）不迁移直接返回 []；
+    合并与播种均幂等；全局 ~/.jarvis/memory 永不修改。返回日志行（空 = 无需动作）。
     '''
     notes = []
-    target = Path(config.memory_dir).resolve()
-    global_default = (user_home() / 'memory').resolve()
-    if target != global_default:
+    target = (Path(config.project_root) / '.jarvis' / 'memory').resolve()
+    if Path(config.memory_dir).resolve() != target:
         return notes
     source = Path(config.project_root) / 'memory'
-    if source.resolve() == global_default:
-        notes.append('memory 目录已是全局路径，无需迁移')
-        return notes
-    if not source.is_dir():
-        return notes
-    target.mkdir(parents=True, exist_ok=True)
     project_name = Path(config.project_root).name
-    for f in sorted(source.iterdir()):
-        if f.is_file():
-            _merge_file(f, target, project_name, notes, f.name)
-    dream = source / 'dream'
-    if dream.is_dir():
-        dream_target = target / 'dream'
-        dream_target.mkdir(parents=True, exist_ok=True)
-        for f in sorted(dream.iterdir()):
+    if source.is_dir():
+        target.mkdir(parents=True, exist_ok=True)
+        for f in sorted(source.iterdir()):
             if f.is_file():
-                _merge_file(f, dream_target, project_name, notes, 'dream/' + f.name)
+                _merge_file(f, target, project_name, notes, f.name)
+        dream = source / 'dream'
+        if dream.is_dir():
+            dream_target = target / 'dream'
+            dream_target.mkdir(parents=True, exist_ok=True)
+            for f in sorted(dream.iterdir()):
+                if f.is_file():
+                    _merge_file(f, dream_target, project_name, notes, 'dream/' + f.name)
+            try:
+                dream.rmdir()
+            except OSError:
+                pass
+        rag = source / 'rag-index'
+        if rag.is_dir():
+            if (target / 'rag-index').is_dir():
+                notes.append('rag-index/ 目标已存在，留原地（索引可重建）')
+            else:
+                shutil.move(str(rag), str(target / 'rag-index'))
+                notes.append('moved rag-index/ → .jarvis/memory')
+        for f in sorted(source.iterdir()):
+            if f.is_dir():
+                notes.append('子目录 ' + f.name + '/ 留在项目（不自动迁移）')
         try:
-            dream.rmdir()
+            source.rmdir()
         except OSError:
             pass
-    rag = source / 'rag-index'
-    if rag.is_dir():
-        if (target / 'rag-index').is_dir():
-            notes.append('rag-index/ 目标已存在，留原地（索引可重建）')
+    # copy-seed：全局 ~/.jarvis/memory 非空且目标为空 → 一次性整目录拷贝（全局不动）
+    global_mem = (user_home() / 'memory').resolve()
+    if global_mem.is_dir() and any(global_mem.iterdir()):
+        if target.is_dir() and any(target.iterdir()):
+            notes.append('copy-seed 跳过：.jarvis/memory 已有内容（全局 ~/.jarvis/memory 不改动）')
         else:
-            shutil.move(str(rag), str(target / 'rag-index'))
-            notes.append('moved rag-index/ → global')
-    for f in sorted(source.iterdir()):
-        if f.is_dir():
-            notes.append('子目录 ' + f.name + '/ 留在项目（不自动迁移）')
-    try:
-        source.rmdir()
-    except OSError:
-        pass
+            target.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(str(global_mem), str(target), dirs_exist_ok=True)
+            notes.append('copy-seed: 全局 ~/.jarvis/memory → .jarvis/memory（一次性拷贝，全局不动）')
     return notes
-

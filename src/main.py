@@ -217,6 +217,14 @@ def main(argv=None) -> int:
             print(guidance_text(target, missing), file=sys.stderr)
             return 1
 
+    # .jarvis/ dotdir: one-time migration of legacy checkpoints/ + sessions.json into .jarvis/ (idempotent, never clobbers)
+    try:
+        from src.project_paths import migrate_project_dotdir
+
+        for _note in migrate_project_dotdir(config):
+            print(f"[dotdir] {_note}", file=sys.stderr)
+    except Exception as _e:  # migration failure must not block startup
+        print(f"[dotdir] migration warning: {str(_e)}", file=sys.stderr)
     # javis-global-memory: one-time migration of old project-dir memory/ to global ~/.jarvis/memory/ (idempotent, never deletes target)
     try:
         from src.memory_dir import maybe_migrate_memory

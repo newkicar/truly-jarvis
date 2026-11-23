@@ -19,7 +19,8 @@ from src import commands
 
 
 def registry_path(project_root: Path) -> Path:
-    return Path(project_root) / "sessions.json"
+    # .jarvis/ 统一状态目录（0.1.x 遗留：项目根 sessions.json，旧行保留在 .gitignore 至下版本清理）
+    return Path(project_root) / ".jarvis" / "sessions.json"
 
 
 class SessionRegistry:

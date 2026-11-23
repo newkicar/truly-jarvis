@@ -219,6 +219,9 @@ def harness_profile_loaded(model_id: str) -> bool:
 
 
 def _make_model(config: Config, model_id: str | None = None) -> BaseChatModel:
+    # dotdir: context_limit > 0 时挂 profile.max_input_tokens，deepagents 压缩中间件
+    # 按 0.85/0.10 比例推导压缩时机，不再依赖超模型上限的固定默认值。
+    _ctx = int(getattr(config, "context_limit", 0) or 0)
     return ChatOpenAI(
         base_url=config.base_url,
         api_key=SecretStr(config.api_key),
@@ -227,6 +230,7 @@ def _make_model(config: Config, model_id: str | None = None) -> BaseChatModel:
         # HTTP 层瞬断自愈（流中断后的业务级重试在 src/resilience.py 决策表）。
         max_retries=3,
         timeout=120,
+        **({"profile": {"max_input_tokens": _ctx}} if _ctx > 0 else {}),
     )
 
 
@@ -240,6 +244,10 @@ def _make_backend(config: Config, extra_skill_routes=None) -> CompositeBackend:
 
     routes: dict[str, FilesystemBackend | LocalShellBackend] = {
         "/memories/": FilesystemBackend(root_dir=str(config.memory_dir), virtual_mode=True),
+        # .jarvis/ 项目状态目录（checkpoints/conversation_history 外置等，virtual_mode=True 锚定项目根）
+        "/.jarvis/": FilesystemBackend(
+            root_dir=str(config.project_root / ".jarvis"), virtual_mode=True
+        ),
     }
     if config.vault_path is not None:
         routes["/vault/"] = FilesystemBackend(
@@ -259,6 +267,7 @@ def _make_backend(config: Config, extra_skill_routes=None) -> CompositeBackend:
     for vpath, fs_path in (extra_skill_routes or ()):
         prefix_map.setdefault(vpath, str(fs_path))
     prefix_map.setdefault("/workspace/", str(config.project_root))
+    prefix_map.setdefault("/.jarvis/", str(config.project_root / ".jarvis"))
     # 虚拟前缀守卫：execute 收到这些前缀时执行前拦截（shell 不认识虚拟路径）。
     # virtual_mode=False（#10）：文件工具接受任意磁盘路径——绝对路径按原样解析、
     # 相对路径以项目根为基准；虚拟前缀路由仍优先匹配，降级为快捷方式。
@@ -280,7 +289,8 @@ def _make_backend(config: Config, extra_skill_routes=None) -> CompositeBackend:
         root_dir=str(config.project_root),
         virtual_mode=True,
     )
-    return CompositeBackend(default=workspace, routes=routes)
+    # 压缩外置落点：deepagents SummarizationMiddleware 经 artifacts_root 推 .jarvis/conversation_history/
+    return CompositeBackend(default=workspace, routes=routes, artifacts_root="/.jarvis/")
 
 
 def harness_capabilities(config: Config) -> dict[str, bool]:
@@ -484,15 +494,24 @@ def build_agent(
         from src.file_guard import WorkspaceFileGuardMiddleware
 
         middleware.append(WorkspaceFileGuardMiddleware(Path(profile_spec.workspace), block_read=True))
-    # gui15 条目8: auto_compaction——上下文 token 达到阈值自动压缩（langchain SummarizationMiddleware）
+    # dotdir: 上下文压缩改走 deepagents 自带 summarizer（被裁历史外置 .jarvis/conversation_history/ + ContextOverflowError 自愈）
     _auto_compaction = int(getattr(config, "auto_compaction", 0) or 0)
-    if _auto_compaction > 0:
-        try:
-            from langchain.agents.middleware import SummarizationMiddleware
+    try:
+        from deepagents.middleware.summarization import (
+            SummarizationMiddleware,
+            create_summarization_middleware,
+        )
 
-            middleware.insert(2, SummarizationMiddleware(model, trigger=("tokens", _auto_compaction)))
-        except Exception as exc:  # noqa: BLE001 环境不可用时跳过压缩，不影响启动
-            logging.warning("auto_compaction 已配置但 SummarizationMiddleware 不可用，跳过: %s", exc)
+        if _auto_compaction > 0:
+            middleware.insert(
+                2,
+                SummarizationMiddleware(model, backend=backend, trigger=("tokens", _auto_compaction)),
+            )
+        else:
+            # 未配置 = deepagents 默认（profile 有 max_input_tokens 时按比例，否则固定值兜底）
+            middleware.insert(2, create_summarization_middleware(model, backend))
+    except Exception as exc:  # noqa: BLE001 环境不可用时跳过压缩，不影响启动
+        logging.warning("上下文压缩中间件不可用，跳过: %s", exc)
     middleware.append(StepBudgetMiddleware(config.execution_max_steps))
     # 停滞防復（近似成功循环：3 次软引导 / 6 次硬熔断），放在 DoomLoop 之外（DoomLoop 仍最内层）；实例有状态，不共享。
     middleware.append(StagnationGuardMiddleware())

@@ -19,11 +19,11 @@ TEST_ROOT = REPO_ROOT / ".scratch" / "gui-test-tmp"
 
 
 def new_home() -> Path:
-    """全新项目 home（jarvis.json + .env + checkpoints/ + memory/）。"""
+    """全新项目 home（jarvis.json + .env + .jarvis/checkpoints/ + .jarvis/memory/）。"""
     home = TEST_ROOT / f"home-{uuid.uuid4().hex[:10]}"
     home.mkdir(parents=True)
-    (home / "checkpoints").mkdir()
-    (home / "memory").mkdir()
+    (home / ".jarvis" / "checkpoints").mkdir(parents=True)
+    (home / ".jarvis" / "memory").mkdir(parents=True)
     (home / "jarvis.json").write_text(
         json.dumps({
             "permissions": {"execute": {"*": "ask"}, "write_file": {"*": "ask"}},

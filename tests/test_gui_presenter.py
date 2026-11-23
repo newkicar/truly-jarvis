@@ -32,7 +32,7 @@ def _fake_runtime():
         model_image_input="auto",
         mcps={},
         vault_path=None,
-        memory_dir=home / "memory",
+        memory_dir=home / ".jarvis" / "memory",
         schedules_dir=home / "schedules",
         # 工单 12：doctor 报告读取的 LLM/rag/checkpoint 字段（fake 兜底值）
         api_key="sk-fake",
@@ -40,7 +40,7 @@ def _fake_runtime():
         model_id="fake-model",
         rag_ollama_base_url="http://localhost:11434",
         rag_embed_model="bge-small-zh-v1.5",
-        checkpoint_db=home / "checkpoints" / "checkpoints.sqlite",
+        checkpoint_db=home / ".jarvis" / "checkpoints" / "checkpoints.sqlite",
     )
     rt = SimpleNamespace(agent=None, config=cfg, permission_state={}, model_label="fake")
     rt.mcp_tool_count = 0

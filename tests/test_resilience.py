@@ -1047,3 +1047,138 @@ def test_no_progress_guard_tool_isolation():
     assert "read_file" in executed
     assert r.status != "error"
     assert "无进展提醒" not in r.content
+
+
+# ---------------------------------------------------------------------------
+# dotdir: 上下文压缩（deepagents 原生 SummarizationMiddleware 外置 + profile 触发）
+# ---------------------------------------------------------------------------
+
+
+def _c4_base():
+    """自建临时目录纪律（本机 pytest tmp_path 基目录 WinError 5 污染）。"""
+    import os
+    import tempfile
+    import uuid
+    from pathlib import Path
+
+    base = Path(tempfile.gettempdir()) / ("jarvis-mw-" + uuid.uuid4().hex[:12])
+    base.mkdir(parents=True)
+    (base / "jh").mkdir()
+    old = os.environ.get("JARVIS_HOME")
+    os.environ["JARVIS_HOME"] = str(base / "jh")
+    return base, old
+
+
+def _c4_restore(base, old_home):
+    import os
+    import shutil
+
+    if old_home is None:
+        os.environ.pop("JARVIS_HOME", None)
+    else:
+        os.environ["JARVIS_HOME"] = old_home
+    shutil.rmtree(base, ignore_errors=True)
+
+
+def _c4_find_summ(middleware):
+    from deepagents.middleware.summarization import SummarizationMiddleware
+
+    for mw in middleware or []:
+        if isinstance(mw, SummarizationMiddleware):
+            return mw
+    return None
+
+
+def test_make_model_context_limit_profile():
+    base, old_home = _c4_base()
+    try:
+        from dataclasses import replace
+
+        from src import agent
+        from tests.conftest import make_fake_config
+
+        cfg = make_fake_config(base)
+        m = agent._make_model(replace(cfg, context_limit=131072))
+        assert getattr(m, "profile", None) == {"max_input_tokens": 131072}
+
+        m0 = agent._make_model(replace(cfg, context_limit=0))
+        prof0 = getattr(m0, "profile", None)
+        assert not prof0 or "max_input_tokens" not in prof0
+    finally:
+        _c4_restore(base, old_home)
+
+
+def test_build_agent_summarization_externalizes_to_dotdir(monkeypatch):
+    base, old_home = _c4_base()
+    try:
+        import src.agent as agent_mod
+        from src.agent import build_agent, create_deep_agent
+        from tests.conftest import make_fake_config
+        from tests.test_agent import ToolCapableFake
+
+        captured = {}
+
+        def spy(**kwargs):
+            captured.update(kwargs)
+            return create_deep_agent(**kwargs)
+
+        monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+        build_agent(make_fake_config(base), model=ToolCapableFake(reply="ok"))
+        sw = _c4_find_summ(captured.get("middleware", []))
+        assert sw is not None
+        assert sw._history_path_prefix == "/.jarvis/conversation_history"
+        assert sw._media_prefix == "/.jarvis/conversation_history/media"
+    finally:
+        _c4_restore(base, old_home)
+
+
+def test_build_agent_auto_compaction_trigger_tokens(monkeypatch):
+    base, old_home = _c4_base()
+    try:
+        from dataclasses import replace
+
+        import src.agent as agent_mod
+        from src.agent import build_agent, create_deep_agent
+        from tests.conftest import make_fake_config
+        from tests.test_agent import ToolCapableFake
+
+        captured = {}
+
+        def spy(**kwargs):
+            captured.update(kwargs)
+            return create_deep_agent(**kwargs)
+
+        monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+        cfg = replace(make_fake_config(base), auto_compaction=130000)
+        build_agent(cfg, model=ToolCapableFake(reply="ok"))
+        sw = _c4_find_summ(captured.get("middleware", []))
+        assert sw is not None
+        assert sw._lc_helper.trigger == ("tokens", 130000)
+        assert sw._history_path_prefix == "/.jarvis/conversation_history"
+    finally:
+        _c4_restore(base, old_home)
+
+
+def test_build_agent_default_trigger_fraction_with_context_profile(monkeypatch):
+    base, old_home = _c4_base()
+    try:
+        from dataclasses import replace
+
+        import src.agent as agent_mod
+        from src.agent import build_agent, create_deep_agent
+        from tests.conftest import make_fake_config
+
+        captured = {}
+
+        def spy(**kwargs):
+            captured.update(kwargs)
+            return create_deep_agent(**kwargs)
+
+        monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+        cfg = replace(make_fake_config(base), context_limit=131072)
+        build_agent(cfg)
+        sw = _c4_find_summ(captured.get("middleware", []))
+        assert sw is not None
+        assert sw._lc_helper.trigger == ("fraction", 0.85)
+    finally:
+        _c4_restore(base, old_home)

@@ -138,6 +138,13 @@ def main(argv: list[str] | None = None) -> int:
         from src.gui.runtime import build_runtime
 
         cfg = load_config(project_root=Path(root), env_overrides=overrides)
+        try:
+            from src.project_paths import migrate_project_dotdir
+
+            for _note in migrate_project_dotdir(cfg):
+                print(f"[dotdir] {_note}")
+        except Exception:  # 迁移失败不阻塞启动
+            pass
         rt, _gate = build_runtime(
             cfg, model=model, enable_mcp=enable_mcp,
             enable_scheduled=enable_scheduled, label=label or cfg.model_id,

@@ -165,9 +165,9 @@ def list_sessions_readonly(project_root: Any) -> list[tuple[str, str]]:
                 con.close()
         except sqlite3.Error:
             tids = []
-    from src.gui.session_registry import SessionRegistry
+    from src.gui.session_registry import SessionRegistry, registry_path
 
-    reg = SessionRegistry(root / "sessions.json")
+    reg = SessionRegistry(registry_path(root))
     out: list[tuple[str, str]] = []
     for tid in tids:
         e = reg.get(tid) or {}

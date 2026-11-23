@@ -611,3 +611,35 @@ def test_format_agent_error_id_string_branch():
     assert "/delete-session" in out
     out2 = format_agent_error(Fake400("Unsupported content part type: 'tool_call'"))
     assert "已自动清洗" in out2
+
+
+def test_format_agent_error_context_overflow_branch():
+    """上下文超限 400 → 专属 overflow 文案，优先于通用 400 分支（msg 含 "400" 也不误配）。"""
+    from src.streaming import format_agent_error
+
+    class Fake400(Exception):
+        pass
+
+    out = format_agent_error(
+        Fake400(
+            "Error code: 400 - This model maximum context length is 131072 tokens. "
+            "However, your prompt contains at least 131073 input tokens. "
+            "(parameter=input_tokens, value=131073)"
+        )
+    )
+    assert "上下文超限" in out
+    assert "API 请求失败" not in out
+    assert ".jarvis/conversation_history" in out
+
+
+def test_format_agent_error_generic_400_branch_unchanged():
+    """普通 400（非超限）仍走通用文案，overflow 分支不误吞。"""
+    from src.streaming import format_agent_error
+
+    class Fake400(Exception):
+        pass
+
+    out = format_agent_error(Fake400("API request failed: 400 Bad Request: model not found"))
+    assert "API 请求失败" in out
+    assert "常见原因" in out
+    assert "上下文超限" not in out

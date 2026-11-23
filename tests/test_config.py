@@ -480,3 +480,73 @@ def test_save_auto_compaction_corrupt_global_file_no_crash():
     finally:
         _restore_home(old)
         shutil.rmtree(base, ignore_errors=True)
+# ---------------------------------------------------------------------------
+# dotdir: context_limit 加载路径默认值与钳制
+# （裸 Config() 的 dataclass 默认是 0；load_config 缺键时取 131072，两者语义不同）
+# ---------------------------------------------------------------------------
+
+
+def test_load_config_context_limit_missing_key_defaults_131072():
+    base = _fresh_dir()
+    old = _isolated_home(base)
+    try:
+        env = _write_min_env(base)
+        jf = _write_json(base, {})
+        cfg = load_config(env_file=env, json_file=jf)
+        assert cfg.context_limit == 131072
+    finally:
+        _restore_home(old)
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_load_config_context_limit_explicit_zero():
+    base = _fresh_dir()
+    old = _isolated_home(base)
+    try:
+        env = _write_min_env(base)
+        jf = _write_json(base, {"context_limit": 0})
+        cfg = load_config(env_file=env, json_file=jf)
+        assert cfg.context_limit == 0
+    finally:
+        _restore_home(old)
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_load_config_context_limit_explicit_value_kept():
+    base = _fresh_dir()
+    old = _isolated_home(base)
+    try:
+        env = _write_min_env(base)
+        jf = _write_json(base, {"context_limit": 131072})
+        cfg = load_config(env_file=env, json_file=jf)
+        assert cfg.context_limit == 131072
+    finally:
+        _restore_home(old)
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_load_config_context_limit_non_integer_clamps_zero(caplog):
+    base = _fresh_dir()
+    old = _isolated_home(base)
+    try:
+        env = _write_min_env(base)
+        jf = _write_json(base, {"context_limit": "x"})
+        cfg = load_config(env_file=env, json_file=jf)
+        assert cfg.context_limit == 0
+        assert "context_limit 非整数" in caplog.text
+    finally:
+        _restore_home(old)
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_load_config_context_limit_negative_clamps_zero():
+    base = _fresh_dir()
+    old = _isolated_home(base)
+    try:
+        env = _write_min_env(base)
+        jf = _write_json(base, {"context_limit": -5})
+        cfg = load_config(env_file=env, json_file=jf)
+        assert cfg.context_limit == 0
+    finally:
+        _restore_home(old)
+        shutil.rmtree(base, ignore_errors=True)

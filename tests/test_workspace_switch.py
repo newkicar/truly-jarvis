@@ -40,8 +40,8 @@ def test_list_sessions_readonly_ids_and_titles():
     try:
         proj = d / "p"
         proj.mkdir()
-        _mk_checkpoint_db(proj / "checkpoints" / "checkpoints.sqlite", ["session-abc", "session-def", "sched-x"])
-        (proj / "sessions.json").write_text(
+        _mk_checkpoint_db(proj / ".jarvis" / "checkpoints" / "checkpoints.sqlite", ["session-abc", "session-def", "sched-x"])
+        (proj / ".jarvis" / "sessions.json").write_text(
             json.dumps({"session-abc": {"title": "修登录"}, "session-def": {"title": ""}}), encoding="utf-8"
         )
         got = list_sessions_readonly(proj)

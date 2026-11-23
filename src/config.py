@@ -22,7 +22,6 @@ from src.project_paths import (
     resolve_jarvis_json,
     resolve_user_jarvis_json,
     set_runtime_project_root,
-    user_home,
 )
 
 REQUIRED_ENV_KEYS = ("BASE_URL", "API_KEY", "MODEL_ID", "TAVILY_KEY")
@@ -104,6 +103,8 @@ class Config:
     auto_compaction: int = 0
     # gui 任务完成三通道通知配置（notifications 段：sound/voice/email/email_cfg，缺省 sound=True 其余关闭）
     notifications: dict = field(default_factory=dict)
+    # dotdir: LLM 模型上下文上限（token）；>0 时 deepagents 自带压缩按 fraction 触发（0.85/0.10），0=不启用
+    context_limit: int = 0
 
 
 def parse_env_text(text: str) -> dict[str, str]:
@@ -286,11 +287,12 @@ def load_config(
     # 空字符串 / null / 两键均缺省 → None（本次会话没有 /vault/）。
     kb_raw = data.get("knowledge_base", data.get("obsidian_vault"))
     vault = Path(os.path.expandvars(str(kb_raw))).resolve() if kb_raw else None
-    # javis-global-memory: memory_dir missing or sentinel value (old template default "memory", empty string, both treated as unset) → user global ~/.jarvis/memory (cross-project reuse, JARVIS_HOME can override)
-    # Other explicit values: relative → resolved against project root; absolute → as-is.
+    # dotdir: memory_dir 缺省/哨兵值（旧模板默认 "memory"、空串，均视为未设置）→ 项目级 .jarvis/memory
+    # 全局 ~/.jarvis/memory 仅作 copy-seed 播种源（memory_dir.maybe_migrate_memory 一次性拷贝，全局目录不动）
+    # 其他显式值：相对 → 以项目根解析；绝对 → 原样（显式值语义不变）
     _mem_raw = data.get("memory_dir", "memory")
     if _mem_raw in ("memory", "", None):
-        memory = (user_home() / "memory").resolve()
+        memory = (root / ".jarvis" / "memory").resolve()
     else:
         _mem_p = Path(os.path.expandvars(str(_mem_raw)))
         memory = _mem_p.resolve() if _mem_p.is_absolute() else (root / _mem_p).resolve()
@@ -342,6 +344,14 @@ def load_config(
     if not isinstance(notifications_cfg, dict):
         notifications_cfg = {}
 
+    try:
+        context_limit = int(data.get("context_limit", 131072) or 0)
+    except (TypeError, ValueError):
+        logging.warning("context_limit 非整数，忽略: %r", data.get("context_limit"))
+        context_limit = 0
+    if context_limit < 0:
+        context_limit = 0
+
     cfg = Config(
         project_root=root,
         base_url=base_url,
@@ -365,6 +375,7 @@ def load_config(
         dream=dream_cfg,
         auto_compaction=auto_compaction,
         notifications=notifications_cfg,
+        context_limit=context_limit,
     )
     ensure_user_home()
     set_runtime_project_root(cfg.project_root)

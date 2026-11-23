@@ -148,22 +148,19 @@ def build_doctor_report(
             )
         )
 
-    # ---- 全局记忆路径（工单 11 对齐：~/.jarvis，JARVIS_HOME 可改）
+    # ---- 记忆路径（dotdir：项目级 .jarvis/memory 缺省；~/.jarvis 全局目录仍展示）
     home = user_home()
     rows.append(
         DoctorRow("记忆", "全局目录", STATUS_OK, str(home),
                   "记忆/技能/用户全局配置与安装目录分离")
     )
     mem = Path(config.memory_dir)
-    globalized = False
-    try:
-        globalized = (Path(home) in mem.parents) or (mem == Path(home) / "memory")
-    except Exception:
-        globalized = False
+    project_default = Path(config.project_root) / ".jarvis" / "memory"
     rows.append(
         DoctorRow(
             "记忆", "信息记忆目录", STATUS_OK, str(mem),
-            "已全局化（跨项目复用）" if globalized else "项目级 memory/（jarvis.json memory_dir）",
+            "项目级默认（.jarvis/memory）" if mem.resolve() == project_default.resolve()
+            else "显式配置 memory_dir",
         )
     )
 

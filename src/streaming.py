@@ -28,6 +28,12 @@ def format_agent_error(exc: BaseException) -> str:
             f"API 请求失败（历史消息含网关不接受的内容块，已自动清洗）：{msg}\n"
             "下一轮会自动重试自愈；若反复出现：开新会话（Ctrl+N）或 /delete-session 清掉当前会话。"
         )
+    if "maximum context length" in msg or "input_tokens" in msg:
+        return (
+            f"上下文超限：{msg}\n"
+            "历史已自动压缩，被裁部分外置到 .jarvis/conversation_history/；"
+            "若反复出现：调低 auto_compaction 阈值，或开新会话。"
+        )
     if "BadRequest" in name or "400" in msg:
         return (
             f"API 请求失败：{msg}\n"

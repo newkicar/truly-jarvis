@@ -5,6 +5,7 @@ from src.project_paths import (
     discover_project_root,
     get_project_root,
     install_root,
+    migrate_project_dotdir,
     resolve_env_file,
     resolve_jarvis_json,
     set_runtime_project_root,
@@ -177,3 +178,174 @@ def test_install_root_not_frozen_uses_source_tree(monkeypatch):
     assert root == Path(__file__).resolve().parent.parent
     # skills/ 在 .gitignore（运行时 seed 产物，全新检出/CI 不一定存在），只断言 src/
     assert (root / 'src').is_dir()
+
+
+# ---------------------------------------------------------------- .jarvis/ dotdir 迁移（自建目录，不用 tmp_path）
+
+
+def _fresh_root() -> Path:
+    import os
+    import tempfile
+    import uuid
+
+    root = Path(os.path.join(tempfile.gettempdir(), f"jx_dotdir_{uuid.uuid4().hex[:8]}"))
+    os.makedirs(root)
+    return root
+
+
+def _stub_config(root: Path):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(project_root=root)
+
+
+def test_checkpoints_dir_is_dotdir_constant():
+    from src.project_paths import CHECKPOINTS_DIR
+
+    assert CHECKPOINTS_DIR == ".jarvis/checkpoints"
+
+
+def test_migrate_fresh_project_no_notes():
+    import shutil
+
+    root = _fresh_root()
+    try:
+        notes = migrate_project_dotdir(_stub_config(root))
+        assert notes == []
+        assert not (root / ".jarvis").exists()
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_migrate_moves_legacy_checkpoints_dir():
+    import shutil
+
+    root = _fresh_root()
+    try:
+        cp = root / "checkpoints"
+        cp.mkdir()
+        (cp / "checkpoints.sqlite").write_bytes(b"db-1")
+        (cp / "writes.sqlite").write_bytes(b"w")
+        notes = migrate_project_dotdir(_stub_config(root))
+        assert not (root / "checkpoints").exists()
+        assert (root / ".jarvis" / "checkpoints" / "checkpoints.sqlite").read_bytes() == b"db-1"
+        assert (root / ".jarvis" / "checkpoints" / "writes.sqlite").read_bytes() == b"w"
+        assert any("checkpoints" in n for n in notes)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_migrate_is_idempotent_second_run():
+    import shutil
+
+    root = _fresh_root()
+    try:
+        cp = root / "checkpoints"
+        cp.mkdir()
+        (cp / "checkpoints.sqlite").write_bytes(b"db-1")
+        (root / "sessions.json").write_text('{"a": 1}', encoding="utf-8")
+        migrate_project_dotdir(_stub_config(root))
+        notes2 = migrate_project_dotdir(_stub_config(root))
+        assert notes2 == []
+        assert (root / ".jarvis" / "checkpoints" / "checkpoints.sqlite").is_file()
+        assert (root / ".jarvis" / "sessions.json").read_text(encoding="utf-8") == '{"a": 1}'
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_migrate_checkpoints_collision_kept_with_warn():
+    import shutil
+
+    root = _fresh_root()
+    try:
+        old_cp, new_cp = root / "checkpoints", root / ".jarvis" / "checkpoints"
+        old_cp.mkdir(parents=True)
+        new_cp.mkdir(parents=True)
+        (old_cp / "checkpoints.sqlite").write_bytes(b"old")
+        (new_cp / "checkpoints.sqlite").write_bytes(b"new")
+        notes = migrate_project_dotdir(_stub_config(root))
+        assert (old_cp / "checkpoints.sqlite").read_bytes() == b"old", "异构目标绝不覆盖"
+        assert (new_cp / "checkpoints.sqlite").read_bytes() == b"new"
+        assert any("checkpoints.sqlite" in n for n in notes), "冲突需留痕 note"
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_migrate_checkpoints_same_bytes_source_kept():
+    import shutil
+
+    root = _fresh_root()
+    try:
+        old_cp, new_cp = root / "checkpoints", root / ".jarvis" / "checkpoints"
+        old_cp.mkdir(parents=True)
+        new_cp.mkdir(parents=True)
+        (old_cp / "checkpoints.sqlite").write_bytes(b"same")
+        (new_cp / "checkpoints.sqlite").write_bytes(b"same")
+        migrate_project_dotdir(_stub_config(root))
+        # 字节相同 → 跳过、保留源（下版本清理）
+        assert (old_cp / "checkpoints.sqlite").is_file()
+        assert (new_cp / "checkpoints.sqlite").read_bytes() == b"same"
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_migrate_moves_legacy_sessions_json():
+    import shutil
+
+    root = _fresh_root()
+    try:
+        (root / "sessions.json").write_text('{"a": 1}', encoding="utf-8")
+        migrate_project_dotdir(_stub_config(root))
+        assert not (root / "sessions.json").exists()
+        assert (root / ".jarvis" / "sessions.json").read_text(encoding="utf-8") == '{"a": 1}'
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_migrate_sessions_json_identical_removes_source():
+    import shutil
+
+    root = _fresh_root()
+    try:
+        root.joinpath(".jarvis").mkdir()
+        (root / "sessions.json").write_text('{"a": 1}', encoding="utf-8")
+        (root / ".jarvis" / "sessions.json").write_text('{"a": 1}', encoding="utf-8")
+        migrate_project_dotdir(_stub_config(root))
+        assert not (root / "sessions.json").exists(), "相同字节 → 删源"
+        assert (root / ".jarvis" / "sessions.json").read_text(encoding="utf-8") == '{"a": 1}'
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_migrate_sessions_json_union_merge():
+    import shutil
+
+    root = _fresh_root()
+    try:
+        root.joinpath(".jarvis").mkdir()
+        (root / "sessions.json").write_text('{"a": 1, "b": 2}', encoding="utf-8")
+        (root / ".jarvis" / "sessions.json").write_text('{"b": 99, "c": 3}', encoding="utf-8")
+        migrate_project_dotdir(_stub_config(root))
+        assert not (root / "sessions.json").exists(), "可并 → 删源"
+        import json
+
+        merged = json.loads((root / ".jarvis" / "sessions.json").read_text(encoding="utf-8"))
+        assert merged == {"a": 1, "b": 99, "c": 3}, "冲突键目标胜、源独有键追加"
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_migrate_sessions_json_incompatible_kept_with_warn():
+    import shutil
+
+    root = _fresh_root()
+    try:
+        root.joinpath(".jarvis").mkdir()
+        (root / "sessions.json").write_text('{"a": 1}', encoding="utf-8")
+        (root / ".jarvis" / "sessions.json").write_text('[1, 2]', encoding="utf-8")
+        notes = migrate_project_dotdir(_stub_config(root))
+        assert (root / "sessions.json").is_file(), "不可并 → 留源"
+        assert (root / ".jarvis" / "sessions.json").read_text(encoding="utf-8") == "[1, 2]"
+        assert any("sessions.json" in n for n in notes), "冲突需留痕 note"
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
