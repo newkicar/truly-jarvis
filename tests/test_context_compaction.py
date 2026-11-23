@@ -19,7 +19,9 @@ class _FakeModel:
         self.calls = []
         self.acalls = []
 
-    def with_retry(self):
+    def with_retry(self, *args, **kwargs):
+        """langchain 1.3.x calls with_retry() with no args; 1.5.x passes
+        retry_if_exception_type=...; accept both, return self to keep invoke logging."""
         return self
 
     def invoke(self, prompt, config=None, **kwargs):
