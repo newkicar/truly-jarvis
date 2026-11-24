@@ -676,7 +676,13 @@ class MainWindow(QMainWindow):
 
     def _on_switch_session(self, new_tid: str, note: str) -> None:
         self._switch_to(new_tid)
-        self.status_label.setText(note or f"已切换到 {new_tid}")
+        text = note or f"已切换到 {new_tid}"
+        # #goal 06: 有 goal 记录的会话切换 → 状态行附带目标行
+        from src import goals as _goals
+        if _goals.goal_status(thread_id=new_tid) is not None:
+            from src import commands as _commands
+            text += "\n" + _commands.goal_text(new_tid)
+        self.status_label.setText(text)
 
     def _show_text(self, title: str, text: str) -> None:
         make_text_dialog(title, text, self)
@@ -1612,6 +1618,11 @@ class MainWindow(QMainWindow):
         self.refresh_sessions()
         self._refresh_queue_strip()
         self._refresh_running_badge()
+        # #goal 06: 有 goal 记录的会话回合结束 → 槽状态行显示目标进度
+        from src import goals as _goals
+        if _goals.goal_status(thread_id=tid) is not None:
+            from src import commands as _commands
+            self._slot_status(self._slot_of_tid(tid)).setText(_commands.goal_text(tid))
 
     def _on_notify(self, text: str) -> None:
         # 状态栏保留换行：StatusView 自动换行 + 限高内滚 + 可复制，不再压平多行长文本

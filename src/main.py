@@ -130,9 +130,52 @@ def _cli_status_line(text: str) -> None:
     print(f"\n  … {text}")
 
 
+def _cli_goal_step(thread_id: str, user_input, turn, permission_state: dict | None) -> str | None:
+    """#goal 06: CLI 目标自动续跑判定（纯函数）。返回续跑 prompt 或 None。
+
+    - continuation/budget → goal_note_turn 记账 + 打印目标行 + 返回下轮 prompt
+    - 消耗预算交接 prompt（[目标预算耗尽 n/m]）的回合跑完 → 标 budget_limited 终态
+      （独立于该轮续跑判定——预算轮判定必为 none/turns≥max，放在 kind 门后不可达）
+    - 无 goal / 终态 / 零工具 / cancel / Plan 模式等 → None
+    """
+    from src import commands, goals
+    from src.plan_mode import effective_mode
+
+    goal = goals.goal_status(thread_id=thread_id)
+    if goal is None:
+        return None
+    plan_mode = (
+        effective_mode(permission_state, thread_id) == "plan"
+        if permission_state is not None
+        else False
+    )
+    decision = goals.continuation_decision(
+        goal,
+        turn,
+        {"thread_id": thread_id, "plan_mode": plan_mode, "pending_interrupt": False},
+    )
+    if decision.kind in ("continuation", "budget"):
+        try:
+            goals.goal_note_turn(thread_id=thread_id)
+        except goals.GoalError:
+            pass
+        print(commands.goal_text(thread_id))
+    if isinstance(user_input, str) and user_input.startswith("[目标预算耗尽 "):
+        try:
+            goals.goal_mark_budget_exhausted(thread_id=thread_id)
+        except goals.GoalError:
+            pass
+    if decision.kind not in ("continuation", "budget"):
+        return None
+    return decision.prompt
+
+
 def _stream_turn(agent, thread_id: str, user_input: str, permission_state: dict | None = None, config=None):
-    """用 event streaming(v3) 跑一轮对话，实时打印子代理/工具/最终回答。"""
-    print()
+    """用 event streaming(v3) 跑一轮对话，实时打印子代理/工具/最终回答。
+
+    #goal 06: 目标自动续跑（while；_stream_replay 不续）——run_agent_turn 接
+    TurnOutcome 后走 _cli_goal_step 判定，续跑 prompt 替换 user_input 再跑。
+    """
     vault_path = getattr(config, "vault_path", None) if config else None
     workspace_root = config.project_root if config else None
     max_steps = int(getattr(config, "execution_max_steps", 200)) if config else 200
@@ -140,38 +183,45 @@ def _stream_turn(agent, thread_id: str, user_input: str, permission_state: dict 
     def on_always_approve(name: str) -> None:
         print(f"    已永久放行 {name}（已写入 jarvis.json，以后自动放行）")
 
-    try:
-        streaming.run_agent_turn(
-            agent,
-            thread_id,
-            user_input,
-            handle_interrupts=lambda interrupts: streaming.collect_interrupt_decisions(
-                interrupts,
-                lambda inv: streaming.cli_prompt_action(
-                    inv,
+    while True:
+        print()
+        try:
+            turn = streaming.run_agent_turn(
+                agent,
+                thread_id,
+                user_input,
+                handle_interrupts=lambda interrupts: streaming.collect_interrupt_decisions(
+                    interrupts,
+                    lambda inv: streaming.cli_prompt_action(
+                        inv,
+                        permission_state=permission_state,
+                        on_always_approve=on_always_approve,
+                        vault_path=vault_path,
+                        workspace_root=workspace_root,
+                    ),
                     permission_state=permission_state,
                     on_always_approve=on_always_approve,
-                    vault_path=vault_path,
-                    workspace_root=workspace_root,
                 ),
+                callbacks={
+                    "on_subagent": lambda name, status, depth=0: print(f"{'  ' * depth}  [{name}] {status}"),
+                    "on_tool_call": lambda name, args, err, output=None, depth=0: _cli_tool_line(
+                        name, args, err, output, depth
+                    ),
+                    "on_message_delta": lambda delta: print(delta, end="", flush=True),
+                    "on_status": _cli_status_line,
+                },
+                on_fallback_message=lambda text: print(text),
                 permission_state=permission_state,
-                on_always_approve=on_always_approve,
-            ),
-            callbacks={
-                "on_subagent": lambda name, status, depth=0: print(f"{'  ' * depth}  [{name}] {status}"),
-                "on_tool_call": lambda name, args, err, output=None, depth=0: _cli_tool_line(
-                    name, args, err, output, depth
-                ),
-                "on_message_delta": lambda delta: print(delta, end="", flush=True),
-                "on_status": _cli_status_line,
-            },
-            on_fallback_message=lambda text: print(text),
-            permission_state=permission_state,
-            project_root=workspace_root,
-            max_steps=max_steps,
-        )
-    except Exception as exc:
-        print(f"\n错误: {streaming.format_agent_error(exc)}\n")
+                project_root=workspace_root,
+                max_steps=max_steps,
+            )
+        except Exception as exc:
+            print(f"\n错误: {streaming.format_agent_error(exc)}\n")
+            break
+        nxt = _cli_goal_step(thread_id, user_input, turn, permission_state)
+        if nxt is None:
+            break
+        user_input = nxt
     print("\n")
 
 

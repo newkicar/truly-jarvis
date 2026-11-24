@@ -15,7 +15,7 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass, field
-from threading import Thread
+from threading import Lock, Thread
 from typing import Any, Callable
 
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -25,6 +25,7 @@ from src.agent import build_agent
 from src.config import Config
 from src.jump_in_queue import JumpInRegistry
 from src import permissions
+from src.plan_mode import effective_mode
 
 from src.gui.events import UiBridge
 from src.gui.session_registry import SessionRegistry, generate_session_name, registry_path
@@ -234,6 +235,37 @@ class GuiPresenter:
         self.session_registry = SessionRegistry(
             registry_path(runtime.config.project_root)
         )
+        # 会话级串行锁（#undo 闪退修复）：同 tid 的图变更 worker（turn/replay/fork/command）
+        # 并发写共享 SqliteSaver → CPython 退出期原生析构 SIGSEGV；按 tid 互斥串行。
+        self._tid_locks: dict[str, "Lock"] = {}
+        self._locks_guard = Lock()
+
+    def _get_lock(self, tid: str) -> "Lock":
+        with self._locks_guard:
+            lk = self._tid_locks.get(tid)
+            if lk is None:
+                lk = Lock()
+                self._tid_locks[tid] = lk
+            return lk
+
+    @staticmethod
+    def _pre_compact_probe(rt: Any, tid: str) -> tuple:
+        """回合前 get_state 快照（压缩基线 pre 记录 + 消息总数）；失败 → ([], 0)。"""
+        from src.gui import replay
+
+        try:
+            return replay.compact_probe(rt.agent, tid)
+        except Exception:  # noqa: BLE001 — 快照失败不影响回合本身
+            return [], 0
+
+    def _clear_compact_baseline(self, tid: str) -> None:
+        """删该会话压缩基线（会话删除 / undo 到空白时调用）。"""
+        from src.gui import compact_baseline
+
+        try:
+            compact_baseline.clear_baseline(self.runtime.config.project_root, tid)
+        except Exception:  # noqa: BLE001
+            pass
 
     # ---- 会话命名（工单 05）
     def rename_session(self, tid: str, title: str) -> None:
@@ -263,6 +295,18 @@ class GuiPresenter:
         if not title:
             title = commands.session_label(self.runtime.agent, tid)
         self.session_registry.rename(new_tid, f"{title}-副本", ai_generated=False)
+        # 压缩基线/标记跟随副本（副本继承压缩后的检查点，不复制基线则副本丢屏幕历史）
+        try:
+            from src.gui import compact_baseline
+
+            root = self.runtime.config.project_root
+            base = compact_baseline.load_baseline(root, tid)
+            if base:
+                compact_baseline.save_baseline(root, new_tid, base)
+            if self.session_registry.is_compacted(tid):
+                self.session_registry.set_compacted(new_tid, True)
+        except Exception:  # noqa: BLE001
+            pass
         self.bridge.refresh_sessions.emit()
         return f"已克隆为「{title}-副本」", new_tid
 
@@ -272,8 +316,10 @@ class GuiPresenter:
             self.runtime.checkpointer.delete_thread(tid)
         except Exception as exc:  # noqa: BLE001 — 检查点删失败也要清注册表，给可行动文案
             self.session_registry.delete(tid)
+            self._clear_compact_baseline(tid)
             return f"会话记录已清，但检查点删除失败：{exc}"
         self.session_registry.delete(tid)
+        self._clear_compact_baseline(tid)
         self.bridge.refresh_sessions.emit()
         return f"已删除会话 {tid}"
 
@@ -467,49 +513,99 @@ class GuiPresenter:
         b = self.bridge
         t0 = time.monotonic()
         ok = False
+        turn = None
+        pre_records: list = []
+        pre_count = 0
         b.turn_started.emit(tid)
-        try:
-            turn = streaming.run_agent_turn(
-                rt.agent,
-                tid,
-                user_input if user_input is not None else user_text,
-                handle_interrupts=lambda its: streaming.collect_interrupt_decisions(
-                    its,
-                    lambda inv: (self._ask_action or self._default_ask)(inv, tid),
-                    permission_state=rt.permission_state,
-                    on_always_approve=lambda n: b.notify.emit(
-                        f"已永久放行 {n}（写入 jarvis.json，以后自动放行）"
+        with self._get_lock(tid):
+            # 压缩基线 pre 快照（与回合同锁，防并发 get_state 交错）
+            pre_records, pre_count = self._pre_compact_probe(rt, tid)
+            try:
+                turn = streaming.run_agent_turn(
+                    rt.agent,
+                    tid,
+                    user_input if user_input is not None else user_text,
+                    handle_interrupts=lambda its: streaming.collect_interrupt_decisions(
+                        its,
+                        lambda inv: (self._ask_action or self._default_ask)(inv, tid),
+                        permission_state=rt.permission_state,
+                        on_always_approve=lambda n: b.notify.emit(
+                            f"已永久放行 {n}（写入 jarvis.json，以后自动放行）"
+                        ),
                     ),
-                ),
-                callbacks=self._turn_callbacks(b, tid),
-                on_fallback_message=lambda t: b.fallback.emit(tid, t),
-                is_cancelled=lambda: self.gate.is_cancelled(tid),
-                permission_state=rt.permission_state,
-                project_root=rt.config.project_root,
-                max_steps=rt.config.execution_max_steps,
-                model_image_input=rt.config.model_image_input,
-                user_input_fallback=user_input_fallback,
-            )
-            ok = turn.ok
-            self.bridge.turn_done.emit(tid, bool(ok))
-            self.bridge.notify.emit(f"回合{'完成' if ok else '放弃/取消'}（{time.monotonic() - t0:.1f}s）")
-        except Exception as exc:  # noqa: BLE001 — worker 边界兜底，错误回主线程展示
-            b.turn_done.emit(tid, False)
-            b.notify.emit(streaming.format_agent_error(exc))
-        finally:
-            self._turns.pop(tid, None)
-            b.refresh_sessions.emit()
-            # 首轮成功 → 后台 AI 命名（工单 05）
-            self._maybe_name(tid, ok)
-            # 任务完成通知（必须在 gate.finish 前读取消位；取消不发）
-            self._emit_task_done(rt, tid, ok, cancelled=self.gate.is_cancelled(tid))
-            # FIFO 重投：出队下一条排队消息，重新入门起新回合（工单 03）
-            nxt_full = self.gate.finish_full(tid)
-            if nxt_full is not None and not getattr(rt, "closed", False):
-                # runtime 已关（项目从列表移除 / app 收尾）：不重投新回合，避免再读已关 DB；
-                # 释放路径已清过队列，这里是并发竞态兜底（残余项直接丢弃）
-                b.queued_flush.emit(tid, nxt_full[0], nxt_full[1])
-                self.start_turn(tid, nxt_full[0], images=nxt_full[1])
+                    callbacks=self._turn_callbacks(b, tid),
+                    on_fallback_message=lambda t: b.fallback.emit(tid, t),
+                    is_cancelled=lambda: self.gate.is_cancelled(tid),
+                    permission_state=rt.permission_state,
+                    project_root=rt.config.project_root,
+                    max_steps=rt.config.execution_max_steps,
+                    model_image_input=rt.config.model_image_input,
+                    user_input_fallback=user_input_fallback,
+                )
+                ok = turn.ok
+                self.bridge.turn_done.emit(tid, bool(ok))
+                self.bridge.notify.emit(f"回合{'完成' if ok else '放弃/取消'}（{time.monotonic() - t0:.1f}s）")
+            except Exception as exc:  # noqa: BLE001 — worker 边界兜底，错误回主线程展示
+                b.turn_done.emit(tid, False)
+                b.notify.emit(streaming.format_agent_error(exc))
+            finally:
+                self._turns.pop(tid, None)
+                b.refresh_sessions.emit()
+                # #goal 06: 自动续跑接线（与 TUI 票 05 同款）——turn 正常结束（turn 非
+                # None）时走 goals 纯函数判定：continuation/budget → goal_note_turn 记账
+                # + prompt 入 TurnGate FIFO（此刻 tid 仍在 _running → try_start 返回
+                # queued；紧随 finish_full 弹头重投，零新机制）；收尾交接轮跑完才后置
+                # budget_limited 终态（过早标记会让收尾轮 complete_goal 抛 TerminalGoalError）。
+                if turn is not None:
+                    from src import goals as _goals
+                    goal = _goals.goal_status(thread_id=tid)
+                    ctx = {
+                        "thread_id": tid,
+                        "plan_mode": effective_mode(rt.permission_state, tid) == "plan",
+                        "pending_interrupt": False,
+                    }
+                    decision = _goals.continuation_decision(goal, turn, ctx)
+                    if decision.kind in ("continuation", "budget") and not getattr(
+                        rt, "closed", False
+                    ):
+                        try:
+                            _goals.goal_note_turn(thread_id=tid)
+                        except _goals.GoalError:
+                            pass
+                        self.gate.try_start(tid, decision.prompt)
+                    if isinstance(user_text, str) and user_text.startswith("[目标预算耗尽 "):
+                        try:
+                            _goals.goal_mark_budget_exhausted(thread_id=tid)
+                        except _goals.GoalError:
+                            pass
+                # 首轮成功 → 后台 AI 命名（工单 05）
+                self._maybe_name(tid, ok)
+                # 非破坏性压缩基线（#compact 显示）：回合后消息数收缩 = 本轮压缩过，
+                # 把 pre 记录追加进该会话基线 + 会话标记 compacted（标签行 🗜）。
+                if pre_count and not getattr(rt, "closed", False):
+                    try:
+                        from src.gui import compact_baseline
+
+                        root = rt.config.project_root
+                        st = rt.agent.get_state(commands.thread_config(tid))
+                        post_msgs = ((st.values or {}).get("messages")) or [] if st else []
+                        if len(post_msgs) < pre_count:
+                            compact_baseline.save_baseline(
+                                root, tid,
+                                compact_baseline.load_baseline(root, tid) + pre_records,
+                            )
+                            self.session_registry.set_compacted(tid, True)
+                    except Exception:  # noqa: BLE001 — 基线是增强，不炸收尾
+                        pass
+                # 任务完成通知（必须在 gate.finish 前读取消位；取消不发）
+                self._emit_task_done(rt, tid, ok, cancelled=self.gate.is_cancelled(tid))
+                # FIFO 重投：出队下一条排队消息，重新入门起新回合（工单 03）
+                nxt_full = self.gate.finish_full(tid)
+                if nxt_full is not None and not getattr(rt, "closed", False):
+                    # runtime 已关（项目从列表移除 / app 收尾）：不重投新回合，避免再读已关 DB；
+                    # 释放路径已清过队列，这里是并发竞态兜底（残余项直接丢弃）
+                    b.queued_flush.emit(tid, nxt_full[0], nxt_full[1])
+                    self.start_turn(tid, nxt_full[0], images=nxt_full[1])
 
     # ---- 回放（时间旅行，ticket 09）
     def start_replay(self, tid: str, checkpoint_id: str) -> None:
@@ -525,27 +621,28 @@ class GuiPresenter:
         rt = self.runtime
         b = self.bridge
         b.status.emit(tid, f"从快照 {checkpoint_id[:10]} 重放…")
-        try:
-            streaming.run_agent_turn(
-                rt.agent,
-                tid,
-                None,
-                checkpoint_id=checkpoint_id,
-                handle_interrupts=lambda its: streaming.collect_interrupt_decisions(
-                    its,
-                    lambda inv: (self._ask_action or self._default_ask)(inv, tid),
+        with self._get_lock(tid):
+            try:
+                streaming.run_agent_turn(
+                    rt.agent,
+                    tid,
+                    None,
+                    checkpoint_id=checkpoint_id,
+                    handle_interrupts=lambda its: streaming.collect_interrupt_decisions(
+                        its,
+                        lambda inv: (self._ask_action or self._default_ask)(inv, tid),
+                        permission_state=rt.permission_state,
+                    ),
+                    callbacks=self._turn_callbacks(b, tid),
+                    on_fallback_message=lambda t: b.fallback.emit(tid, t),
                     permission_state=rt.permission_state,
-                ),
-                callbacks=self._turn_callbacks(b, tid),
-                on_fallback_message=lambda t: b.fallback.emit(tid, t),
-                permission_state=rt.permission_state,
-                project_root=rt.config.project_root,
-                max_steps=rt.config.execution_max_steps,
-            )
-        except Exception as exc:  # noqa: BLE001
-            b.notify.emit(streaming.format_agent_error(exc))
-        finally:
-            b.refresh_sessions.emit()
+                    project_root=rt.config.project_root,
+                    max_steps=rt.config.execution_max_steps,
+                )
+            except Exception as exc:  # noqa: BLE001
+                b.notify.emit(streaming.format_agent_error(exc))
+            finally:
+                b.refresh_sessions.emit()
 
     # ---- 分支（工单 09：fork 出新 thread，主线程切换）
     def run_fork(self, tid: str, checkpoint_id: str) -> None:
@@ -558,16 +655,17 @@ class GuiPresenter:
     def _fork_worker(self, tid: str, checkpoint_id: str) -> None:
         rt = self.runtime
         b = self.bridge
-        try:
-            note, new_tid = commands.fork(rt.agent, tid, checkpoint_id)
-            if new_tid:
-                b.switch_session.emit(new_tid, note)
-            else:
-                b.notify.emit(note or "分叉失败")
-        except Exception as exc:  # noqa: BLE001
-            b.notify.emit(f"分叉失败: {exc}")
-        finally:
-            b.refresh_sessions.emit()
+        with self._get_lock(tid):
+            try:
+                note, new_tid = commands.fork(rt.agent, tid, checkpoint_id)
+                if new_tid:
+                    b.switch_session.emit(new_tid, note)
+                else:
+                    b.notify.emit(note or "分叉失败")
+            except Exception as exc:  # noqa: BLE001
+                b.notify.emit(f"分叉失败: {exc}")
+            finally:
+                b.refresh_sessions.emit()
 
     # ---- 命令 worker（undo/compact/snapshot 等消息层操作，ticket 08/09）
     def run_command(self, fn: Callable[[], str], tid: str) -> None:
@@ -576,13 +674,14 @@ class GuiPresenter:
 
     def _command_worker(self, fn: Callable[[], str], tid: str) -> None:
         b = self.bridge
-        try:
-            result = fn()
-            b.notify.emit(result)
-        except Exception as exc:  # noqa: BLE001
-            b.notify.emit(f"命令失败: {exc}")
-        finally:
-            b.refresh_sessions.emit()
+        with self._get_lock(tid):
+            try:
+                result = fn()
+                b.notify.emit(result)
+            except Exception as exc:  # noqa: BLE001
+                b.notify.emit(f"命令失败: {exc}")
+            finally:
+                b.refresh_sessions.emit()
 
     # ---- 会话（ticket 05）
     def new_session_id(self) -> str:
