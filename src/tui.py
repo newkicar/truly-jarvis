@@ -1191,10 +1191,100 @@ class JarvisApp(App):
         overflow-y: auto;
     }
 
-    #message_queue.-active {
+    #side_pane {
+        display: none;
+        height: 1fr;
+        min-height: 0;
+        width: 1fr;
+    }
+    #side_pane.-active {
         display: block;
     }
-    """
+    #side_chat_frame {
+        height: 1fr;
+        margin: 0 0 0 1;
+        border: round $primary;
+        background: $surface;
+        padding: 0 1;
+    }
+    #side_chat_stack {
+        height: 100%;
+    }
+    #side_messages_box {
+        height: 1fr;
+        width: 100%;
+    }
+    #side_messages {
+        height: 100%;
+        width: 100%;
+        background: transparent;
+        border: none;
+        padding: 0;
+        scrollbar-size-vertical: 1;
+        scrollbar-background: $surface;
+        scrollbar-color: $primary 40%;
+    }
+    #side_ai_stream {
+        height: auto;
+        max-height: 50%;
+        display: none;
+        overflow-y: auto;
+        scrollbar-size-vertical: 1;
+        padding: 0 0 1 0;
+        border-top: solid $primary 20%;
+    }
+    #side_ai_stream.-active {
+        display: block;
+    }
+    #side_editor_frame {
+        height: auto;
+        margin: 1 1 1 1;
+        border: round $primary;
+        background: $panel;
+        padding: 0 1;
+        transition: border 160ms;
+    }
+    #side_editor_frame:focus-within {
+        border: round $accent;
+    }
+    #side_prompt {
+        width: auto;
+        min-width: 2;
+        color: $accent;
+        content-align: center middle;
+    }
+    #side_input {
+        width: 1fr;
+        height: auto; min-height: 1; max-height: 5; overflow-y: auto;
+        border: none;
+        background: transparent;
+        color: $text;
+        padding: 0;
+    }
+    #side_input:focus {
+        border: none;
+    }
+    #side_run_badge {
+        display: none;
+        width: auto;
+        height: auto;
+        border: round 20% $warning 80%;
+        color: $warning;
+        text-style: bold;
+        padding: 0 1;
+    }
+    #side_run_badge.-active {
+        display: block;
+    }
+    #side_status_spinner {
+        height: 1;
+        display: none;
+        margin: 0 0 0 2;
+        color: $warning;
+    }
+    #side_status_spinner.-active {
+        display: block;
+    }    """
 
     def __init__(
         self,
@@ -1237,6 +1327,7 @@ class JarvisApp(App):
         self._quit_primed_at = 0.0
         self._ime_drift_notified = False  # tui-ux13 L1: IME 漂移一次性 notify 标记
         self._turn_gate_threads: set[str] = set()  # tui-ux7 #02: 回合门（执行/收尾中的 thread 集合）
+        self._focus_pane = "main"  # tui-ux22 02/03: 焦点 pane 字段（03 切换/视觉标记逻辑）
         # tui-ux14 #04: 插队消息缓存区（单一事实源 JumpInRegistry，与主代理 before_model 注入共享）
         self._queue = jump_in_registry or JumpInRegistry()
         self._queue.on_change(self._schedule_queue_refresh)
@@ -1416,6 +1507,30 @@ class JarvisApp(App):
                     yield Static("", id="yolo_badge", markup=False)  # tui-ux14: 内容纯文本，禁 markup 解析（防回归）
                     yield Static("", id="side_badge", markup=False)  # side-chat 工单02: 输入框 SIDE 徽章（同 yolo 的 markup 防回归）
                 yield Static("", id="status_spinner")
+
+            with Vertical(id="side_pane"):
+                # tui-ux22 02: 右 pane 骨架（默认 display:none，side_active 条件渲染；内容路由 04）
+                with Container(id="side_chat_frame"):
+                    with Vertical(id="side_chat_stack"):
+                        with Container(id="side_messages_box"):
+                            yield CopyableRichLog(
+                                id="side_messages",
+                                min_width=1,
+                                wrap=True,
+                                markup=True,
+                                auto_scroll=True,
+                                copy_on_select=self._copy_on_select(),
+                            )
+                        yield Static("", id="side_ai_stream")
+                with Horizontal(id="side_editor_frame"):
+                    yield Static("\u203a", id="side_prompt")
+                    yield JarvisTextArea(
+                        placeholder="输入消息，/ 开头为命令，@ 引用路径",
+                        id="side_input",
+                        show_line_numbers=False,
+                    )
+                    yield Static("", id="side_run_badge", markup=False)  # tui-ux22 04: 运行/队列 badge 内容
+                yield Static("", id="side_status_spinner")
         yield PathCompletionOverlay(id="path_completion")
         yield Footer()
 
@@ -1669,6 +1784,7 @@ class JarvisApp(App):
         for line in self._startup_lines:
             self._write_system(log, line)
         self._refresh_session_sidebar()
+        self._refresh_split_layout()  # tui-ux22 02: 启动恢复 state 时 side 可能已激活，同步一次 -active
         self._maybe_warn_ime_drift()
         self.query_one("#input", JarvisTextArea).focus()
         if self._startup_prompt:
@@ -1955,6 +2071,21 @@ class JarvisApp(App):
         if keys:
             self._resolved_hitl[thread_id].update(keys)
 
+    def _side_pane_active(self) -> bool:
+        """tui-ux22 02: 右 pane 条件渲染判据（resolve_panes 单一事实源）。"""
+        return resolve_panes(self.permission_state, self.thread_id).side_tid is not None
+
+    def _refresh_split_layout(self) -> None:
+        """tui-ux22 02: #side_pane 的 -active 与 side_active 同步（50/50 分屏）。"""
+        try:
+            pane = self.query_one("#side_pane", Vertical)
+        except NoMatches:
+            return
+        if self._side_pane_active():
+            pane.add_class("-active")
+        else:
+            pane.remove_class("-active")
+
     def _apply_command_result(
         self,
         result: str,
@@ -1969,7 +2100,12 @@ class JarvisApp(App):
             self._adopt_thread(new_thread, f"[b]已切换到会话 {new_thread}[/b]")
         else:
             self._refresh_session_sidebar()
-        self.query_one("#input", JarvisTextArea).focus()
+        self._refresh_split_layout()
+        # tui-ux22 02: side 开/关命令已改 state，焦点按 side_active 路由（03 升级为焦点 pane 路由）
+        if self._side_pane_active():
+            self.query_one("#side_input", JarvisTextArea).focus()
+        else:
+            self.query_one("#input", JarvisTextArea).focus()
         if yolo_notify_text:
             # tui-ux12: /yolo 状态变更后短 banner + 副标题 [YOLO] 标记联动
             self.notify(yolo_notify_text, timeout=3)
@@ -2039,6 +2175,7 @@ class JarvisApp(App):
             if raw is not None:
                 self._handle_user_message(raw)
         self._refresh_message_queue()  # tui-ux14 #04: 切会话后按新 thread 重绘缓存面板（bg 静默保留路径无 on_change 触发）
+        self._refresh_split_layout()  # tui-ux22 02: 孤儿 side 切走主线自动隐藏、切回再现
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option_list.id != "session_sidebar":
@@ -2424,3 +2561,4 @@ class JarvisApp(App):
         self._adopt_thread(new_thread, f"[b]已开启新会话 {new_thread}[/b]", clear=True)
         log = self.query_one("#messages", RichLog)
         self._write_system(log, "JARVIS 就绪。@ 引用路径，/ 命令；Tab 切换 Plan/Act。")
+        self._refresh_split_layout()  # tui-ux22 02: 新会话无 side → 收起右 pane

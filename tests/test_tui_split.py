@@ -6,9 +6,12 @@ state 一律纯 dict + permissions.side_open/side_close 造态。
 import dataclasses
 
 import pytest
+from textual.containers import Vertical
 
 from src.permissions import side_close, side_open
-from src.tui import PaneLayout, resolve_panes
+from src.tui import JarvisApp, JarvisTextArea, PaneLayout, resolve_panes
+from src.tui_log import CopyableRichLog
+from tests.test_tui import FakeAgent
 
 
 def _state() -> dict:
@@ -154,3 +157,75 @@ def test_layout_is_frozen_dataclass():
     assert type(lay).__dataclass_params__.frozen is True  # Python 3.14 is_dataclass 无 frozen 参
     with pytest.raises(dataclasses.FrozenInstanceError):
         lay.focus = "side"
+
+
+# ---- 02: 双 pane 布局（离屏 run_test，纯内存，禁 tmp_path）----
+
+
+def _split_app(st: dict, side: bool = False) -> JarvisApp:
+    """fixture：JarvisApp + FakeAgent，thread_id=main-1；side=True 时先 side_open。"""
+    if side:
+        side_open(st, "side-a", "main-1")
+    return JarvisApp(None, FakeAgent(), st, thread_id="main-1")
+
+
+@pytest.mark.asyncio
+async def test_side_pane_hidden_by_default():
+    """无 side：#side_pane display:none、无 -active、不占空间。"""
+    app = _split_app(_state())
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        pane = app.query_one("#side_pane", Vertical)
+        assert "-active" not in pane.classes
+        assert pane.styles.display == "none"
+        assert pane.region.width == 0
+
+
+@pytest.mark.asyncio
+async def test_side_pane_active_50_50_geometry():
+    """有 side：-active 在位，右 pane 与主列等宽（50/50）。"""
+    app = _split_app(_state(), side=True)
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        pane = app.query_one("#side_pane", Vertical)
+        assert "-active" in pane.classes
+        main = app.query_one("#content_column")
+        assert pane.region.width == main.region.width
+        assert pane.region.width > 0
+
+
+@pytest.mark.asyncio
+async def test_pane_widgets_independent_instances():
+    """两 pane 的 log/input widget 实例独立（identity 非共享）。"""
+    app = _split_app(_state(), side=True)
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        assert isinstance(app.query_one("#messages"), CopyableRichLog)
+        assert isinstance(app.query_one("#side_messages"), CopyableRichLog)
+        assert app.query_one("#messages") is not app.query_one("#side_messages")
+        main_in = app.query_one("#input", JarvisTextArea)
+        side_in = app.query_one("#side_input", JarvisTextArea)
+        assert isinstance(main_in, JarvisTextArea)
+        assert isinstance(side_in, JarvisTextArea)
+        assert main_in is not side_in
+
+
+@pytest.mark.asyncio
+async def test_open_close_focus_routing():
+    """side_open → 命令结果路由焦点到 #side_input；side_close → 焦点回 #input。"""
+    st = _state()
+    app = _split_app(st)
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        pane = app.query_one("#side_pane", Vertical)
+        assert "-active" not in pane.classes
+        side_open(st, "side-a", "main-1")
+        app._apply_command_result("已开 side 会话 side-a", "side-a")
+        await pilot.pause()
+        assert "-active" in pane.classes
+        assert app.focused is app.query_one("#side_input", JarvisTextArea)
+        side_close(st, "side-a")
+        app._apply_command_result("已返回主线 main-1", "main-1")
+        await pilot.pause()
+        assert "-active" not in pane.classes
+        assert app.focused is app.query_one("#input", JarvisTextArea)
