@@ -80,7 +80,7 @@ def test_turn_worker_emits_event_contract(bridge, qapp, monkeypatch):
             kw["callbacks"]["on_message_delta"]("部分回答"),
             kw["callbacks"]["on_message_delta"]("（完）"),
             kw["callbacks"]["on_tool_call"]("execute", "{'command': 'x'}", False, "ok", 0),
-            True,
+            streaming.TurnOutcome(True, "complete", 1, None),
         )[3],
     )
     bridge.message_delta.connect(lambda tid, d: seen["deltas"].append((tid, d)))
@@ -110,7 +110,7 @@ def test_queueing_and_fifo_replay(bridge, qapp, monkeypatch):
         calls.append(str(user_input))
         if len(calls) == 1:
             release.wait(timeout=5.0)
-        return True
+        return streaming.TurnOutcome(True, "complete", 1, None)
 
     monkeypatch.setattr(streaming, "run_agent_turn", fake_run)
     assert p.start_turn("t1", "m1") == "started"
@@ -133,7 +133,7 @@ def test_cancel_sets_gate_flag(bridge, qapp, monkeypatch):
         deadline = time.monotonic() + 8.0
         while time.monotonic() < deadline and not kw["is_cancelled"]():
             time.sleep(0.01)
-        return False
+        return streaming.TurnOutcome(False, "cancel", 0, None)
 
     monkeypatch.setattr(streaming, "run_agent_turn", fake_run)
     p.start_turn("t1", "x")
@@ -167,7 +167,7 @@ def test_thread_isolation(bridge, qapp, monkeypatch):
     def fake_run(agent, tid, user_input, **kw):
         calls.append(tid)
         release.wait(timeout=5.0)
-        return True
+        return streaming.TurnOutcome(True, "complete", 1, None)
 
     monkeypatch.setattr(streaming, "run_agent_turn", fake_run)
     assert p.start_turn("a", "x") == "started"

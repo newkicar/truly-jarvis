@@ -469,7 +469,7 @@ class GuiPresenter:
         ok = False
         b.turn_started.emit(tid)
         try:
-            ok = streaming.run_agent_turn(
+            turn = streaming.run_agent_turn(
                 rt.agent,
                 tid,
                 user_input if user_input is not None else user_text,
@@ -490,6 +490,7 @@ class GuiPresenter:
                 model_image_input=rt.config.model_image_input,
                 user_input_fallback=user_input_fallback,
             )
+            ok = turn.ok
             self.bridge.turn_done.emit(tid, bool(ok))
             self.bridge.notify.emit(f"回合{'完成' if ok else '放弃/取消'}（{time.monotonic() - t0:.1f}s）")
         except Exception as exc:  # noqa: BLE001 — worker 边界兜底，错误回主线程展示

@@ -193,7 +193,7 @@ class TurnPresenter:
         self.worker = get_current_worker()
         ok = False
         try:
-            ok = streaming.run_agent_turn(
+            turn = streaming.run_agent_turn(
                 self.app.agent,
                 self.thread_id,
                 self.user_input,
@@ -216,6 +216,7 @@ class TurnPresenter:
                 model_image_input=self._image_input_mode(),
                 user_input_fallback=self.image_fallback,
             )
+            ok = turn.ok
         except Exception as exc:  # noqa: BLE001
             self.reset_header()
             self.write_line(f"[bold red]错误[/bold red] {streaming.format_agent_error(exc)}")

@@ -385,7 +385,7 @@ def test_run_agent_turn_retries_on_transient_error(monkeypatch):
     ok = streaming.run_agent_turn(
         agent, "t", "hi", handle_interrupts=lambda _: None, callbacks=cb
     )
-    assert ok is True
+    assert ok.ok is True
     assert agent.calls == 2
     assert any("重试" in s for s in statuses)
 
@@ -436,7 +436,7 @@ def test_run_agent_turn_recursion_error_lands_softly():
         on_fallback_message=fallbacks.append,
         max_steps=77,
     )
-    assert ok is False
+    assert ok.ok is False
     assert any("步数超过上限 77" in s for s in statuses + fallbacks)
 
 
@@ -651,7 +651,7 @@ def test_run_agent_turn_force_handoff_on_recursion_error():
         on_fallback_message=fallbacks.append,
         max_steps=50,
     )
-    assert ok is False
+    assert ok.ok is False
     joined = "\n".join(fallbacks)
     assert "已完成 X" in joined and "建议 Z" in joined, "交接文本应输出给用户"
     assert any("步数超过上限 50" in s for s in statuses), "状态行提示上限"
@@ -679,7 +679,7 @@ def test_run_agent_turn_handoff_falls_back_without_model():
         on_fallback_message=fallbacks.append,
         max_steps=15,
     )
-    assert ok is False
+    assert ok.ok is False
     assert any("步数超过上限 15" in s for s in statuses + fallbacks)
 
 # ---------------------------------------------------------------- 停滞防御（StagnationGuard）

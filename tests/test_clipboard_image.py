@@ -123,7 +123,7 @@ def test_run_agent_turn_auto_fallback_retries_with_text():
         model_image_input="auto",
         user_input_fallback="图片 #1 路径: C:\\x.png",
     )
-    assert ok is True
+    assert ok.ok is True
     assert len(agent.inputs) == 2
     assert isinstance(agent.inputs[0]["messages"][0]["content"], list)
     assert agent.inputs[1]["messages"][0]["content"] == "图片 #1 路径: C:\\x.png"
@@ -209,7 +209,7 @@ def test_auto_fallback_triggers_on_plain_400_without_image_words():
         model_image_input="auto",
         user_input_fallback="图片 #1 路径: C:\\x.png",
     )
-    assert ok is True
+    assert ok.ok is True
     assert len(agent.inputs) == 2
     assert isinstance(agent.inputs[1]["messages"][0]["content"], str)
 

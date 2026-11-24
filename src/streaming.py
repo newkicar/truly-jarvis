@@ -5,6 +5,7 @@ import json
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from src import commands, resilience
@@ -15,6 +16,21 @@ REJECT_MESSAGE = "用户拒绝了该操作，请更换方案或询问用户。�
 _DRAIN_WATCHDOG_INTERVAL_S = 0.05
 
 StreamCallbacks = dict[str, Callable[..., None]]
+
+
+@dataclass
+class TurnOutcome:
+    """#goal 01: 单轮对话的结构化返回。ok 等价旧 bool 语义；outcome ∈ complete|abandon|cancel|replay。
+    tool_calls_count 覆盖本轮全部工具调用（顶层 + 子代理嵌套，经 on_tool_call 计数）；
+    last_usage 预留 goal 审计（当前恒 None）。__bool__ 返回 ok——丢弃返回值的旧调用点不变。"""
+
+    ok: bool
+    outcome: str
+    tool_calls_count: int = 0
+    last_usage: dict | None = None
+
+    def __bool__(self) -> bool:
+        return self.ok
 
 
 def format_agent_error(exc: BaseException) -> str:
@@ -478,8 +494,8 @@ def run_agent_turn(
     max_steps: int = 200,
     model_image_input: str = "auto",
     user_input_fallback: str | None = None,
-) -> bool:
-    """跑一轮对话或 checkpoint 重跑（含 HITL resume 循环）。返回 True=正常结束，False=放弃/取消。
+) -> TurnOutcome:
+    """跑一轮对话或 checkpoint 重跑（含 HITL resume 循环）。返回 TurnOutcome（ok=True 正常结束，False=放弃/取消）。
 
     韧性：retryable API 错误按决策表退避重试（状态经 callbacks["on_status"] 可见），
     步数超限软着陆收尾而非裸异常。
@@ -498,6 +514,22 @@ def run_agent_turn(
     from src.jump_in_queue import set_current_thread_id
 
     set_current_thread_id(thread_id)
+
+    # #goal 01: 拷贝 callbacks 并包装 on_tool_call 计数（顶层 + 子代理嵌套全覆盖；
+    # 不改调用方传入的 dict；外层回调缺省安全）。
+    callbacks = dict(callbacks)
+    _outer_tool_call = callbacks.get("on_tool_call")
+    _tool_call_count = {"n": 0}
+
+    def _counting_tool_call(*_args, **_kwargs) -> None:
+        _tool_call_count["n"] += 1
+        if _outer_tool_call is not None:
+            _outer_tool_call(*_args, **_kwargs)
+
+    callbacks["on_tool_call"] = _counting_tool_call
+
+    def _turn_outcome(ok: bool, why: str) -> TurnOutcome:
+        return TurnOutcome(ok, why, _tool_call_count["n"], None)
 
     max_steps = max(10, int(max_steps))
     base_config = {**commands.thread_config(thread_id), "recursion_limit": max_steps}
@@ -533,7 +565,7 @@ def run_agent_turn(
                     on_fallback_message(text)
                 else:
                     callbacks["on_message_delta"](text)
-            return True
+            return _turn_outcome(True, "replay")
     def _run_stream(stream_input: Any, config: dict):
         # tui-ux6 #03: 每个 stream 尝试（含 HITL resume 每轮）独立 RunControl——
         # 本 attempt 的 Esc drain 不泄漏到下一次 stream。
@@ -654,7 +686,7 @@ def run_agent_turn(
                     elif on_fallback_message:
                         on_fallback_message(msg)
                 outcome = "abandon"
-                return False
+                return _turn_outcome(False, "abandon")
             except Exception as exc:
                 # #03: 多模态能力门 auto 回落——模型拒绝图片时，改发「路径引用」纯文本重试一次；
                 # 其余异常保持原语义（清理 checkpoint 后上抛，由 presenter 显示错误）。
@@ -675,7 +707,7 @@ def run_agent_turn(
                 raise
             if is_cancelled():
                 outcome = "cancel"
-                return False
+                return _turn_outcome(False, "cancel")
 
             if not consumed and on_fallback_message:
                 final_state = stream.output
@@ -684,19 +716,19 @@ def run_agent_turn(
                     on_fallback_message(final_text)
 
             if not getattr(stream, "interrupted", False) or not getattr(stream, "interrupts", None):
-                return True
+                return _turn_outcome(True, "complete")
 
             resume = handle_interrupts(stream.interrupts)
             if resume is None:
                 outcome = "abandon"
-                return False
+                return _turn_outcome(False, "abandon")
         outcome = "cancel"
-        return False
+        return _turn_outcome(False, "cancel")
     except GraphDrained:
         # tui-ux6 #03: Esc drain（ADR-0008）——图按「当前 superstep 跑完即停」语义停止；
         # 不重试、不交接（与步数超限 force_handoff 不同路）；finally 走 finalize + on_turn_incomplete。
         outcome = "cancel"
-        return False
+        return _turn_outcome(False, "cancel")
     finally:
         if outcome != "complete":
             _finalize_if_needed()

@@ -103,8 +103,11 @@ def test_jump_in_idle_falls_back_to_replay(qtbot, monkeypatch):
         # 模拟：队列里有项但回合未在跑（直接塞队列，不入门）
         p.gate._queues["t1"] = deque([("m2", [])])
         calls = []
-        monkeypatch.setattr(streaming, "run_agent_turn",
-                            lambda agent, tid, user_input, **kw: calls.append((tid, user_input)))
+        def _fake_run(agent, tid, user_input, **kw):
+            calls.append((tid, user_input))
+            return streaming.TurnOutcome(True, "complete", 0, None)
+
+        monkeypatch.setattr(streaming, "run_agent_turn", _fake_run)
         win._on_queue_jump("m2")
         assert p.gate.queued_count("t1") == 0
         assert rt.registry.items("t1") == []  # 未注入 registry（走重投路径）

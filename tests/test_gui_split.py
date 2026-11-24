@@ -40,7 +40,7 @@ def test_dual_tid_concurrent_no_deadlock(qapp, monkeypatch):
             kw["callbacks"]["on_message_delta"]("A" if tid == MAIN else "B")
             kw["callbacks"]["on_message_end"]("AB")
             records[tid]["finish"] = threading.current_thread().name
-            return True
+            return streaming.TurnOutcome(True, "complete", 1, None)
         monkeypatch.setattr(streaming, "run_agent_turn", fake_run)
         assert p.start_turn(MAIN, "m") == "started"
         assert p.start_turn(SIDE, "s") == "started"
@@ -67,7 +67,7 @@ def test_hitl_routes_by_tid(qapp, monkeypatch):
         def fake_run(agent, tid, user_input, **kw):
             barrier.wait(30)
             records[tid] = kw["handle_interrupts"]([_FakeInterrupt(tid)])
-            return True
+            return streaming.TurnOutcome(True, "complete", 1, None)
         monkeypatch.setattr(streaming, "run_agent_turn", fake_run)
         asks = {MAIN: [], SIDE: []}
         def ask(inv, tid):
@@ -98,7 +98,7 @@ def test_queue_status_route_by_tid_and_sched_regression(qapp, monkeypatch):
             gates[tid].wait(60)
             kw["callbacks"]["on_message_delta"]("ok")
             kw["callbacks"]["on_message_end"]("ok")
-            return True
+            return streaming.TurnOutcome(True, "complete", 1, None)
         monkeypatch.setattr(streaming, "run_agent_turn", fake_run)
         assert p.start_turn(MAIN, "first-m") == "started"
         assert p.start_turn(SIDE, "first-s") == "started"

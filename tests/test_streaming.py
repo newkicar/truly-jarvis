@@ -290,7 +290,7 @@ def test_run_agent_turn_abandon_calls_finalize():
     finally:
         cmd.finalize_turn = original
 
-    assert ok is False
+    assert ok.ok is False
     assert agent.finalized is True
 
 
@@ -500,7 +500,7 @@ def test_run_agent_turn_drain_stops_after_single_slow_tool():
     )
     th.join(timeout=5)
     wall = time.monotonic() - t0
-    assert ok is False
+    assert ok.ok is False
     # 判别性断言：旧代码会跑满两轮模型调用（慢工具后还有第二次 LLM 调用    # drain 语义下第二次模型调用不发生。
     # 判别断言：第二次 LLM 调用绝不发生。tui-ux10 看门狗使 drain 瞬间前移，
     # 第一次调用也可能未完成即被取消（0 次），故断言 <= 1。
@@ -588,7 +588,7 @@ def test_drain_watchdog_requests_before_tool_end_item_arrives():
             is_cancelled=lambda: flags["cancelled"],
         )
         th.join(timeout=5)
-    assert ok is False
+    assert ok.ok is False
     # 0 = 取消早于首模型调用启动（看门狗抢先 drain），同样合法；
     # 判别性在于绝不超过 1（无修复时 CI 上会跑满 2 次模型调用）。
     assert len(model_calls) <= 1
