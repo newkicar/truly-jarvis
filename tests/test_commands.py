@@ -1378,3 +1378,149 @@ def test_dispatch_compact_with_guide():
     # gui15: guide 随 HumanMessage（第二条）下发
     assert any("保留重要结论" in p[1] for p in agent.model.prompts)
 
+
+
+# ---------------------------------------------------------------- #goal 03
+from contextlib import contextmanager as _goal_ctx
+from pathlib import Path as _GoalPath
+
+
+_GOAL_TEST_BASE = _GoalPath(__file__).resolve().parent.parent / ".scratch" / "goal-cmd-test-tmp"
+
+
+@_goal_ctx
+def _goal_tmp(name: str):
+    """自建目录纪律（WinError5 中毒，禁 tmp_path）。"""
+    import shutil
+    import uuid
+
+    d = _GOAL_TEST_BASE / f"{name}-{uuid.uuid4().hex[:8]}"
+    d.mkdir(parents=True, exist_ok=True)
+    try:
+        yield d
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_goal_set_no_record_creates():
+    with _goal_tmp("set") as d:
+        p = d / "goals.json"
+        out = commands.goal_command_text("t1", "/goal 修好登录 bug", p)
+        assert out.startswith("目标已创建：'修好登录 bug'")
+        assert "0/5" in commands.goal_text("t1", p)
+
+
+def test_goal_set_existing_active_reports_exists():
+    with _goal_tmp("exists") as d:
+        p = d / "goals.json"
+        commands.goal_command_text("t1", "/goal A", p)
+        out = commands.goal_command_text("t1", "/goal B", p)
+        assert "目标已存在" in out and "进行中" in out and "/goal clear" in out
+
+
+def test_goal_set_terminal_reports_hint():
+    from src import goals as g
+    with _goal_tmp("terminal") as d:
+        p = d / "goals.json"
+        commands.goal_command_text("t1", "/goal A", p)
+        g.goal_complete(path=p, thread_id="t1", audit_evidence="done")
+        out = commands.goal_command_text("t1", "/goal C", p)
+        assert "目标已终态（已完成）" in out and "不可新建目标" in out
+
+
+def test_goal_pause_four_states():
+    from src import goals as g
+    with _goal_tmp("pause") as d:
+        p = d / "goals.json"
+        assert "本会话无目标，无需暂停" in commands.goal_command_text("t1", "/goal pause", p)
+        commands.goal_command_text("t1", "/goal A", p)
+        assert "目标已暂停：'A'" in commands.goal_command_text("t1", "/goal pause", p)
+        assert "已暂停" in commands.goal_command_text("t1", "/goal pause", p)  # 幂等：重复 pause
+        g.goal_resume(path=p, thread_id="t1")
+        g.goal_mark_budget_exhausted(path=p, thread_id="t1")
+        assert "目标已终态（回合预算耗尽）" in commands.goal_command_text("t1", "/goal pause", p)
+
+
+def test_goal_resume_four_states():
+    from src import goals as g
+    with _goal_tmp("resume") as d:
+        p = d / "goals.json"
+        assert "本会话无目标，无需恢复" in commands.goal_command_text("t1", "/goal resume", p)
+        commands.goal_command_text("t1", "/goal A", p)
+        assert "无需 resume" in commands.goal_command_text("t1", "/goal resume", p)  # 幂等：active 上 resume（存储层文案）
+        g.goal_pause(path=p, thread_id="t1")
+        assert "目标已恢复：'A'" in commands.goal_command_text("t1", "/goal resume", p)
+        g.goal_complete(path=p, thread_id="t1", audit_evidence="e")
+        assert "目标已终态（已完成）" in commands.goal_command_text("t1", "/goal resume", p)
+
+
+def test_goal_clear_states():
+    from src import goals as g
+    with _goal_tmp("clear") as d:
+        p = d / "goals.json"
+        assert "本会话无目标，无需清除" in commands.goal_command_text("t1", "/goal clear", p)
+        commands.goal_command_text("t1", "/goal A", p)
+        assert "目标已清除（进行中）：'A'" in commands.goal_command_text("t1", "/goal clear", p)
+        assert "本会话无目标" in commands.goal_text("t1", p)
+        # 终态也可 clear
+        commands.goal_command_text("t2", "/goal B", p)
+        g.goal_complete(path=p, thread_id="t2", audit_evidence="e")
+        assert "目标已清除（已完成）：'B'" in commands.goal_command_text("t2", "/goal clear", p)
+
+
+def test_goal_status_and_goal_text_render():
+    from src import goals as g
+    with _goal_tmp("status") as d:
+        p = d / "goals.json"
+        assert "本会话无目标（/goal <objective> 创建）" in commands.goal_text("t1", p)
+        assert "本会话无目标" in commands.goal_command_text("t1", "/goal", p)  # 裸 /goal = 查询
+        commands.goal_command_text("t1", "/goal  写测试并跑绿  ", p)
+        assert commands.goal_text("t1", p) == "目标 [进行中] 0/5：写测试并跑绿"
+        g.goal_note_turn(path=p, thread_id="t1")
+        assert "1/5" in commands.goal_text("t1", p)
+        g.goal_pause(path=p, thread_id="t1")
+        assert "目标 [已暂停] 1/5" in commands.goal_text("t1", p)
+        g.goal_complete(path=p, thread_id="t1", audit_evidence="pytest 53 全绿")
+        t = commands.goal_text("t1", p)
+        assert "目标 [已完成]" in t and "证据: pytest 53 全绿" in t
+
+
+def test_goal_subcommand_keyword_case_insensitive():
+    with _goal_tmp("case") as d:
+        p = d / "goals.json"
+        commands.goal_command_text("t1", "/goal A", p)
+        assert "目标 [进行中]" in commands.goal_command_text("t1", "/goal STATUS", p)
+        assert "目标 [进行中]" in commands.goal_command_text("t1", "/goal status", p)
+
+
+def test_goal_set_persists_across_reloads():
+    """跨重启持久：goals.json 落盘，两次独立调用（模拟重启）看到同一记录。"""
+    with _goal_tmp("persist") as d:
+        p = d / "goals.json"
+        commands.goal_command_text("t1", "/goal A", p)
+        out2 = commands.goal_command_text("t1", "/goal B", p)
+        assert "目标已存在" in out2
+        assert p.is_file()
+
+
+def test_goal_dispatch_hook(monkeypatch):
+    import src.goals as g_mod
+
+    with _goal_tmp("dispatch") as d:
+        monkeypatch.setattr(g_mod, "user_home", lambda: d)
+        class FakeDispatchAgent:  # /goal 钩子不读 agent，占位即可
+            pass
+
+        agent = FakeDispatchAgent()
+        text, new_thread, replay_cid = commands.dispatch_command(agent, "t1", "/goal 修 bug")
+        assert text.startswith("目标已创建") and new_thread is None and replay_cid is None
+        text2, _, _ = commands.dispatch_command(agent, "t1", "/goal status")
+        assert "目标 [进行中] 0/5：修 bug" in text2
+
+
+def test_goal_listed_in_help_and_slash_completion():
+    assert "/goal <objective>|status|pause|resume|clear" in commands.CLI_HELP
+    assert "/goal <objective>|status|pause|resume|clear" in commands.TUI_HELP
+    from src.slash_completion import SLASH_COMMANDS
+    names = [c.name for c in SLASH_COMMANDS]
+    assert "/goal" in names

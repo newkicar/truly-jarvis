@@ -43,6 +43,7 @@ _HELP_COMMANDS = """\
   /skills       列出可用 skills（manual 需 /use 手动触发）
   /use <skill> [说明]  手动调用 manual-only skill（注入完整指令）
   /yolo on | off  YOLO 模式开关：本会话所有动作免审批（仅当前会话、重启即关）
+  /goal <objective>|status|pause|resume|clear  持久目标：创建/查询/暂停/恢复/清除（回合预算内自动续跑、跨重启持久）
   /side | /side close  开/关侧边会话（继承历史，只读，禁 sub-agents 与 execute；关=删除会话）
   /compact [提示]  压缩当前会话历史为一条延续性摘要写回（可选文字提示压缩倾向）
   /dream   梦境沉淀：回顾近期会话，蒸馏可复用知识到 梦境知识库（默认全局 ~/.jarvis/memory/dream/）
@@ -1457,6 +1458,103 @@ def yolo_command_text(permission_state: dict | None, thread_id: str, raw_command
     return "用法: /yolo on | /yolo off"
 
 
+_GOAL_STATUS_CN = {
+    "active": "进行中",
+    "paused": "已暂停",
+    "complete": "已完成",
+    "budget_limited": "回合预算耗尽",
+}
+
+
+def goal_text(thread_id: str, goals_path: Path | None = None) -> str:
+    """#goal 03: goal 状态行：objective + 状态 + turns N/M（无 goal = 引导文案）。"""
+    from src import goals as g
+
+    goal = g.goal_status(path=goals_path, thread_id=thread_id)
+    if goal is None:
+        return "本会话无目标（/goal <objective> 创建）"
+    label = _GOAL_STATUS_CN.get(goal.status, goal.status)
+    line = f"目标 [{label}] {goal.turns_used}/{goal.max_turns}：{goal.objective}"
+    if goal.status == g.GOAL_COMPLETE and goal.audit_evidence:
+        line += f"｜证据: {goal.audit_evidence}"
+    return line
+
+
+def _goal_terminal_hint(thread_id: str, goals_path: Path | None = None, action: str = "") -> str:
+    """终态下 set/pause/resume 被拒的统一文案：指路 clear 重建。"""
+    from src import goals as g
+
+    goal = g.goal_status(path=goals_path, thread_id=thread_id)
+    label = _GOAL_STATUS_CN.get(goal.status, goal.status) if goal else "终态"
+    verb = {"pause": "暂停", "resume": "恢复", "create": "新建目标"}.get(action, "操作")
+    return f"目标已终态（{label}），不可{verb}；/goal clear 清除后可新建"
+
+
+def goal_command_text(thread_id: str, raw_command: str, goals_path: Path | None = None) -> str:
+    """#goal 03: /goal <objective>|status|pause|resume|clear——线程级持久目标（goals.json 跨重启持久）。
+
+    四态幂等文案（yolo 先例）：子命令按状态回短文案；pause/resume 在终态显式报错指路 clear；
+    goal_id 墓碑序列由存储层透明维护（命令层不传 expected_goal_id）。
+    裸 /goal = status 查询；第二 token 恰为 status/pause/resume/clear 才视作子命令，
+    其余一律视作 objective（可多词句）。set 的 max_turns 取 jarvis.json goals.max_turns。
+    """
+    from src import goals as g
+
+    parts = raw_command.split()
+    sub = ""
+    if len(parts) == 2 and parts[1].lower() in ("status", "pause", "resume", "clear"):
+        sub = parts[1].lower()
+    if sub == "status" or len(parts) < 2:
+        return goal_text(thread_id, goals_path)
+    if sub == "pause":
+        try:
+            paused = g.goal_pause(path=goals_path, thread_id=thread_id)
+        except g.NoGoalError:
+            return "本会话无目标，无需暂停"
+        except g.TerminalGoalError:
+            return _goal_terminal_hint(thread_id, goals_path, "pause")
+        except g.GoalError as exc:  # 已暂停 → 存储层幂等文案
+            return str(exc)
+        return f"目标已暂停：'{paused.objective}'（{paused.turns_used}/{paused.max_turns}，/goal resume 继续）"
+    if sub == "resume":
+        try:
+            resumed = g.goal_resume(path=goals_path, thread_id=thread_id)
+        except g.NoGoalError:
+            return "本会话无目标，无需恢复"
+        except g.TerminalGoalError:
+            return _goal_terminal_hint(thread_id, goals_path, "resume")
+        except g.GoalError as exc:  # 已 active → 存储层幂等文案
+            return str(exc)
+        return f"目标已恢复：'{resumed.objective}'（{resumed.turns_used}/{resumed.max_turns}，继续自动续跑）"
+    if sub == "clear":
+        try:
+            cleared = g.goal_clear(path=goals_path, thread_id=thread_id)
+        except g.NoGoalError:
+            return "本会话无目标，无需清除"
+        return f"目标已清除（{_GOAL_STATUS_CN.get(cleared.status, cleared.status)}）：'{cleared.objective}'——/goal 可新建"
+    objective = raw_command[len("/goal"):].strip()
+    if not objective:
+        return "用法: /goal <objective> | status | pause | resume | clear"
+    from src.config import load_config
+
+    try:
+        goal = g.goal_set(
+            path=goals_path,
+            thread_id=thread_id,
+            objective=objective,
+            max_turns=load_config().goals_max_turns,
+        )
+    except g.GoalExistsError:
+        cur = g.goal_status(path=goals_path, thread_id=thread_id)
+        label = _GOAL_STATUS_CN.get(cur.status, cur.status)
+        return f"目标已存在（{label}：'{cur.objective}'）；/goal clear 替换，/goal pause|resume 调状态"
+    except g.TerminalGoalError:
+        return _goal_terminal_hint(thread_id, goals_path, "create")
+    except g.GoalError as exc:
+        return str(exc)
+    return f"目标已创建：'{goal.objective}'（最多 {goal.max_turns} 回合自动续跑，/goal status 查看）"
+
+
 def init_project() -> str:
     """生成 {project_root}/AGENTS.md 项目指令草稿（确定性扫描，非 LLM）；已存在则不覆盖。"""
     from src import project_init
@@ -1557,6 +1655,8 @@ def dispatch_command(
         return dream.run_dream(agent, load_config()), None, None
     if cmd == "/yolo":
         return yolo_command_text(permission_state, thread_id, command), None, None
+    if cmd == "/goal":
+        return goal_command_text(thread_id, command), None, None
     if cmd == "/side":
         if permission_state is None:
             return "side 会话不可用（权限层未初始化）", None, None
