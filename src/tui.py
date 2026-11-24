@@ -3,56 +3,155 @@ import asyncio
 import sys
 import threading
 from collections import defaultdict
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from rich.text import Text
 from time import monotonic
 from typing import ClassVar
+
+from rich.text import Text
 from textual import events
 from textual.app import App, ComposeResult, ScreenStackError
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.css.query import NoMatches
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Button, Footer, Header, Input, Label, OptionList, RichLog, Static, TextArea
-from textual.css.query import NoMatches
+from textual.widgets import (
+    Button,
+    Footer,
+    Header,
+    Input,
+    Label,
+    OptionList,
+    RichLog,
+    Static,
+    TextArea,
+)
 from textual.widgets.option_list import Option
 from textual.worker import Worker
 
-from src import commands, goals, ime_shim, shell_backend
+from src import commands, goals, ime_shim, shell_backend, tui_format
 from src.clipboard_image import (
     build_multimodal_content,
     image_fallback_text,
     looks_like_image_path,
     try_copy_clipboard_image,
 )
-from src.tui_punct import ime_hint_line, is_conhost_like
-from src.skill_discovery import discover_skill_catalog
-from src.tui_completion import OverlayState, apply_suggestion_on_line, line_projection, resolve_overlay_state
-from src.tui_log import CopyableRichLog
-from src import tui_format
-from src.tui_turn import TurnPresenter
 from src.jump_in_queue import JumpInRegistry
+from src.skill_discovery import discover_skill_catalog
+from src.tui_completion import (
+    OverlayState,
+    apply_suggestion_on_line,
+    line_projection,
+    resolve_overlay_state,
+)
 from src.tui_format import (
     DEFAULT_TUI_THEME,
     LEGACY_BAD_THEMES,
     ai_message_header_markup,
     ai_stream_renderable,
     format_todos_panel,
+    format_tool_call,
     permission_preview,
+    reasoning_block_markup,
     render_markdown,
     system_message_markup,
-    user_message_markup,
-    format_tool_call,
-    reasoning_block_markup,
     tool_detail_block,
     tool_detail_worth_expanding,
+    user_message_markup,
 )
-
+from src.tui_log import CopyableRichLog
+from src.tui_punct import ime_hint_line, is_conhost_like
+from src.tui_turn import TurnPresenter
 
 # Esc 取消/撤回与 Ctrl+C 退出缓冲窗口（秒）：窗口内第二次按下才生效（工单 07；tui-ux15 三段化）。
 ESC_UNDO_WINDOW = 1.5
 QUIT_CONFIRM_WINDOW = 1.5
+
+# ---------------------------------------------------------------------------
+# tui-ux22 01：pane 寻址纯 helper（双 pane 布局打底，用户不可见）
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PaneLayout:
+    """tui-ux22 01：pane 寻址结果（纯数据，零 UI 依赖，可 import 测试）。
+
+    - mainline_tid：当前上下文的主线 tid（active 是 side 会话时仍报告其归属主线；
+      parent 缺失时防御性保留自身——只报告不纠正，同步在 app 层做）；
+    - side_tid：当前上下文下的 side 会话（None = 无 side；active 为主线时按
+      side 登记查找挂在该主线下的唯一 side——内核语义「每条主线至多一个」）；
+    - side_parent：side_tid 归属的主线 tid（无 side 为 None）；
+    - on_side：active tid 本身是否就是 side 会话；
+    - focus：焦点 pane（"main"/"side"）；side_tid 为 None 时强制 "main"；
+      focus 传 None 时按 on_side 派生（active 是 side 会话 → "side"）。
+    """
+
+    mainline_tid: str
+    side_tid: str | None
+    side_parent: str | None
+    on_side: bool
+    focus: str
+
+    def pane_of(self, tid: object) -> str:
+        """tid→pane 归属：side_tid 本身归右 pane，其余一律归主 pane。"""
+        if self.side_tid is not None and str(tid or "") == self.side_tid:
+            return "side"
+        return "main"
+
+
+def resolve_panes(
+    permission_state: dict | None, active_tid: str, focus: str | None = None
+) -> PaneLayout:
+    """tui-ux22 01：pane 寻址纯 helper（四态矩阵）。
+
+    只读 `permissions.side_active` / `side_parent` 与 side 登记
+    （SIDE_THREADS_KEY / SIDE_PARENTS_KEY），对 state 零副作用：
+    1. 无 side → side_tid=None，focus 强制 "main"；
+    2. 有 side + 焦点左 → focus="main"，side_tid 报告主线下的 side；
+    3. 有 side + 焦点右 → focus="side"（focus=None 且 active 是 side 时派生）；
+    4. active 与 side 登记不一致（孤儿 side / 缺键旧引用）→ 只报告，不纠正。
+    """
+    from src.permissions import (
+        SIDE_PARENTS_KEY,
+        SIDE_THREADS_KEY,
+        side_active,
+        side_parent,
+    )
+
+    state = permission_state if isinstance(permission_state, dict) else {}
+    active = str(active_tid or "")
+    on_side = side_active(state, active)
+    side_tid: str | None
+    if on_side:
+        side_tid = active
+        mainline = side_parent(state, active) or active  # parent 缺失防御：保留自身
+    else:
+        mainline = active
+        side_tid = None
+        threads = state.get(SIDE_THREADS_KEY)
+        parents = state.get(SIDE_PARENTS_KEY)
+        if mainline and isinstance(threads, set) and isinstance(parents, dict):
+            cands = sorted(
+                s for s in threads if isinstance(s, str) and parents.get(s) == mainline
+            )
+            if cands:
+                side_tid = cands[0]
+    sp = side_parent(state, side_tid) if side_tid else None
+    if focus is None:
+        focus = "side" if on_side else "main"
+    elif side_tid is None or focus not in ("main", "side"):
+        focus = "main"
+    return PaneLayout(
+        mainline_tid=mainline,
+        side_tid=side_tid,
+        side_parent=sp,
+        on_side=on_side,
+        focus=focus,
+    )
+
+
 
 
 def read_os_clipboard() -> str:
@@ -66,7 +165,7 @@ def read_os_clipboard() -> str:
 
     if sys.platform == "win32":
         try:
-            result = subprocess.run(  # noqa: S603
+            result = subprocess.run(
                 [
                     "powershell",
                     "-NoProfile",
@@ -85,7 +184,7 @@ def read_os_clipboard() -> str:
             return ""
     for cmd in (["pbpaste"], ["wl-paste", "--no-newline"], ["xclip", "-selection", "clipboard", "-o"]):
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3)  # noqa: S603
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
             if result.returncode == 0 and result.stdout:
                 return result.stdout.rstrip("\r\n")
         except Exception:  # noqa: BLE001
@@ -1188,8 +1287,8 @@ class JarvisApp(App):
             pass
 
     def _update_sub_title(self) -> None:
-        from src.plan_mode import effective_mode
         from src.permissions import yolo_active
+        from src.plan_mode import effective_mode
 
         parts = [self.thread_id]
         if self._mcp_tool_count:
@@ -1209,11 +1308,10 @@ class JarvisApp(App):
         g = goals.goal_status(thread_id=self.thread_id)
         if g is not None and g.status in (goals.GOAL_ACTIVE, goals.GOAL_PAUSED):
             parts.append(f"[GOAL] {g.turns_used}/{g.max_turns} {g.status}")
-        from src.permissions import side_active, side_parent
-
-        if side_active(self.permission_state, self.thread_id):
-            parent = side_parent(self.permission_state, self.thread_id)
-            parts.append(f"[SIDE]→{(parent or '?')[:8]}")
+        # tui-ux22 01：pane 寻址纯 helper 路由（显示零变化：条件 ⇔ side_active(thread_id)）
+        layout = resolve_panes(self.permission_state, self.thread_id)
+        if layout.on_side:
+            parts.append(f"[SIDE]→{(layout.side_parent or '?')[:8]}")
         self.sub_title = "  ".join(parts)
         self._refresh_yolo_badge()
         self._refresh_side_badge()
@@ -1240,9 +1338,9 @@ class JarvisApp(App):
             badge = self.query_one("#side_badge", Static)
         except (NoMatches, ScreenStackError):
             return  # tui-ux7 先例：app 收尾/拆屏后节点可能已移除；__init__ 期（DOM 未挂载）ScreenStackError 同样 no-op
-        from src.permissions import side_active
-
-        if side_active(self.permission_state, self.thread_id):
+        # tui-ux22 01：pane 寻址纯 helper 路由（显示零变化：on_side ⇔ side_active(thread_id)）
+        layout = resolve_panes(self.permission_state, self.thread_id)
+        if layout.on_side:
             badge.add_class("-active")
             badge.update(Text("SIDE", style="bold yellow"))  # yolo 先例 4a365c4/8fc7523：markup=False Static 的 CSS color 不作用于内容，须 Text 内嵌命名色
         else:
