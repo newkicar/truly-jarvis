@@ -48,6 +48,7 @@ GLOBAL_DEFAULTS: dict = {
         "embed_model": "quentinz/bge-small-zh-v1.5",
     },
     "execution": {"max_steps": 200},
+    "goals": {"max_turns": 5},
     "tui": {"copy_on_select": True},
 }
 
@@ -107,6 +108,8 @@ class Config:
     context_limit: int = 0
     # dotdir keep-first: 压缩时开头逐字保留进 summary 的消息条数（0 = 不钉头，纯上游行为）；默认 0
     keep_first_messages: int = 0
+    # goal: /goal 自动续跑预算（回合数）；jarvis.json goals.max_turns，缺省 5
+    goals_max_turns: int = 5
 
 
 def parse_env_text(text: str) -> dict[str, str]:
@@ -363,6 +366,16 @@ def load_config(
     if keep_first_messages < 0:
         keep_first_messages = 0
 
+    goals_cfg = data.get("goals", {})
+    if not isinstance(goals_cfg, dict):
+        goals_cfg = {}
+    try:
+        goals_max_turns = int(goals_cfg.get("max_turns", 5))
+    except (TypeError, ValueError):
+        logging.warning("goals.max_turns 非整数，回落默认 5: %r", goals_cfg.get("max_turns"))
+        goals_max_turns = 5
+    goals_max_turns = max(1, min(goals_max_turns, 9999))
+
     cfg = Config(
         project_root=root,
         base_url=base_url,
@@ -388,6 +401,7 @@ def load_config(
         notifications=notifications_cfg,
         context_limit=context_limit,
         keep_first_messages=keep_first_messages,
+        goals_max_turns=goals_max_turns,
     )
     ensure_user_home()
     set_runtime_project_root(cfg.project_root)
