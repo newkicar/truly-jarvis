@@ -447,6 +447,10 @@ def build_agent(
     main_tools: list = [make_quick_search_tool(config.tavily_key)]
     if mcp_tools:
         main_tools.extend(mcp_tools)
+    # /goal model-side tools x3 (create_goal/complete_goal/get_goal), same injection site as MCP (one-time at startup, main agent only);
+    # thread_id read from the shared permission_state reference at call time (streaming writes it at each turn start)
+    from src.goal_tools import build_goal_tools
+    main_tools.extend(build_goal_tools(permission_state, default_max_turns=config.goals_max_turns))
     # ticket 02: profile tool allow/deny filter on the main agent's
     # extra tools; an empty allow-list means unrestricted, deny always removes.
     if profile_spec is not None:

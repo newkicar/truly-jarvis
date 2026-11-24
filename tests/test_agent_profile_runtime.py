@@ -257,7 +257,7 @@ class TestDefaultPathGate:
         cfg = _cfg(monkeypatch, home, ws)
         captured = _spy_build(monkeypatch)
         agent = build_agent(cfg, model=ToolCapableFake(reply="ok"))
-        assert _names(captured["tools"]) == ["quick_search"]
+        assert _names(captured["tools"]) == ["quick_search", "create_goal", "complete_goal", "get_goal"]
         assert captured["system_prompt"] == build_main_prompt(config=cfg)
         assert agent is not None
 
@@ -266,7 +266,7 @@ class TestDefaultPathGate:
         cfg = _cfg(monkeypatch, home, ws)
         captured = _spy_build(monkeypatch)
         build_agent(cfg, model=ToolCapableFake(reply="ok"), mcp_tools=[_mcp_tool("git_status")])
-        assert _names(captured["tools"]) == ["quick_search", "git_status"]
+        assert _names(captured["tools"]) == ["quick_search", "git_status", "create_goal", "complete_goal", "get_goal"]
 
     def test_default_memory_files(self, monkeypatch):
         home, ws = _new_home(), _new_workspace()
@@ -359,7 +359,7 @@ class TestBuildAgentWithSpec:
             mcp_tools=[_mcp_tool("git_status"), _mcp_tool("other_tool")],
             profile_spec=spec,
         )
-        assert _names(captured["tools"]) == ["other_tool"]
+        assert _names(captured["tools"]) == ["other_tool", "create_goal", "complete_goal", "get_goal"]
 
     def test_tool_allow_restricts(self, monkeypatch):
         home, ws = _new_home(), _new_workspace()

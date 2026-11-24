@@ -144,7 +144,7 @@ def test_build_agent_injects_mcp_tools(tmp_path, monkeypatch):
     build_agent(cfg, model=model, mcp_tools=fake_tools)
 
     tool_names = [t.name for t in captured.get("tools", [])]
-    assert tool_names == ["quick_search", "git_status"]
+    assert tool_names == ["quick_search", "git_status", "create_goal", "complete_goal", "get_goal"]
 
 
 def test_build_agent_no_mcp_tools_still_has_quick_search(tmp_path, monkeypatch):
@@ -165,7 +165,7 @@ def test_build_agent_no_mcp_tools_still_has_quick_search(tmp_path, monkeypatch):
     build_agent(cfg, model=model)
 
     tool_names = [t.name for t in captured.get("tools", [])]
-    assert tool_names == ["quick_search"]
+    assert tool_names == ["quick_search", "create_goal", "complete_goal", "get_goal"]
 
 
 def test_build_agent_registers_skill_sources(tmp_path, monkeypatch):
