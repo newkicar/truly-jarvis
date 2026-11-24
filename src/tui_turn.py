@@ -7,12 +7,13 @@ JarvisApp._stream_agent 原为 155 行方法内嵌 12 个闭包，共享 6 份 p
 """
 from __future__ import annotations
 
+import json
 from time import time
 
 from textual.worker import get_current_worker
 from textual.widgets import RichLog
 
-from src import commands, streaming
+from src import commands, goals, streaming
 from src.plan_mode import effective_mode
 from src.tui_format import AiStreamThrottler, format_tool_call, reasoning_block_markup, tool_detail_block, tool_detail_worth_expanding
 
@@ -52,6 +53,7 @@ class TurnPresenter:
         self.stream_active = False
         self.cancel_notified = False
         self.worker = None  # run() 进入 worker 线程后填充
+        self._turn_incomplete_seen = False  # #goal 05: HITL 悬挂中断标记（续跑判定排除链）
 
     # ---- 基础设施 ----
 
@@ -120,6 +122,16 @@ class TurnPresenter:
             self.write_line(collapsed)
         if name == "write_todos" and not self.cancelled():
             self.app.call_from_thread(self.app._refresh_todos_panel)
+        # #goal 05: 目标建立即时 notify（spec story 21）；参数 JSON 取 objective，失败回落原文前 60 字
+        if name == "create_goal" and not err and not self.cancelled():
+            obj = None
+            try:
+                obj = json.loads(args).get("objective")
+            except (ValueError, TypeError):
+                pass
+            if not obj:
+                obj = (args or "")[:60]
+            self.app.call_from_thread(self.app.notify, f"已设目标：{obj}", timeout=3)
 
     def on_reasoning_end(self, text: str) -> None:
         # tui-ux19: 思考内容上屏（💭 淡色斜体块，对标正文区分；正文之后渲染）
@@ -162,6 +174,8 @@ class TurnPresenter:
         )
 
     def on_turn_incomplete(self) -> None:
+        # #goal 05: 悬挂 HITL interrupt 标记置位（finally 续跑判定排除链）；再走原通知路径
+        self._turn_incomplete_seen = True
         self.app.call_from_thread(self.app._on_turn_incomplete, self.thread_id)
 
     def callbacks(self) -> dict:
@@ -192,6 +206,7 @@ class TurnPresenter:
         turn_thread_id = self.thread_id
         self.worker = get_current_worker()
         ok = False
+        turn = None
         try:
             turn = streaming.run_agent_turn(
                 self.app.agent,
@@ -231,8 +246,36 @@ class TurnPresenter:
             elif not ok and not self.cancelled():
                 self.write_line("[i][dim]（已放弃本轮）[/dim][/i]")
             elif ok:
-                self.write_line(f"[dim]▌ {model} ({elapsed:.1f}s)[/dim]")
+                label = goals.goal_input_label(self.user_input)
+                if label:
+                    self.write_line(f"[dim]▌ {model} ({elapsed:.1f}s) {label}[/dim]")
+                else:
+                    self.write_line(f"[dim]▌ {model} ({elapsed:.1f}s)[/dim]")
             self.app.call_from_thread(self.app._refresh_todos_panel)
+            # #goal 05: 自动续跑接线——turn 正常结束（turn 非 None）时走 goals 纯函数判定：
+            # continuation/budget → goal_note_turn 记账 + 排队 prompt（_release_turn_gate 经 UI 线程
+            # 重投队首，零新机制）；收尾交接轮跑完才后置 budget_limited 终态（docstring 契约：
+            # 过早标记会让收尾轮 complete_goal 抛 TerminalGoalError）。
+            if turn is not None:
+                goal = goals.goal_status(thread_id=turn_thread_id)
+                ctx = {
+                    "thread_id": turn_thread_id,
+                    "plan_mode": self.start_mode == "plan",
+                    "pending_interrupt": self._turn_incomplete_seen,
+                }
+                decision = goals.continuation_decision(goal, turn, ctx)
+                if decision.kind in ("continuation", "budget"):
+                    try:
+                        goals.goal_note_turn(thread_id=turn_thread_id)
+                    except goals.GoalError:
+                        pass
+                    self.app.call_from_thread(self.app._queue.push, turn_thread_id, decision.prompt)
+                if isinstance(self.user_input, str) and self.user_input.startswith("[目标预算耗尽 "):
+                    try:
+                        goals.goal_mark_budget_exhausted(thread_id=turn_thread_id)
+                    except goals.GoalError:
+                        pass
+            self.app.call_from_thread(self.app._update_sub_title)
             # tui-ux7 #02: finally 恒执行 → 异常路径也释放本 thread 的回合门；
             # 若收尾期已排队，_release_turn_gate 经 UI 线程重投队首（FIFO）。
             self.app.call_from_thread(self.app._release_turn_gate, turn_thread_id)

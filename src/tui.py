@@ -19,7 +19,7 @@ from textual.css.query import NoMatches
 from textual.widgets.option_list import Option
 from textual.worker import Worker
 
-from src import commands, ime_shim, shell_backend
+from src import commands, goals, ime_shim, shell_backend
 from src.clipboard_image import (
     build_multimodal_content,
     image_fallback_text,
@@ -1205,6 +1205,10 @@ class JarvisApp(App):
                 pass
         if yolo_active(self.permission_state, self.thread_id):
             parts.append("[YOLO]")
+        # #goal 05: 在途目标徽章（非终态才显示；终态/无记录不占位）
+        g = goals.goal_status(thread_id=self.thread_id)
+        if g is not None and g.status in (goals.GOAL_ACTIVE, goals.GOAL_PAUSED):
+            parts.append(f"[GOAL] {g.turns_used}/{g.max_turns} {g.status}")
         from src.permissions import side_active, side_parent
 
         if side_active(self.permission_state, self.thread_id):
@@ -1609,7 +1613,13 @@ class JarvisApp(App):
         input_widget = self.query_one("#input", JarvisTextArea)
         input_widget.clear()
         log = self.query_one("#messages", RichLog)
-        log.write(user_message_markup(text))
+        # #goal 05: 自动续跑输入渲染为 dim 系统行（非用户消息行）；stream_input 仍为原文本，
+        # 续跑 prompt 走非 slash 路径正常 spawn 下一轮（零新机制）。
+        label = goals.goal_input_label(text)
+        if label is not None:
+            log.write(system_message_markup(f"[dim]{label}…[/dim]"))
+        else:
+            log.write(user_message_markup(text))
         # #04: 消息含虚拟前缀（/workspace/ 等）时追加 dim 锚点行，指出真实目录。
         for line in commands.path_anchor_lines(text, vpmapping):
             log.write(line)

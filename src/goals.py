@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,6 +34,27 @@ GOAL_BUDGET_LIMITED = "budget_limited"
 GOAL_COMPLETE = "complete"
 TERMINAL_STATUSES = frozenset({GOAL_BUDGET_LIMITED, GOAL_COMPLETE})
 DEFAULT_GOAL_MAX_TURNS = 5
+
+
+# #goal 05: 续跑轮输入前缀（与 continuation_prompt/budget_prompt 字面量对应），
+# 前端展示层据此把自动续跑输入渲染成 dim 系统行而非用户消息行。
+_GOAL_INPUT_RE = re.compile(r"^\[目标(续跑|预算耗尽) (\d+)/(\d+)\]")
+
+
+def goal_input_label(text: str | None) -> str | None:
+    """text 以 [目标续跑 n/m] / [目标预算耗尽 n/m] 开头 → 短标签，否则 None。
+
+    纯函数（前端展示层共用，CLI/TUI/GUI 不重复实现）：
+    - [目标续跑 n/m] → "目标续跑 n/m"
+    - [目标预算耗尽 n/m] → "目标收尾 n/m"
+    """
+    if not isinstance(text, str):
+        return None
+    m = _GOAL_INPUT_RE.match(text)
+    if m is None:
+        return None
+    verb = "目标续跑" if m.group(1) == "续跑" else "目标收尾"
+    return f"{verb} {m.group(2)}/{m.group(3)}"
 
 
 class GoalError(RuntimeError):
