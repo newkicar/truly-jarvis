@@ -1,5 +1,5 @@
-"""gui-ux22 工单 01：GUI 分屏并发预检（双 tid × 并发 graph × 共享 SqliteSaver）。
-内核零改动；若暴露并发缺口只补 GUI 层并在 issue 第 4 项记录。自建目录纪律（gui_fakes，不用 tmp_path）。"""
+"""gui-ux22 工单 01；工单 02：QSplitter 双槽布局回归（开=展开/关=折叠/pane re-parent/手柄拖动）。
+工单 01 内核零改动；若暴露并发缺口只补 GUI 层并在 issue 第 4 项记录。自建目录纪律（gui_fakes，不用 tmp_path）。"""
 import json, os, threading, time, types
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -165,4 +165,179 @@ def test_real_graph_dual_concurrent_sqlite_persist(qapp, monkeypatch):
         assert any(getattr(m, "type", "") == "ai" for m in sstate)
     finally:
         if rt is not None: rt.close()
+        cleanup_home(home)
+
+
+# ---------------------------------------------------------------- 工单 02：QSplitter 双槽布局
+# 开 side = 右槽展开 / 关 side = 右槽折叠 / pane 按槽归属 re-parent / 手柄原生拖动。
+# side 开/关走轻路径（permissions.side_open + 拦截 commands.close_side），不 fork graph。
+
+
+def _win_with_side(qapp, monkeypatch):
+    """真 runtime + MainWindow + 一主线 + 一 side。返回 (home, rt, p, win, tid, side_tid)。"""
+    from PySide6.QtWidgets import QMessageBox
+    import src.commands as commands_mod
+    from src import permissions
+
+    home = new_home()
+    rt = build_runtime_for_config(home, model=ScriptedMockModel())
+    p = GuiPresenter(rt, UiBridge())
+    monkeypatch.setattr(GuiPresenter, "_maybe_name", lambda self, tid, ok: None)
+    win = MainWindow(p, p.bridge)
+    tid = p.new_session_id()
+    side_tid = p.new_session_id()
+    p.session_registry.rename(tid, "主线")
+    p.session_registry.rename(side_tid, "主线-side")
+    monkeypatch.setattr(p, "session_ids", lambda: [tid, side_tid])
+    permissions.side_open(rt.permission_state, side_tid, tid)
+    monkeypatch.setattr(
+        commands_mod, "close_side",
+        lambda agent, t, state: ("已删除 side 会话并返回主线 " + tid, tid),
+    )
+    monkeypatch.setattr(
+        QMessageBox, "question",
+        staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes),
+    )
+    return home, rt, p, win, tid, side_tid
+
+
+def test_splitter_open_side_expands(qapp, monkeypatch):
+    """开 side：右槽展开半宽；双槽四件套各自独立实例；pane 按槽归属 re-parent。"""
+    home, rt, p, win, tid, side_tid = _win_with_side(qapp, monkeypatch)
+    try:
+        win._switch_to(tid)        # 先主线：确保双 pane 均创建
+        win._switch_to(side_tid)
+        win.show()
+        qapp.processEvents()
+        sizes = win.chat_splitter.sizes()
+        assert len(sizes) == 2 and sizes[0] > 0 and sizes[1] > 0
+        # 双槽四件套独立实例（左槽保持旧属性名，右槽新实例）
+        assert win.side_input_bar is not win.input_bar
+        assert win.side_image_strip is not win.image_strip
+        assert win.side_queue_strip is not win.queue_strip
+        assert win.side_status is not win.status_label
+        # pane re-parent：各槽当前 pane 落进自己的栈
+        assert win.panes[side_tid].parentWidget() is win.side_stack
+        assert win.panes[tid].parentWidget() is win.stack
+        assert win.side_stack.currentWidget() is win.panes[side_tid]
+        assert win.stack.currentWidget() is win.panes[tid]
+        assert win.active_tid == side_tid
+        assert not win.side_pill.isHidden()
+    finally:
+        rt.close()
+        win.close()
+        cleanup_home(home)
+
+
+def test_splitter_close_side_collapses(qapp, monkeypatch):
+    """关 side（pill）：右槽折叠 0 宽、回主线、左槽布局回归旧单列等价。"""
+    home, rt, p, win, tid, side_tid = _win_with_side(qapp, monkeypatch)
+    try:
+        win._switch_to(tid)        # 先主线：确保双 pane 均创建
+        win._switch_to(side_tid)
+        win.show()
+        qapp.processEvents()
+        assert win.chat_splitter.sizes()[1] > 0
+        win._on_side_pill_clicked()  # 关 = 删 side 回主线（close_side 已拦截）
+        qapp.processEvents()
+        assert win.chat_splitter.sizes()[1] == 0
+        assert win.active_tid == tid
+        assert win.side_pill.isHidden()
+        assert win.stack.currentWidget() is win.panes[tid]
+        # 左槽四件套同宿主 + 自上而下顺序（旧单列布局等价回归）
+        host = win.status_label.parentWidget()
+        for w in (win.queue_strip, win.image_strip, win.input_bar):
+            assert w.parentWidget() is host
+        lay = host.layout()
+        widgets = [lay.itemAt(i).widget() for i in range(lay.count())]
+        widgets = [w for w in widgets if w is not None]
+        pos = {}
+        for name, w in (("status_label", win.status_label),
+                        ("queue_strip", win.queue_strip),
+                        ("image_strip", win.image_strip),
+                        ("input_bar", win.input_bar)):
+            for k, cand in enumerate(widgets):
+                if cand is w:
+                    pos[name] = k
+                    break
+        assert pos["status_label"] < pos["queue_strip"] < pos["image_strip"] < pos["input_bar"]
+        # 右槽四件套 + pill 同属右槽宿主（折叠 0 宽但布局完整）
+        rhost = win.side_status.parentWidget()
+        assert rhost is not host
+        for w in (win.side_pill, win.side_queue_strip, win.side_image_strip, win.side_input_bar):
+            assert w.parentWidget() is rhost
+    finally:
+        rt.close()
+        win.close()
+        cleanup_home(home)
+
+
+def test_pane_reparent_across_switches(qapp, monkeypatch):
+    """主/侧反复切换：pane 实例常驻（id 不变）、按槽归属 re-parent、dirty flush 不崩。"""
+    home, rt, p, win, tid, side_tid = _win_with_side(qapp, monkeypatch)
+    try:
+        win._switch_to(tid)        # 先主线：确保双 pane 均创建
+        win._switch_to(side_tid)
+        pane_s, pane_m = win.panes[side_tid], win.panes[tid]
+        id_s, id_m = id(pane_s), id(pane_m)
+        for _ in range(3):
+            win._switch_to(side_tid)
+            qapp.processEvents()
+            win._flush_all_dirty()
+            win._switch_to(tid)
+            qapp.processEvents()
+            # re-parent 只跟槽归属不跟 active：side pane 始终在右槽
+            assert pane_s.parentWidget() is win.side_stack
+            assert pane_m.parentWidget() is win.stack
+            win._flush_all_dirty()
+        assert id(win.panes[side_tid]) == id_s
+        assert id(win.panes[tid]) == id_m
+    finally:
+        rt.close()
+        win.close()
+        cleanup_home(home)
+
+
+def test_splitter_no_side_stays_collapsed(qapp, monkeypatch):
+    """无 side：右槽恒 0 宽（现状单列布局回归）；右槽部件在但 0 宽。"""
+    home = new_home()
+    rt = build_runtime_for_config(home, model=ScriptedMockModel())
+    p = GuiPresenter(rt, UiBridge())
+    monkeypatch.setattr(GuiPresenter, "_maybe_name", lambda self, tid, ok: None)
+    win = MainWindow(p, p.bridge)
+    try:
+        tid = p.new_session_id()
+        p.session_registry.rename(tid, "主线")
+        monkeypatch.setattr(p, "session_ids", lambda: [tid])
+        win._switch_to(tid)
+        win.show()
+        qapp.processEvents()
+        assert win.chat_splitter.sizes()[1] == 0
+        assert win.side_pill.isHidden()
+        host = win.status_label.parentWidget()
+        for w in (win.queue_strip, win.image_strip, win.input_bar):
+            assert w.parentWidget() is host
+        assert win.side_status.parentWidget() is not host
+    finally:
+        rt.close()
+        win.close()
+        cleanup_home(home)
+
+
+def test_splitter_handle_drag_ratio(qapp, monkeypatch):
+    """手柄原生拖动面：handle 存在；setSizes 比例读回保持（offscreen 不断言绝对像素）。"""
+    home, rt, p, win, tid, side_tid = _win_with_side(qapp, monkeypatch)
+    try:
+        win._switch_to(tid)        # 先主线：确保双 pane 均创建
+        win._switch_to(side_tid)
+        win.show()
+        qapp.processEvents()
+        assert win.chat_splitter.handle(1) is not None  # 原生手柄：用户可自由拖动
+        win.chat_splitter.setSizes([100, 400])
+        qapp.processEvents()
+        s = win.chat_splitter.sizes()
+        assert s[1] > s[0]  # 1:4 比例读回（右槽占大头）
+    finally:
+        rt.close()
+        win.close()
         cleanup_home(home)

@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QPushButton,
+    QSplitter,
     QStackedWidget,
     QTreeWidget,
     QTreeWidgetItem,
@@ -229,36 +230,76 @@ class MainWindow(QMainWindow):
         ll.addWidget(self.mode_badge)
         root.addWidget(left)
 
-        mid = QWidget()
-        ml = QVBoxLayout(mid)
-        ml.setContentsMargins(4, 4, 4, 4)
-        ml.setSpacing(2)
-        # side 会话「回主线」pill（side-chat 工单 03）：仅当前会话为 side 时可见
-        self.side_pill = QPushButton("← 回主线")
-        self.side_pill.setObjectName("side-pill")
-        self.side_pill.hide()
-        self.side_pill.clicked.connect(self._on_side_pill_clicked)
-        ml.addWidget(self.side_pill)
+        # gui-ux22 工单 02：中央区 = 水平 QSplitter 双槽——左槽 = 主线四件套（同现状单列），
+        # 右槽 = 侧边会话四件套（各独立实例、绑自己的 pane 组）；右槽默认折叠（0 宽），
+        # 开侧边会话展开、关闭折叠
+        self.chat_splitter = QSplitter(Qt.Horizontal)
+        self.chat_splitter.setObjectName("chat-splitter")
+
+        # ---- 左槽：主线四件套（widget/属性名不变；左槽连接保持无参直连）
+        left_slot = QWidget()
+        ll = QVBoxLayout(left_slot)
+        ll.setContentsMargins(4, 4, 4, 4)
+        ll.setSpacing(2)
         self.stack = QStackedWidget()
-        ml.addWidget(self.stack, stretch=1)
+        ll.addWidget(self.stack, stretch=1)
 
         self.status_label = StatusView("就绪")
-        ml.addWidget(self.status_label)
+        ll.addWidget(self.status_label)
 
         self.queue_strip = QueueStrip()
-        ml.addWidget(self.queue_strip)
+        ll.addWidget(self.queue_strip)
         self.queue_strip.pull_out_requested.connect(self._on_queue_pull_out)
         self.queue_strip.jump_requested.connect(self._on_queue_jump)
 
         self.image_strip = ImageStrip()
-        ml.addWidget(self.image_strip)
+        ll.addWidget(self.image_strip)
         self.input_bar = InputBar()
         self.input_bar.edit.setPlaceholderText("输入消息（Enter 发送，Shift+Enter / Alt+Enter 换行）")
         self.input_bar.set_image_paste_hook(self._try_image_paste)
         self.input_bar.submit_requested.connect(self._on_input_submit)
         self.input_bar.cancel_requested.connect(self._cancel_active)
-        ml.addWidget(self.input_bar)
-        root.addWidget(mid, 1)
+        ll.addWidget(self.input_bar)
+
+        # ---- 右槽：侧边会话四件套（独立实例；side_pill 挪至右槽头部；
+        # submit/取消/Esc/图片粘贴/补全等 hook 工单 03 再接）
+        right_slot = QWidget()
+        rl = QVBoxLayout(right_slot)
+        rl.setContentsMargins(4, 4, 4, 4)
+        rl.setSpacing(2)
+        # side 会话「回主线」pill（side-chat 工单 03）：仅当前会话为 side 时可见
+        self.side_pill = QPushButton("← 回主线")
+        self.side_pill.setObjectName("side-pill")
+        self.side_pill.hide()
+        self.side_pill.clicked.connect(self._on_side_pill_clicked)
+        rl.addWidget(self.side_pill)
+        self.side_stack = QStackedWidget()
+        rl.addWidget(self.side_stack, stretch=1)
+
+        self.side_status = StatusView("就绪")
+        rl.addWidget(self.side_status)
+
+        self.side_queue_strip = QueueStrip()
+        rl.addWidget(self.side_queue_strip)
+        self.side_queue_strip.pull_out_requested.connect(lambda t: self._on_queue_pull_out(t, side=True))
+        self.side_queue_strip.jump_requested.connect(lambda t: self._on_queue_jump(t, side=True))
+
+        self.side_image_strip = ImageStrip()
+        rl.addWidget(self.side_image_strip)
+        self.side_input_bar = InputBar()
+        self.side_input_bar.edit.setPlaceholderText("输入消息（Enter 发送，Shift+Enter / Alt+Enter 换行）")
+        rl.addWidget(self.side_input_bar)
+
+        self.chat_splitter.addWidget(left_slot)
+        self.chat_splitter.addWidget(right_slot)
+        self.chat_splitter.setCollapsible(0, False)  # 左槽（主线）始终可见
+        self.chat_splitter.setCollapsible(1, True)   # 右槽无 side 时可收到 0 宽
+        self.chat_splitter.setSizes([1, 0])          # 初始 = 现状单列布局
+        root.addWidget(self.chat_splitter, 1)
+
+        # gui-ux22 工单 02：槽归属（splitter 建好即设；__init__ 后段才调 _switch_to）
+        self._main_slot_tid: str | None = None
+        self._side_slot_tid: str | None = None
 
         self.setCentralWidget(central)
         self.resize(1060, 700)
@@ -275,8 +316,8 @@ class MainWindow(QMainWindow):
         self.completion_popup.hide()
         self.input_bar.edit.textChanged.connect(lambda: self._completion_timer.start())
         self.input_bar.edit.cursorPositionChanged.connect(lambda: self._completion_timer.start())
-        self.input_bar.edit.textChanged.connect(self._save_active_draft)  # #1: 草稿随会话（每次输入即存）
-        self.image_strip.changed.connect(self._save_active_draft)  # #1: 图片增删也进草稿
+        self.input_bar.edit.textChanged.connect(lambda: self._save_slot_draft("main"))  # #1: 草稿随会话（每次输入即存）
+        self.image_strip.changed.connect(lambda: self._save_slot_draft("main"))  # #1: 图片增删也进草稿
         # 逐键防抖（120ms singleShot 重启）：消除「每敲一键全量重扫+重挂弹层」的卡顿
         self._completion_timer = QTimer(self)
         self._completion_timer.setSingleShot(True)
@@ -418,8 +459,8 @@ class MainWindow(QMainWindow):
             pass
 
     def _on_input_set(self, text: str) -> None:
-        """undo 回填（gui-ux16）：被撤回的用户消息进输入框，可改可再发。"""
-        self.input_bar.fill_text(text)
+        """undo 回填（gui-ux16）：被撤回的用户消息进活动会话所属槽的输入框，可改可再发。"""
+        self._slot_input_widgets(self._slot_of_tid(self.active_tid))[0].fill_text(text)
 
     # ---- 工单 09：时间旅行（渲染入口）
     def _on_snapshot(self) -> None:
@@ -705,29 +746,93 @@ class MainWindow(QMainWindow):
             p.rebuild_from_records(replay.thread_record(self.presenter.runtime.agent, tid))
         except Exception:  # noqa: BLE001 — 记录重建是增强，失败回落空 pane 不崩
             pass
-        self.stack.addWidget(p)
+        self._stack_for(tid).addWidget(p)  # gui-ux22 工单 02：按会话归属槽路由
         self.panes[tid] = p
         return p
 
     def _save_active_draft(self) -> None:
-        """#1: 把当前未提交输入（文本+图片条）记为活动会话草稿（纯写 dict，无去重逻辑）。"""
+        """#1: 把当前未提交输入（文本+图片条）记为活动会话草稿（纯写 dict，无去重逻辑）。
+
+        gui-ux22 工单 02：槽化后经 active_tid 所属槽保存（左右槽各有自己的输入件）。"""
         if self.active_tid is None:
             return
-        self._drafts[self.active_tid] = (
-            self.input_bar.edit.toPlainText(),
-            list(self.image_strip.paths()),
-        )
+        self._save_slot_draft(self._slot_of_tid(self.active_tid))
+
+    # ---- gui-ux22 工单 02：双槽布局 helpers（左槽 = 主线，右槽 = 侧边会话）
+    def _slot_of_tid(self, tid: str | None) -> str:
+        """会话归属槽：side 会话 → "side"；其余（含 None/presenter 缺失）→ "main"。"""
+        if tid and self.presenter is not None and self.presenter.is_side(tid):
+            return "side"
+        return "main"
+
+    def _stack_for(self, tid: str) -> QStackedWidget:
+        """会话归属的 pane 栈（ChatPane re-parent 目标）。"""
+        return self.side_stack if self._slot_of_tid(tid) == "side" else self.stack
+
+    def _slot_input_widgets(self, slot: str) -> tuple:
+        """指定槽的 (输入条, 图片条) 两件套（各槽独立实例）。"""
+        if slot == "side":
+            return self.side_input_bar, self.side_image_strip
+        return self.input_bar, self.image_strip
+
+    def _slot_status(self, slot: str) -> StatusView:
+        """指定槽的状态行。"""
+        return self.side_status if slot == "side" else self.status_label
+
+    def _update_slot_ownership(self, tid: str) -> None:
+        """切换会话时更新左右槽 tid 归属（side 占右槽；主线 tid 取 side 的 parent 回填）。"""
+        if self._slot_of_tid(tid) == "side":
+            self._side_slot_tid = tid
+            self._main_slot_tid = self.presenter.side_parent(tid) or self._main_slot_tid
+        else:
+            self._main_slot_tid = tid
+
+    def _sync_slot_panes(self) -> None:
+        """ChatPane re-parent：把全部 pane 移到应属的栈（同 pane 实例 per-thread 常驻，
+        dirty flush / sticky-bottom 不变）。"""
+        for tid, pane in list(self.panes.items()):
+            target = self._stack_for(tid)
+            if pane.parentWidget() is not target:
+                pane.setParent(target)
+                target.addWidget(pane)
+        if self._main_slot_tid and self._main_slot_tid in self.panes:
+            self.stack.setCurrentWidget(self.panes[self._main_slot_tid])
+        if self._side_slot_tid and self._side_slot_tid in self.panes:
+            self.side_stack.setCurrentWidget(self.panes[self._side_slot_tid])
+
+    def _expand_side_slot(self) -> None:
+        """开 side 会话：右槽展开半宽（QSplitter 手柄可自由调比例——原生行为）。"""
+        self.chat_splitter.setSizes([1, 1])
+
+    def _collapse_side_slot(self) -> None:
+        """关 side 会话：右槽折叠 0 宽（布局回到现状单列）。"""
+        self._side_slot_tid = None
+        self.chat_splitter.setSizes([1, 0])
+
+    def _save_slot_draft(self, slot: str) -> None:
+        """#1 槽版：把指定槽未提交输入（文本+图片条）记为该槽 tid 会话的草稿。"""
+        tid = self._side_slot_tid if slot == "side" else self._main_slot_tid
+        if tid is None:
+            return
+        bar, imgs = self._slot_input_widgets(slot)
+        self._drafts[tid] = (bar.edit.toPlainText(), list(imgs.paths()))
 
     def _switch_to(self, tid: str) -> None:
         self._save_active_draft()  # #1: 先记「上一个」会话的未提交草稿（此刻 active_tid 还指向旧会话）
         p = self._ensure_pane(tid)
         self.active_tid = tid
-        self.stack.setCurrentWidget(p)
+        self._update_slot_ownership(tid)
+        self._sync_slot_panes()  # gui-ux22 工单 02：取代原 stack.setCurrentWidget(p)——各槽自设当前件
+        # gui-ux22 工单 02：状态驱动布局不变式——目标是 side 会话 ⇒ 右槽展开
+        # （覆盖树点 side 叶子的同项目/跨项目两入口；对开/关 side 路径幂等）
+        if self._slot_of_tid(tid) == "side":
+            self._expand_side_slot()
         p.stick = True
         p.snap_to_bottom()
         self._workspace.set_last_active(self._workspace.active_root(), tid)
         self.refresh_tree()
-        self.input_bar.edit.setFocus()
+        bar, _ = self._slot_input_widgets(self._slot_of_tid(tid))
+        bar.edit.setFocus()
         self._refresh_queue_strip()
         note = "（回合进行中，切走不影响执行）" if self.presenter.gate.is_running(tid) else ""
         # 打开该会话/项目 → 消费其完成标记
@@ -738,15 +843,25 @@ class MainWindow(QMainWindow):
                 self._sess_done.pop(k, None)
             self._proj_done.pop(rn, None)
         proj = self._active_project_name()
-        self.status_label.setText(f"{proj} · 会话 {tid}{note}" if proj else f"会话 {tid}{note}")
+        self._slot_status(self._slot_of_tid(tid)).setText(f"{proj} · 会话 {tid}{note}" if proj else f"会话 {tid}{note}")
         self._refresh_mode_badges()
         self._refresh_running_badge()
-        # #1: 恢复目标会话的未提交草稿（无记录 = 清空输入区与图片条）
-        text, imgs = self._drafts.get(tid, ("", []))
-        self.input_bar.edit.setPlainText(text)
-        self.image_strip.clear()
-        for _img in imgs:
-            self.image_strip.add_image(_img)
+        # #1: 恢复目标会话的未提交草稿（无记录 = 清空输入区与图片条）；
+        # gui-ux22 工单 02：双槽各按自身 tid 恢复（tid=None 槽跳过、无草稿则清空该槽）
+        if self._main_slot_tid is not None:
+            bar_m, img_m = self._slot_input_widgets("main")
+            text_m, imgs_m = self._drafts.get(self._main_slot_tid, ("", []))
+            bar_m.edit.setPlainText(text_m)
+            img_m.clear()
+            for _img in imgs_m:
+                img_m.add_image(_img)
+        if self._side_slot_tid is not None:
+            bar_s, img_s = self._slot_input_widgets("side")
+            text_s, imgs_s = self._drafts.get(self._side_slot_tid, ("", []))
+            bar_s.edit.setPlainText(text_s)
+            img_s.clear()
+            for _img in imgs_s:
+                img_s.add_image(_img)
         self._refresh_side_pill()
 
     # ---- 项目树（工单 04：项目→会话；点项目名=切换，+/−=展开；右键各自菜单）
@@ -846,12 +961,19 @@ class MainWindow(QMainWindow):
         return out
 
     def _teardown_panes(self) -> None:
-        """切项目前清空旧项目的 pane 栈（新项目的 thread 是另一套检查点库）。"""
+        """切项目前清空旧项目的双槽 pane 栈（新项目的 thread 是另一套检查点库）。"""
         for p in list(self.panes.values()):
             p.setParent(None)
         self.panes.clear()
         while self.stack.count():
             self.stack.removeWidget(self.stack.widget(0))
+        # gui-ux22 工单 02：右槽同样清空 + 槽归属复位 + 折叠回单列
+        #（若新焦点是 side 会话，_switch_to 会按不变式重新展开）
+        while self.side_stack.count():
+            self.side_stack.removeWidget(self.side_stack.widget(0))
+        self._main_slot_tid = None
+        self._side_slot_tid = None
+        self.chat_splitter.setSizes([1, 0])
 
     def _do_switch_project(self, root, focus_tid: str | None = None) -> None:
         """切到项目 root（关旧建新 + 打开 focus_tid / 上次活动 / 新会话）。"""
@@ -1146,6 +1268,7 @@ class MainWindow(QMainWindow):
         self.status_label.setText(note)
         if new_tid:
             self._switch_to(new_tid)
+            self._expand_side_slot()  # gui-ux22 工单 02：右槽展开
 
     def _delete_side_session(self, tid: str) -> None:
         from PySide6.QtWidgets import QMessageBox
@@ -1157,6 +1280,7 @@ class MainWindow(QMainWindow):
         if ans != QMessageBox.StandardButton.Yes:
             return
         note, parent = self.presenter.close_side(tid)
+        self._collapse_side_slot()  # gui-ux22 工单 02：右槽折叠
         self.status_label.setText(note)
         if parent:
             self._switch_to(parent)
@@ -1166,6 +1290,7 @@ class MainWindow(QMainWindow):
         if not self.active_tid or self.presenter is None:
             return
         note, parent = self.presenter.close_side(self.active_tid)
+        self._collapse_side_slot()  # gui-ux22 工单 02：右槽折叠
         self.status_label.setText(note)
         if parent:
             self._switch_to(parent)
@@ -1420,7 +1545,7 @@ class MainWindow(QMainWindow):
         p = self.panes.get(tid)
         if p is not None:
             p.awaiting_card = False
-        self.input_bar.edit.setFocus()
+        self._slot_input_widgets(self._slot_of_tid(tid))[0].edit.setFocus()
         self._refresh_queue_strip()
         self._refresh_running_badge()
 
@@ -1459,7 +1584,7 @@ class MainWindow(QMainWindow):
         if p is not None and text.startswith("已停止"):
             p.stopped = True
         if tid == self.active_tid:
-            self.status_label.setText(text)
+            self._slot_status(self._slot_of_tid(tid)).setText(text)
             self._refresh_running_badge()
 
     def _on_turn_started(self, tid: str) -> None:
@@ -1467,7 +1592,7 @@ class MainWindow(QMainWindow):
         if p is not None:
             p.running = True
             p.stopped = False
-        self.input_bar.set_cancel_enabled(True)
+        self._slot_input_widgets(self._slot_of_tid(tid))[0].set_cancel_enabled(True)
         arn = self._workspace.active_root()
         if arn is not None:
             self._sess_done.pop((normalize_root_key(arn), tid), None)
@@ -1479,7 +1604,11 @@ class MainWindow(QMainWindow):
         p = self.panes.get(tid)
         if p is not None:
             p.running = self.presenter.gate.is_running(tid)
-        self.input_bar.set_cancel_enabled(bool(self.presenter.gate.running_threads()))
+        # gui-ux22 工单 02：左右输入条各按自身槽 tid 判定（弃 running_threads() 全局判定——
+        # side 回合结束不应误关主线取消钮，反之亦然）
+        gate = self.presenter.gate
+        self.input_bar.set_cancel_enabled(bool(self._main_slot_tid) and gate.is_running(self._main_slot_tid))
+        self.side_input_bar.set_cancel_enabled(bool(self._side_slot_tid) and gate.is_running(self._side_slot_tid))
         self.refresh_sessions()
         self._refresh_queue_strip()
         self._refresh_running_badge()
@@ -1504,27 +1633,33 @@ class MainWindow(QMainWindow):
 
 
     # ---- 待发队列条（gui15 G5）：排队消息固定在输入框上方，回合真正开跑时才入窗
+    def _slot_queued_items(self, slot: str) -> list:
+        """指定槽队列条应显示的排队条目（各槽按自身 tid；无 tid → 空条）。gui-ux22 工单 02。"""
+        tid = self._side_slot_tid if slot == "side" else self._main_slot_tid
+        if not (self.presenter and tid):
+            return []
+        return self.presenter.gate.queued_texts(tid)
+
     def _refresh_queue_strip(self) -> None:
-        items = (
-            self.presenter.gate.queued_texts(self.active_tid)
-            if self.presenter and self.active_tid
-            else []
-        )
-        self.queue_strip.set_items(items)
+        self.queue_strip.set_items(self._slot_queued_items("main"))
+        self.side_queue_strip.set_items(self._slot_queued_items("side"))
 
     def _on_queued_flush(self, tid: str, text: str, images: list[str] | None) -> None:
         """排队消息重投入门 → 用户气泡此刻才进对话窗（随附图片不丢）。"""
         self._ensure_pane(tid).append_user(text, images or None)
         self._refresh_queue_strip()
 
-    def _on_queue_jump(self, text: str) -> None:
+    def _on_queue_jump(self, text: str, side: bool = False) -> None:
         """插队（codex queued-chip Steer 语义）：撤出 FIFO 队列 → 立即注入插队缓存
         （JumpInRegistry），当前回合的下一步模型调用前由
         MessageQueueJumpInMiddleware drain 注入——不等回合结束。带图条目以
-        路径引用 fallback 文本形式入缓存（registry 只存 str）。"""
-        if not self.presenter or not self.active_tid:
+        路径引用 fallback 文本形式入缓存（registry 只存 str）。
+        gui-ux22 工单 02：side 参数路由到右槽（右槽队列条信号带 side=True）。"""
+        if not self.presenter:
             return
-        tid = self.active_tid
+        tid = self._side_slot_tid if side else self._main_slot_tid
+        if not tid:
+            return
         item = self.presenter.gate.pull_out_full(tid, text)
         if item is None:
             # 竞态：点击到处理之间条目已被重投/消费 → 只刷新条
@@ -1536,7 +1671,7 @@ class MainWindow(QMainWindow):
             # 撤出队列等价于立即重投
             self.presenter.start_turn(tid, raw, images=images or None)
             self._ensure_pane(tid).append_user(raw, images or None)
-            self.status_label.setText("已发送，执行中…")
+            self._slot_status("side" if side else "main").setText("已发送，执行中…")
         else:
             payload = raw
             if images:
@@ -1544,20 +1679,23 @@ class MainWindow(QMainWindow):
                 payload = fallback or raw
             self.presenter.runtime.registry.push(tid, payload)
             self._ensure_pane(tid).append_user(raw, images or None)
-            self.status_label.setText("已插队：注入当前回合的下一步（图片以路径引用）" if images else "已插队：注入当前回合的下一步")
+            self._slot_status("side" if side else "main").setText("已插队：注入当前回合的下一步（图片以路径引用）" if images else "已插队：注入当前回合的下一步")
         self._refresh_queue_strip()
 
-    def _on_queue_pull_out(self, text: str) -> None:
+    def _on_queue_pull_out(self, text: str, side: bool = False) -> None:
+        """gui-ux22 工单 02：side 参数路由到右槽（撤出后回填对应槽输入件）。"""
+        tid = self._side_slot_tid if side else self._main_slot_tid
         res = (
-            self.presenter.gate.pull_out_full(self.active_tid, text)
-            if self.presenter and self.active_tid
+            self.presenter.gate.pull_out_full(tid, text)
+            if self.presenter and tid
             else None
         )
+        bar, imgs = self._slot_input_widgets("side" if side else "main")
         if res is not None:
-            self.input_bar.edit.setPlainText(res[0])
-            self.image_strip.clear()
+            bar.edit.setPlainText(res[0])
+            imgs.clear()
             for _img in res[1]:
-                self.image_strip.add_image(_img)
-            self.input_bar.edit.setFocus()
-            self.status_label.setText("已撤出队列，返回输入框")
+                imgs.add_image(_img)
+            bar.edit.setFocus()
+            self._slot_status("side" if side else "main").setText("已撤出队列，返回输入框")
         self._refresh_queue_strip()
