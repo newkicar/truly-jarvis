@@ -328,3 +328,59 @@ def test_rebuild_from_records_is_idempotent(qtbot):
     pane.rebuild_from_records([])
     assert pane._vbox.count() == 2
     assert pane._placeholder is not None
+
+
+# ------------------------------------------------------------------
+# P3 regression：_clear_content 必须对孤立内容部件排程 deleteLater
+# ------------------------------------------------------------------
+
+def _make_card(i: int = 0):
+    from types import SimpleNamespace
+
+    from src.gui.cards import ApprovalCard
+
+    inv = SimpleNamespace(name="execute", path=None, args={"command": f"cmd{i}"})
+    return ApprovalCard(inv, "preview", lambda r: None, lambda: None)
+
+
+def test_rebuild_delete_laters_orphaned_content(qtbot, qapp):
+    """P3：_clear_content 孤立的部件须排程 deleteLater。
+
+    无此修复时，ApprovalCard（持 live QTimer + 信号槽）成顶层 C++ 对象滞留，
+    下一次自动 GC 周期 shiboken 包装器触发 C 级 finalizer 析构未删的 C++ 对象
+    → 运行中 SIGSEGV（undo / 双 Esc 后发新消息闪退；rebuild_from_records 触发链）。
+    判定 API：shiboken6.isValid（6.12 无 isDestroyed）；deleteLater 须事件循环
+    空转才执行 → 用 qtbot.wait 驱动。"""
+    import shiboken6
+
+    p = ChatPane("t1")
+    qtbot.addWidget(p)
+    card = _make_card()
+    p.append_card(card)
+    assert card.parent() is not None
+    p.rebuild_from_records([])
+    assert card.parent() is None
+    assert shiboken6.isValid(card)  # 尚未删除（等事件循环）
+    qtbot.wait(200)  # 空转事件循环 → deleteLater 触发
+    assert not shiboken6.isValid(card)  # C++ 对象已由事件循环删除，而非留给 GC 销毁
+
+
+def test_rebuild_cards_gc_safe(qtbot, qapp):
+    """P3：undo 触发的重建链路不得给 GC 留下任何可析构的孤立卡片。"""
+    import gc
+    import shiboken6
+
+    p = ChatPane("t1")
+    qtbot.addWidget(p)
+    cards = []
+    for i in range(5):
+        c = _make_card(i)
+        p.append_card(c)
+        cards.append(c)
+    p.rebuild_from_records([])
+    gc.collect()
+    qtbot.wait(200)
+    assert all(not shiboken6.isValid(c) for c in cards)
+    # 重建后面板仍可用
+    p.append_user("after crash window")
+    p.append_fallback("ok")

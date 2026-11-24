@@ -48,3 +48,12 @@ def test_tui_ux12_yolo_entry():
     assert "/yolo" in [c.name for c in filter_commands(query="yol")]
     # 尾随空格（正在打参数）→ slash_query 返回 None，不弹命令候选
     assert slash_query("/yolo ") is None
+
+
+
+def test_tui_ux14_proxy_entry():
+    from src.slash_completion import SLASH_COMMANDS, filter_commands, slash_query
+
+    assert "/proxy" in [c.name for c in SLASH_COMMANDS]
+    assert "/proxy" in [c.name for c in filter_commands(query="prox")]
+    assert slash_query("/proxy ") is None

@@ -69,6 +69,12 @@ class SessionRegistry:
     def is_archived(self, tid: str) -> bool:
         return bool((self.get(tid) or {}).get("archived", False))
 
+    def set_compacted(self, tid: str, on: bool) -> None:
+        self._set_flag(tid, "compacted", on)
+
+    def is_compacted(self, tid: str) -> bool:
+        return bool((self.get(tid) or {}).get("compacted", False))
+
     def delete(self, tid: str) -> None:
         data = self.load()
         if data.pop(tid, None) is not None:

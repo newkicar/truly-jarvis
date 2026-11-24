@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -45,13 +46,31 @@ def _msg_text(m: Any) -> str:
 
 def thread_record(agent: Any, thread_id: str, max_messages: int = 500) -> list[Record]:
     """检查点消息 → 展示记录序列（user/AI 文本 + 工具行，tool_call_id 配对）。"""
-    import json
-
     state = agent.get_state(commands.thread_config(thread_id))
     messages = ((state.values or {}).get("messages")) or [] if state else []
     if max_messages is not None and len(messages) > max_messages:
         messages = messages[-max_messages:]
+    return _records_from_messages(messages)
 
+
+def compact_probe(agent: Any, thread_id: str, max_records: int = 400) -> tuple[list[Record], int]:
+    """回合前压缩基线快照（ADR-0014 ①④）：一次 get_state → (最新展示记录, 截断前消息总数)。
+
+    回合结束后若 post 消息数 < pre_count → 本轮压缩过；UI 合并「基线 + 当前 live」
+    重建 pane，压缩后历史不再空白（对标 codex：token 可压缩、记录仍在屏上）。
+    get_state 异常由调用方兜底（本函数自身不吞异常）。
+    """
+    state = agent.get_state(commands.thread_config(thread_id))
+    messages = ((state.values or {}).get("messages")) or [] if state else []
+    pre_count = len(messages)
+    records = _records_from_messages(messages)
+    if max_records is not None and len(records) > max_records:
+        records = records[-max_records:]
+    return records, pre_count
+
+
+def _records_from_messages(messages: list) -> list[Record]:
+    """展示记录构建（user/AI 文本 + 工具行配对；悬挂 tool_call 出折叠行）。"""
     pending: dict[str, tuple[str, str]] = {}  # call_id → (name, args_text)
     records: list[Record] = []
 

@@ -403,6 +403,19 @@ class MainWindow(QMainWindow):
             b.rebuild_pane.emit(tid)  # 主线程重建 pane 记录（worker 不碰 widget）
             if msg.startswith("已撤回") and restored:
                 b.input_set.emit(restored)  # 队列信号 → 主线程写输入框
+            if msg.startswith("已撤回"):
+                # ADR-0014: 撤到空白 → 清该会话压缩基线并去 🗜 标（防屏幕残影）
+                from src.gui import compact_baseline, replay
+
+                try:
+                    live = replay.thread_record(agent, tid)
+                    if not any(r.kind in ("user", "ai") for r in live):
+                        compact_baseline.clear_baseline(
+                            self.presenter.runtime.config.project_root, tid
+                        )
+                        self.presenter.session_registry.set_compacted(tid, False)
+                except Exception:  # noqa: BLE001 — 展示层清理不影响撤回
+                    pass
             return msg
 
         self.presenter.run_command(_run, tid)
@@ -443,6 +456,27 @@ class MainWindow(QMainWindow):
             + "（重启应用后生效；若项目级 jarvis.json 显式配置了 auto_compaction，该项目将覆盖全局值）"
         )
 
+    def _merged_display_records(self, tid: str) -> list:
+        """ADR-0014 压缩基线：压缩前历史记录（基线文件）+ 当前 live 记录 合并展示。
+
+        /compact（或自动压缩）后 token 已压缩、旧历史不在 checkpoint，UI 用
+        baseline+live 合并保持屏幕上的历史连续性（对标 codex：token 可压缩、
+        显示记录仍在）。
+        """
+        from src.gui import compact_baseline, replay
+
+        agent = self.presenter.runtime.agent
+        root = self.presenter.runtime.config.project_root
+        try:
+            base = compact_baseline.load_baseline(root, tid)
+        except Exception:  # noqa: BLE001 — 展示增强，失败只回落 live
+            base = []
+        try:
+            live = replay.thread_record(agent, tid)
+        except Exception:  # noqa: BLE001 — live 取失败回落仅 baseline
+            live = []
+        return list(base) + list(live)
+
     def _rebuild_pane(self, tid: str) -> None:
         # #4：undo/重建会拆掉审批卡片 widget；若 worker 仍停在 CardSession.wait，
         # 必须唤醒放弃（gate 才能 finish），否则该 thread 后续消息永排队不发出。
@@ -451,10 +485,8 @@ class MainWindow(QMainWindow):
         p = self.panes.get(tid)
         if p is None:
             return
-        from src.gui import replay
-
         try:
-            p.rebuild_from_records(replay.thread_record(self.presenter.runtime.agent, tid))
+            p.rebuild_from_records(self._merged_display_records(tid))
         except Exception:  # noqa: BLE001 — 重建失败保留原 pane，不崩 app
             pass
 
@@ -536,8 +568,22 @@ class MainWindow(QMainWindow):
         agent = self.presenter.runtime.agent
         state = self.presenter.runtime.permission_state
         b = self.presenter.bridge
+        first = raw.lstrip().split(None, 1)[0]
 
         def _run() -> str:
+            # ADR-0014: 会话正在执行中禁止手动 /compact（压缩会覆盖历史，
+            # 并发回合会丢失压缩边界）——直接拒绝并提示
+            if first == "/compact" and self.presenter.gate.is_running(tid):
+                return "本会话正在执行中，请等回合结束后再 /compact（或先停止当前回合）"
+            # ADR-0014: /compact 前快照压缩前历史记录（压缩后展示基线）
+            pre = []
+            if first == "/compact":
+                from src.gui import replay
+
+                try:
+                    pre = replay.thread_record(agent, tid)
+                except Exception:  # noqa: BLE001 — 快照失败不挡压缩
+                    pre = []
             text, new_tid, replay_cid = commands.dispatch_command(
                 agent, tid, raw, None,
                 vault_path=self.presenter.runtime.config.vault_path,
@@ -549,9 +595,21 @@ class MainWindow(QMainWindow):
                 b.switch_session.emit(new_tid, f"已切换到会话 {new_tid}")
             if text:
                 b.notify.emit(text)
-            # /yolo 改的是共享 permission_state：worker 完成后回主线程重同步
-            # 菜单勾选 / [YOLO] 徽标（_refresh_mode_badges 单一同步点；状态栏由 notify 承载）
-            if raw.lstrip().split(None, 1)[0] == "/yolo":
+            # ADR-0014: /compact 成功 → 压缩前记录追加进基线文件 + 标记 🗜
+            if first == "/compact" and text and text.startswith("已压缩上下文"):
+                from src.gui import compact_baseline
+
+                root = self.presenter.runtime.config.project_root
+                try:
+                    compact_baseline.save_baseline(
+                        root, tid, compact_baseline.load_baseline(root, tid) + pre
+                    )
+                    self.presenter.session_registry.set_compacted(tid, True)
+                except Exception:  # noqa: BLE001 — 基线写失败不影响压缩结果
+                    pass
+            # /yolo、/proxy 改的是共享 permission_state：worker 完成后回主线程重同步
+            # 菜单勾选 / [YOLO][PROXY] 徽标（_refresh_mode_badges 单一同步点；状态栏由 notify 承载）
+            if first in ("/yolo", "/proxy"):
                 b.sync_modes.emit()
             return text or ""
 
@@ -693,12 +751,15 @@ class MainWindow(QMainWindow):
         state = self.presenter.runtime.permission_state
         mode = plan_mode.effective_mode(state, self.active_tid or "")
         yolo = permissions.yolo_active(state, self.active_tid or "")
+        proxy = permissions.proxy_active(state, self.active_tid or "")
         from src.gui import theme as _theme_mod
 
         tok = _theme_mod.current_tokens()
         html = f'<span style="color: {tok["ok"]}; font-weight: bold;">[{"Plan" if mode == "plan" else "Act"}]</span>'
         if yolo:
             html += f' <span style="color: {tok["negative"]}; font-weight: bold;">[YOLO]</span>'
+        if proxy:
+            html += f' <span style="color: {tok["ok"]}; font-weight: bold;">[PROXY]</span>'
         self.mode_badge.setText(html)
         # 菜单勾选态与真实状态同步（切会话后 YOLO 态随会话变）
         self.yolo_action.blockSignals(True)
@@ -746,10 +807,8 @@ class MainWindow(QMainWindow):
             return self.panes[tid]
         p = ChatPane(tid)
         # 工单 06：冷建/首访旧会话 → 检查点完整记录重建（含工具行，默认折叠）
-        from src.gui import replay
-
         try:
-            p.rebuild_from_records(replay.thread_record(self.presenter.runtime.agent, tid))
+            p.rebuild_from_records(self._merged_display_records(tid))
         except Exception:  # noqa: BLE001 — 记录重建是增强，失败回落空 pane 不崩
             pass
         self._stack_for(tid).addWidget(p)  # gui-ux22 工单 02：按会话归属槽路由
@@ -890,11 +949,12 @@ class MainWindow(QMainWindow):
         mark = "▸ " if active else "   "
         pin = "★ " if reg.is_pinned(tid) else ""
         arch = "📁 " if reg.is_archived(tid) else ""
+        compact_mark = "🗜 " if reg.is_compacted(tid) else ""
         run = " ⚡" if gate.is_running(tid) else ""
         side = "◇ " if (
             self.presenter is not None and self.presenter.is_side(tid)
         ) else ""
-        return f"{mark}{done_mark}{side}{pin}{arch}{self.presenter.session_label(tid)}{run}"
+        return f"{mark}{done_mark}{side}{pin}{arch}{compact_mark}{self.presenter.session_label(tid)}{run}"
 
     def refresh_tree(self) -> None:
         """重建项目→会话树（活动项目=live 会话，非活动项目=只读会话名）。保留已展开项。"""

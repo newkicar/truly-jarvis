@@ -37,6 +37,12 @@ EXTRA_RULE_TOOLS_KEY = "extra_rule_tools"
 # 因此 /yolo off 后原 permissions 规则原样生效（零快照、零 agent 重建）。
 YOLO_THREADS_KEY = "yolo_threads"
 
+# 替我审批模式（ADR-0014）：线程级「放行安全、拦住危险」。
+# 与 yolo_threads 同惯例：纯内存、不落盘、重启全关；on/off 只动集合成员，
+# 零 agent 重建。区别：yolo 全放行，proxy 仅按 proxy_auto_allow 的确定性
+# 规则表放行安全动作（ADR-0014），危险动作仍走 HITL 审批。
+PROXY_THREADS_KEY = "proxy_threads"
+
 # /side 侧边会话（side-chat，2026-11-16）：线程级 side 标记。
 # state["side_threads"] = 当前所有 side thread_id 集合；
 # state["side_parents"] = side tid -> 主线 parent tid 映射。
@@ -157,6 +163,60 @@ def yolo_active(state: dict, thread_id: str) -> bool:
     threads = state.get(YOLO_THREADS_KEY)
     return bool(threads is not None and tid in threads)
 
+def proxy_on(state: dict, thread_id: str) -> bool:
+    """为指定 thread 开启替我审批（幂等）。空 id 为 no-op，返回 False。"""
+    tid = str(thread_id or "")
+    if not tid:
+        return False
+    state.setdefault(PROXY_THREADS_KEY, set()).add(tid)
+    return True
+
+
+def proxy_off(state: dict, thread_id: str) -> None:
+    """为指定 thread 关闭替我审批（幂等，缺失不报错）。空 id 为 no-op。"""
+    tid = str(thread_id or "")
+    if not tid:
+        return
+    threads = state.get(PROXY_THREADS_KEY)
+    if isinstance(threads, set):
+        threads.discard(tid)
+
+
+def proxy_active(state: dict, thread_id: str) -> bool:
+    """指定 thread 是否处于替我审批模式。
+
+    空 id → False；state 缺 proxy_threads 键（旧引用防御）→ False。
+    """
+    tid = str(thread_id or "")
+    if not tid:
+        return False
+    threads = state.get(PROXY_THREADS_KEY)
+    return bool(threads is not None and tid in threads)
+
+
+def proxy_auto_allow(tool: str, args: dict, state: dict) -> bool:
+    """替我审批的自动放行判定：放行安全的、拦住危险的（确定性规则表，见 ADR-0014）。
+
+    - execute：仅当命令命中只读启发式表（与 heuristics 特性同源）才放行；
+    - write_file/edit_file：仅当目标路径（resolve 后）位于项目根内才放行；
+    - delete 与其他工具：绝不自动放行（留给人类审批）。
+    """
+    if tool == "execute":
+        return heuristic_safe(command(args))
+    if tool in ("write_file", "edit_file"):
+        target = arg_value(args, "file_path", "path", "pattern", "command")
+        if not isinstance(target, str) or not target:
+            return False
+        base = Path(state.get("project_root") or Path.cwd())
+        p = Path(target)
+        if not p.is_absolute():
+            p = base / p
+        try:
+            return p.resolve().is_relative_to(base.resolve())
+        except (OSError, RuntimeError, ValueError):
+            return False
+    return False
+
 
 def side_open(state: dict, thread_id: str, parent: str) -> None:
     """登记一个 side 会话（幂等）。空 id 为 no-op。
@@ -251,6 +311,16 @@ def _action_for_args(state: dict, tool: str, args: dict) -> str:
         and heuristic_safe(value)
     ):
         return "allow"
+    # 替我审批（ADR-0014）：当前 thread 命中 proxy_threads 时，安全动作
+    # （execute 命中只读启发式 / 项目根内写编辑）直接放行；危险动作
+    # （delete / 项目根外写 / execute 未命中启发式）仍走 ask 中断留给人类。
+    # deny 已在规则解析阶段定案、绝不被覆盖；yolo 短路（函数顶）优先于本块。
+    if (
+        action == "ask"
+        and proxy_active(state, str(state.get("thread_id") or ""))
+        and proxy_auto_allow(tool, args if isinstance(args, dict) else {}, state)
+    ):
+        return "allow"
     return action
 
 
@@ -315,6 +385,7 @@ def build_permission_interrupts(
         "project_root": project_root,
         "heuristics": bool(permissions.get("heuristics", False)),
         "yolo_threads": set(),
+        PROXY_THREADS_KEY: set(),
         SIDE_THREADS_KEY: set(),
         SIDE_PARENTS_KEY: {},
         EXTRA_RULE_TOOLS_KEY: (),
@@ -325,6 +396,7 @@ def build_permission_interrupts(
 def build_permission_interrupts_from_state(state: dict) -> dict:
     """从已构造的 state 重建 interrupt_on（供外部复用同一 state 引用时使用）。"""
     state.setdefault(YOLO_THREADS_KEY, set())
+    state.setdefault(PROXY_THREADS_KEY, set())
     state.setdefault(SIDE_THREADS_KEY, set())
     state.setdefault(SIDE_PARENTS_KEY, {})
     state.setdefault(EXTRA_RULE_TOOLS_KEY, ())

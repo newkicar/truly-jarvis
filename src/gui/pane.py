@@ -291,6 +291,7 @@ class ChatPane(QScrollArea):
         if ph is not None:
             self._vbox.removeWidget(ph)
             ph.setParent(None)
+            ph.deleteLater()  # P3: detach 后排程删除，防孤立包装器 GC 时 shiboken C finalizer 析构未删 C++ 对象 → SIGSEGV
             self._placeholder = None
 
     def _clear_content(self) -> None:
@@ -310,6 +311,7 @@ class ChatPane(QScrollArea):
             w = item.widget()
             if w is not None:
                 w.setParent(None)  # 出布局必须脱离父部件，否则 Qt 继续持有绘制
+                w.deleteLater()  # P3: 排程删除（事件循环内 C++ 层析构），后续 GC 包装器安全
 
     def append_user(self, text: str, image_paths: list[str] | None = None) -> None:
         self._close_thinking()

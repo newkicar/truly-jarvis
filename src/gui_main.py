@@ -11,6 +11,12 @@ from __future__ import annotations
 
 import sys
 
+# 原生崩溃（如 CPython 退出期 PySide6 析构 SIGSEGV）留栈：faulthandler 把 C 层崩溃
+# 打到 stderr（CI 同款容错：rc=139 且摘要全绿仍放行，但栈可查）。
+import faulthandler
+
+faulthandler.enable()
+
 # Nuitka/shiboken 兼容 shim：PySide6 6.12 的部分名称（如 QtCore.QSize、QtGui 上的
 # re-export 常量）由 shiboken 通过 tp_getattro 惰性解析、不进模块 __dict__；而
 # Nuitka 编译后的 C 级 from-import 只查模块 dict，直接报 ImportError。这里在

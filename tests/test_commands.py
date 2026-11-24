@@ -1524,3 +1524,68 @@ def test_goal_listed_in_help_and_slash_completion():
     from src.slash_completion import SLASH_COMMANDS
     names = [c.name for c in SLASH_COMMANDS]
     assert "/goal" in names
+
+
+# --- /proxy 替我审批（ADR-0014）-------------------------------------------
+
+def test_dispatch_proxy_full_cycle():
+    from src.permissions import build_permission_interrupts, proxy_active
+
+    _io, state = build_permission_interrupts({})
+    agent = FakeDispatchAgent()
+
+    # 裸查询（原关）
+    text, nt, rc = commands.dispatch_command(agent, "tp", "/proxy", permission_state=state)
+    assert text == "替我审批状态：本会话已关闭"
+    assert nt is None and rc is None
+    assert not proxy_active(state, "tp")
+
+    # on 首开
+    text, _, _ = commands.dispatch_command(agent, "tp", "/proxy on", permission_state=state)
+    assert text == "替我审批已开启：放行安全审批（只读命令/项目内写编辑）、拦住危险审批（仅当前会话，重启即关）"
+    assert proxy_active(state, "tp")
+
+    # on 重复（幂等）
+    text, _, _ = commands.dispatch_command(agent, "tp", "/proxy on", permission_state=state)
+    assert text == "替我审批已开启（安全审批自动放行；危险审批仍拦截；/proxy off 关闭）"
+    assert proxy_active(state, "tp")
+
+    # off 原开
+    text, _, _ = commands.dispatch_command(agent, "tp", "/proxy off", permission_state=state)
+    assert text == "替我审批已关闭：恢复本会话原 permissions 规则"
+    assert not proxy_active(state, "tp")
+
+    # off 重复（幂等）
+    text, _, _ = commands.dispatch_command(agent, "tp", "/proxy off", permission_state=state)
+    assert text == "替我审批已关闭（本会话）"
+    assert not proxy_active(state, "tp")
+
+
+def test_dispatch_proxy_bad_arg():
+    from src.permissions import build_permission_interrupts
+
+    _io, state = build_permission_interrupts({})
+    text, nt, rc = commands.dispatch_command(FakeDispatchAgent(), "tp", "/proxy x", permission_state=state)
+    assert text == "用法: /proxy on | /proxy off"
+    assert nt is None and rc is None
+
+
+def test_dispatch_proxy_without_permission_state_does_not_crash():
+    text, nt, rc = commands.dispatch_command(FakeDispatchAgent(), "tp", "/proxy on")
+    assert "不可用" in text
+    assert nt is None and rc is None
+
+
+def test_help_includes_proxy():
+    assert "/proxy" in commands.CLI_HELP
+    assert "/proxy" in commands.TUI_HELP
+
+
+def test_compact_prompt_includes_unfinished_tasks_section():
+    """ADR-0014 ⑤：压缩 prompt 必须含「未完成任务」节，压缩后立即续跑。"""
+    model = FakeCompactModel()
+    agent = FakeCompactAgent(_compact_msgs(), model=model)
+    commands.compact(agent, "t")
+    role = model.prompts[0][0]
+    assert "未完成任务" in role
+    assert "摘要之后代理将立即继续执行未完成任务" in role

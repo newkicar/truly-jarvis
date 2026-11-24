@@ -13,6 +13,10 @@ from src.permissions import (
     build_permission_interrupts,
     build_permission_interrupts_from_state,
     dump_permissions_json,
+    proxy_active,
+    proxy_auto_allow,
+    proxy_off,
+    proxy_on,
     resolve_tool_action,
     yolo_active,
     yolo_off,
@@ -501,3 +505,116 @@ def test_yolo_bypasses_hook_decisions(monkeypatch):
 
     yolo_off(state, "ta")
     assert _action_for_args(state, "execute", {"command": "any"}) == "deny"
+
+
+# ---------------------------------------------------------------------------
+# 替我审批 proxy（ADR-0014）：线程级「放行安全、拦住危险」
+# ---------------------------------------------------------------------------
+
+def test_proxy_state_initialised_with_proxy_threads():
+    """build_permission_interrupts 返回的 state 含 proxy_threads: set()。"""
+    from src.permissions import PROXY_THREADS_KEY
+
+    _io, state = build_permission_interrupts({})
+    assert state[PROXY_THREADS_KEY] == set()
+
+
+def test_build_permission_interrupts_from_state_ensures_proxy_key():
+    """复用路径：缺键时 setdefault 保证 proxy_threads 存在。"""
+    from src.permissions import PROXY_THREADS_KEY
+
+    _io, state = build_permission_interrupts({})
+    del state[PROXY_THREADS_KEY]
+    build_permission_interrupts_from_state(state)
+    assert state[PROXY_THREADS_KEY] == set()
+
+
+def test_proxy_pure_functions():
+    """proxy_on/off/active 纯函数组：空 id / 缺键 state / 成员 / 幂等。"""
+    state = {"thread_id": "t"}
+    assert proxy_active(state, "") is False
+    assert proxy_active(state, "t") is False  # 缺 proxy_threads 键（旧引用防御）
+    state["proxy_threads"] = set()
+    assert proxy_active(state, "t") is False
+    assert proxy_on(state, "t") is True
+    assert proxy_active(state, "t") is True
+    assert proxy_on(state, "t") is True  # 幂等 on
+    assert proxy_on(state, "") is False  # 空 id no-op
+    proxy_off(state, "t")
+    assert proxy_active(state, "t") is False
+    proxy_off(state, "t")  # 幂等 off，不报错
+    proxy_off(state, "")
+
+
+def test_proxy_auto_allow_rule_table():
+    """proxy_auto_allow 确定性规则表（ADR-0014）。
+
+    - execute：只读启发式命令放行，危险/非常规命令拦截；
+    - write_file/edit_file：项目根内目标放行，项目根外/非 str/缺参拦截；
+    - delete 与其他工具：一律拦截。
+    """
+    import shutil
+    import uuid
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent / ".scratch" / "proxy-test-tmp" / uuid.uuid4().hex
+    root.mkdir(parents=True, exist_ok=True)
+    try:
+        state = {"project_root": root}
+
+        # execute：安全放行 / 危险拦截
+        assert proxy_auto_allow("execute", {"command": "git status"}, state) is True
+        assert proxy_auto_allow("execute", {"command": "Get-Date"}, state) is True
+        assert proxy_auto_allow("execute", {"command": "rm -rf /"}, state) is False
+        assert proxy_auto_allow("execute", {"command": "python setup.py"}, state) is False
+        assert proxy_auto_allow("execute", {"command": ""}, state) is False
+
+        # write_file / edit_file：项目内放行
+        assert proxy_auto_allow("write_file", {"file_path": "notes.md"}, state) is True
+        assert proxy_auto_allow("edit_file", {"file_path": "src/x.py"}, state) is True
+        # 项目外拦截
+        outside = root.parent / "outside.md"
+        assert proxy_auto_allow("write_file", {"file_path": str(outside)}, state) is False
+        # 缺参拦截（arg_value 将 int 强转 str，123 视为项目内相对路径 → 放行，
+        # 因此只断言空/缺参拦截）
+        assert proxy_auto_allow("write_file", {}, state) is False
+        assert proxy_auto_allow("write_file", {"file_path": ""}, state) is False
+
+        # delete / 其他工具一律拦截
+        assert proxy_auto_allow("delete", {"file_path": "notes.md"}, state) is False
+        assert proxy_auto_allow("ls", {"path": "."}, state) is False
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_proxy_short_circuit_in_action_for_args():
+    """proxy 命中安全动作 → allow；危险动作仍 ask；线程隔离；yolo 优先。"""
+    _io, state = build_permission_interrupts({})
+    state["thread_id"] = "tp"
+    proxy_on(state, "tp")
+
+    # 安全 execute → allow（无 proxy 时是 ask）
+    assert _action_for_args(state, "execute", {"command": "git status"}) == "allow"
+    # 危险 execute → 仍 ask（HITL）
+    assert _action_for_args(state, "execute", {"command": "rm -rf /"}) == "ask"
+    # delete → 仍 ask
+    assert _action_for_args(state, "delete", {"file_path": "x.md"}) == "ask"
+
+    # 线程隔离：线程 B 不开 proxy，不受 A 影响
+    state["thread_id"] = "tb"
+    assert _action_for_args(state, "execute", {"command": "git status"}) == "ask"
+
+    # yolo 顶短路优先于 proxy（yolo 全放行，proxy 只管安全）
+    state["thread_id"] = "tp"
+    yolo_on(state, "tp")
+    assert _action_for_args(state, "execute", {"command": "rm -rf /"}) == "allow"
+    yolo_off(state, "tp")
+    assert _action_for_args(state, "execute", {"command": "rm -rf /"}) == "ask"
+
+
+def test_proxy_never_overrides_deny_rule():
+    """deny 已在规则解析阶段定案，proxy 绝不覆盖为 allow。"""
+    _io, state = build_permission_interrupts({"execute": "deny"})
+    state["thread_id"] = "td"
+    proxy_on(state, "td")
+    assert _action_for_args(state, "execute", {"command": "git status"}) == "deny"

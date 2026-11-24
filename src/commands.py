@@ -43,6 +43,7 @@ _HELP_COMMANDS = """\
   /skills       列出可用 skills（manual 需 /use 手动触发）
   /use <skill> [说明]  手动调用 manual-only skill（注入完整指令）
   /yolo on | off  YOLO 模式开关：本会话所有动作免审批（仅当前会话、重启即关）
+  /proxy on | off  替我审批开关：安全审批自动放行、危险审批仍拦截（仅当前会话、重启即关）
   /goal <objective>|status|pause|resume|clear  持久目标：创建/查询/暂停/恢复/清除（回合预算内自动续跑、跨重启持久）
   /side | /side close  开/关侧边会话（继承历史，只读，禁 sub-agents 与 execute；关=删除会话）
   /compact [提示]  压缩当前会话历史为一条延续性摘要写回（可选文字提示压缩倾向）
@@ -1221,7 +1222,8 @@ def compact(agent, thread_id: str, guide: str | None = None) -> str:
     role = (
         "你是 JARVIS 代理的会话压缩器。把用户消息里的对话历史压缩为一段不超过 800 字的中文"
         "延续性摘要（markdown 列表）。必须保留：目标与约束、已完成事项、当前进度、未决问题、可复用的文件路径/命令/参数。"
-        "摘要之后代理将仅凭这段摘要继续工作。只输出摘要本身，不要附加任何其他文字。\n"
+        "必须额外写明「未完成任务」一节：当前进行到哪一步、下一步具体做什么（可执行指令形态）。"
+        "摘要之后代理将立即继续执行未完成任务，不得停下等待新指令。只输出摘要本身，不要附加任何其他文字。\n"
     )
     guide_part = ("用户提示（压缩时优先保留与该提示相关的细节）：%s\n" % guide) if guide else ""
     human_text = guide_part + "对话历史（最近 200 条，单条截断）：\n" + "\n".join(lines)
@@ -1458,6 +1460,37 @@ def yolo_command_text(permission_state: dict | None, thread_id: str, raw_command
     return "用法: /yolo on | /yolo off"
 
 
+def proxy_command_text(permission_state: dict | None, thread_id: str, raw_command: str) -> str:
+    """ADR-0014: /proxy on | off | 裸查询——线程级替我审批开关（放行安全审批、拦住危险审批）。
+
+    对标 codex 的 auto-approval：安全动作（只读 execute、项目根内写编辑）自动放行，
+    危险动作（delete、项目根外写、非常规 execute）仍走 HITL 人工审批。
+    与 YOLO 的区别：YOLO 全放行（含危险），proxy 只放行确定性规则表内的安全动作。
+    幂等：重复 on/off 各回对应短文案；裸 /proxy 只查询不改状态。
+    permission_state 为 None 时报错不崩。
+    """
+    from src.permissions import proxy_active, proxy_off, proxy_on
+
+    if permission_state is None:
+        return "替我审批开关不可用（权限层未初始化）"
+    parts = raw_command.split()
+    arg = parts[1].lower() if len(parts) > 1 else ""
+    active = proxy_active(permission_state, thread_id)
+    if arg == "on":
+        proxy_on(permission_state, thread_id)
+        if active:
+            return "替我审批已开启（安全审批自动放行；危险审批仍拦截；/proxy off 关闭）"
+        return "替我审批已开启：放行安全审批（只读命令/项目内写编辑）、拦住危险审批（仅当前会话，重启即关）"
+    if arg == "off":
+        proxy_off(permission_state, thread_id)
+        if active:
+            return "替我审批已关闭：恢复本会话原 permissions 规则"
+        return "替我审批已关闭（本会话）"
+    if arg == "":
+        return "替我审批状态：本会话已开启" if active else "替我审批状态：本会话已关闭"
+    return "用法: /proxy on | /proxy off"
+
+
 _GOAL_STATUS_CN = {
     "active": "进行中",
     "paused": "已暂停",
@@ -1655,6 +1688,8 @@ def dispatch_command(
         return dream.run_dream(agent, load_config()), None, None
     if cmd == "/yolo":
         return yolo_command_text(permission_state, thread_id, command), None, None
+    if cmd == "/proxy":
+        return proxy_command_text(permission_state, thread_id, command), None, None
     if cmd == "/goal":
         return goal_command_text(thread_id, command), None, None
     if cmd == "/side":
