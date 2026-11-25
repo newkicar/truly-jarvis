@@ -144,3 +144,26 @@ def test_init_project_instructions_legacy_jarvis_md_blocks():
     finally:
         import shutil
         shutil.rmtree(base, ignore_errors=True)
+
+
+def test_init_project_creates_dotdir_skills_layout():
+    """ADR-0016: init 直接创建 .jarvis/skills/，项目根不再产生顶层 skills/（自建目录，不用 tmp_path）。"""
+    import json
+    import os
+    import shutil
+    import tempfile
+    import uuid
+
+    base = os.path.join(tempfile.gettempdir(), "jarvis_init_dotdir_" + uuid.uuid4().hex[:8])
+    os.makedirs(base)
+    try:
+        created, _skipped, _messages = init_project(Path(base), engine_root=Path(base))
+        resolved_dot = Path(base).resolve() / ".jarvis" / "skills"
+        assert resolved_dot.is_dir()
+        assert any(str(resolved_dot) in c for c in created), f"created={created}"
+        assert not (Path(base) / "skills").exists(), "顶层 skills/ 不再创建"
+        data = json.loads((Path(base) / "jarvis.json").read_text(encoding="utf-8"))
+        assert data["skills"] == [".jarvis/skills/"]
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+

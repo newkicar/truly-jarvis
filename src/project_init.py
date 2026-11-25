@@ -34,7 +34,7 @@ JARVIS_JSON_TEMPLATE: dict = {
     # 兼容旧键 obsidian_vault（knowledge_base 优先）。
     "knowledge_base": "vault",
     "checkpoint_db": f"{CHECKPOINTS_DIR}/checkpoints.sqlite",
-    "skills": ["skills/"],
+    "skills": [".jarvis/skills/"],
     "schedules_dir": "schedules",
     "mcps": {"servers": {}},
     "permissions": {
@@ -122,7 +122,7 @@ def init_project(
     else:
         skipped.append(str(env_file))
 
-    for rel in ("schedules", "skills", "vault", "vault/Inbox", "vault/Reports"):
+    for rel in ("schedules", ".jarvis/skills", "vault", "vault/Inbox", "vault/Reports"):
         path = root / rel
         if path.is_dir():
             skipped.append(str(path))
@@ -225,7 +225,7 @@ def suggest_init_if_missing(start: Path | None = None) -> str | None:
 
 
 def auto_init_project(root: Path | None = None) -> None:
-    """首次运行时自动生成项目级 jarvis.json + skills/（对标 opencode 开箱即用）。
+    """首次运行时自动生成项目级 jarvis.json + .jarvis/skills/（ADR-0016；对标 opencode 开箱即用）。
 
     仅在 jarvis.json 不存在时生成，幂等安全。
     """
@@ -240,7 +240,7 @@ def auto_init_project(root: Path | None = None) -> None:
             json.dumps(data, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-        (project_root / "skills").mkdir(exist_ok=True)
+        (project_root / ".jarvis" / "skills").mkdir(parents=True, exist_ok=True)
     ensure_user_home()
 
 
