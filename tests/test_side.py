@@ -1,7 +1,7 @@
 """/side 侧边会话内核单测（side-chat 工单01）。
 
 覆盖：
-- open_side：terminal head fork / 悬挂 head 回退最近 terminal / 空会话拒 /
+- open_side：terminal head fork / 悬挂 head 回退最近 terminal（无 terminal 则 fork head）/ 空会话拒 /
   已在 side 拒 / 已有 side 拒；只读由 side 成员驱动 + 状态登记（主线模式不受影响）
 - close_side：关闭 = 删除（delete_session 第三参=主线 tid，不误触发「删当前则新建」、
   不误删主线；回主线，主线模式全程未动）/ 非 side 拒
@@ -46,6 +46,7 @@ class _SideAgent:
     def __init__(self, main_msgs, pending=False, terminal_msgs=None):
         self.main_msgs = list(main_msgs)
         self.pending = pending
+        self.no_terminal = False
         self.terminal_msgs = list(terminal_msgs if terminal_msgs is not None else main_msgs)
         self.threads: dict = {}
 
@@ -72,6 +73,8 @@ class _SideAgent:
             config={"configurable": {"thread_id": "t-main"}},
         )
         if self.pending:
+            if self.no_terminal:
+                return [head]  # 历史只有悬挂 head（首轮进行中，无 terminal）
             terminal = _Head(
                 self.terminal_msgs,
                 next_=None,
@@ -161,6 +164,33 @@ def test_open_side_pending_head_falls_back_to_terminal():
     assert all(m.id not in ("m4", "a4") for m in forked)
     assert isinstance(forked[0], SystemMessage)  # boundary 置 0 位
     assert [m.id for m in forked[1:5]] == ["m1", "a1", "m2", "a2"]
+
+
+def test_open_side_pending_head_without_terminal_forks_head():
+    pending_ai = AIMessage(
+        "需要查看文件",
+        id='a4',
+        tool_calls=[{'name': 'read_file', 'args': {'path': '/workspace/a.py'}, 'id': 'tc1'}],
+    )
+    head = _msgs() + [HumanMessage('问题 4', id='m4'), pending_ai]
+    agent = _SideAgent(head, pending=True)
+    agent.no_terminal = True
+    state = {}
+    text, new_tid = commands.open_side(agent, 't-main', state)
+    # 任何时候可开：不再出现「尚无已完成步骤」拒开
+    assert new_tid is not None and new_tid.startswith('side-')
+    assert '尚无已完成步骤' not in text
+    forked = agent.threads[new_tid]
+    # fork head 快照：boundary 0 位，进行中那一轮（m4/a4）一并带入；
+    # a4 未获批 tool_calls 在 fork 时剥离（主线原消息零副作用），正文保留
+    assert isinstance(forked[0], SystemMessage)
+    assert [m.id for m in forked[1:5]] == ['m1', 'a1', 'm2', 'a2']
+    assert [m.id for m in forked[5:7]] == ['m4', 'a4']
+    assert forked[6].tool_calls == []          # a4 悬挂调用已剥离
+    assert forked[6].content == '需要查看文件'   # 正文保留
+    assert agent.main_msgs[-1].tool_calls       # 主线原消息零副作用
+    assert 't-main' not in agent.threads  # 主线不被写
+    assert side_active(state, new_tid)
 
 
 def test_open_side_boundary_first_when_main_compacted():

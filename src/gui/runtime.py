@@ -20,16 +20,18 @@ from typing import Any, Callable
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-from src import commands, streaming
+from src import commands, permissions, streaming
 from src.agent import build_agent
 from src.config import Config
-from src.jump_in_queue import JumpInRegistry
-from src import permissions
-from src.plan_mode import effective_mode
-
 from src.gui.events import UiBridge
-from src.gui.session_registry import SessionRegistry, generate_session_name, registry_path
+from src.gui.session_registry import (
+    SessionRegistry,
+    generate_session_name,
+    registry_path,
+)
 from src.gui.turn_gate import TurnGate
+from src.jump_in_queue import JumpInRegistry
+from src.plan_mode import effective_mode
 
 
 @dataclass
@@ -327,7 +329,7 @@ class GuiPresenter:
     def open_side(self, tid: str) -> tuple[str, str]:
         """开侧边会话：内核 fork 主线 head + 注入 side 边界 + 自动切 Plan（只读）。
 
-        内核拒（空会话/已在 side/已有 side/无已完成步骤）-> (文案, "")，不动注册表。
+        内核拒（空会话/已在 side/已有 side）-> (文案, "")，不动注册表。
         """
         text, new_tid = commands.open_side(
             self.runtime.agent, tid, self.runtime.permission_state

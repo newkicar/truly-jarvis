@@ -107,7 +107,7 @@ class ToolInvocation:
         return cls(name=name, path=path, args=args)
 
 
-from src.project_paths import get_project_root
+from src.project_paths import get_project_root  # noqa: E402
 
 
 def project_root() -> Path:
@@ -245,7 +245,7 @@ def _msg_text(content) -> str:
     return content if isinstance(content, str) else ""
 
 
-def thread_history_entries(agent, thread_id: str, max_entries: int | None = 20) -> list[tuple]:
+def thread_history_entries(agent, thread_id: str, max_entries: int | None = 20) -> list[tuple]:  # noqa: C901
     """取指定 thread 的历史条目（含工具调用与思考），供切换会话/撤回后持久上屏。
 
     返回打标 tuple 列表（从旧到新，从末尾截取至多 max_entries 条）：
@@ -769,7 +769,6 @@ def _mcp_enabled_count(mcps: dict) -> int:
 
 def format_doctor_report(config, agent, thread_id: str, *, mcp_tool_count: int | None = None) -> str:
     """生成 /doctor 只读诊断报告（CLI/TUI 共用）。"""
-    checkpointer = getattr(agent, "checkpointer", None)
     stuck = turn_needs_finalize(agent, thread_id)
     cp_count, cp_max = _checkpoint_thread_stats(agent, thread_id)
     msg_count = _session_message_count(agent, thread_id)
@@ -955,7 +954,7 @@ def completed_turn_checkpoint(agent, thread_id: str, checkpoint_id: str):
     return end
 
 
-def fork(agent, thread_id: str, checkpoint_id: str):
+def fork(agent, thread_id: str, checkpoint_id: str):  # noqa: C901
     """从指定 checkpoint 分叉出新分支，返回 (提示文本, 新 thread_id 或 None)。"""
     base = thread_config(thread_id)
     full_id = resolve_checkpoint_id(agent, thread_id, checkpoint_id)
@@ -998,8 +997,34 @@ def fork(agent, thread_id: str, checkpoint_id: str):
     return f"已从 {full_id} 分叉（保留原历史），当前会话 {new_thread}", new_thread
 
 
+def _strip_dangling_tool_calls(messages: list) -> list:
+    """剥离 messages 中 AI 消息里没有对应 ToolMessage 的 tool_calls（悬挂 HITL 待批调用）。
+
+    open_side fork 悬挂 head 快照（无 terminal 路径）时使用：主线未获批的
+    调用不进入 side 会话，避免 assistant tool_calls 无结果在严格网关 400。
+    纯函数，model_copy 出新对象，原消息零副作用。
+    """
+    from langchain_core.messages import AIMessage, ToolMessage
+
+    answered = {
+        getattr(tm, "tool_call_id", None)
+        for tm in messages
+        if isinstance(tm, ToolMessage) and getattr(tm, "tool_call_id", None)
+    }
+    out = []
+    for m in messages:
+        if isinstance(m, AIMessage) and m.tool_calls:
+            keep = [tc for tc in m.tool_calls if tc.get("id") in answered]
+            if len(keep) != len(m.tool_calls):
+                out.append(m.model_copy(update={"tool_calls": keep, "invalid_tool_calls": []}))
+                continue
+        out.append(m)
+    return out
+
+
 def open_side(agent, thread_id: str, state: dict) -> tuple[str, str | None]:
-    """/side 开侧边会话：fork 当前 thread head（悬挂时回退最近 terminal），
+    """/side 开侧边会话：fork 当前 thread head（悬挂时回退最近 terminal；
+    无 terminal 则 fork head 快照，任何时候可开），
     注入 [side] 边界 SystemMessage；只读由 side 成员身份驱动（plan_mode.effective_mode，
     对标 codex），task/execute 由 SideTaskGuard 拦截。不碰全局 mode 键——主线模式零影响。
 
@@ -1021,16 +1046,19 @@ def open_side(agent, thread_id: str, state: dict) -> tuple[str, str | None]:
     if isinstance(existing, set) and existing:
         return "已有 side 会话，请先关闭再开新的", None
 
-    # 定 fork 点：head terminal 直接 fork；head 悬挂（HITL pending）回退最近 terminal
+    # 定 fork 点：head terminal 直接 fork；head 悬挂（HITL pending）回退最近 terminal；
+    # 无任何 terminal（新会话首轮进行中，历史尚无已完成检查点）则 fork head 当前快照——
+    # 任何时候可开。fork 悬挂 head 时剥离主线未获批的悬挂 tool_calls
+    #（assistant tool_calls 无对应结果会撞严格网关 400），主线历史不动
     target = head
+    fork_head_pending = False
     if head.next:
-        target = None
         for s in agent.get_state_history(config=base):
             if not s.next:
                 target = s
                 break
-        if target is None:
-            return "side 开侧边会话失败: 当前会话尚无已完成步骤，请在本轮结束后再开", None
+        else:
+            fork_head_pending = True
     # 显式新 tid（同 fork 根因）：update_state 写入 config 里的 thread_id，
     # 真实 LangGraph 原样返回该 tid；必须显式新 tid + thread_config 首写继承
     import uuid
@@ -1051,7 +1079,10 @@ def open_side(agent, thread_id: str, state: dict) -> tuple[str, str | None]:
     # SystemHeadMiddleware（src/system_head.py）在模型调用时合并进唯一
     # system 头——不动存储，undo / fork / GUI 转录显示均不受影响。
     vals = dict(target.values)
-    vals["messages"] = [boundary] + list(vals.get("messages") or [])
+    msgs = list(vals.get("messages") or [])
+    if fork_head_pending:
+        msgs = _strip_dangling_tool_calls(msgs)
+    vals["messages"] = [boundary] + msgs
     try:
         agent.update_state(thread_config(new_tid), values=vals, as_node="model")
     except Exception:
@@ -1158,7 +1189,7 @@ def undo(agent, thread_id: str, n: int = 1) -> str:
     return f"已撤回 {n} 条消息（仅消息层；文件未动；HITL 悬挂已作废）{suffix}{_undo_file_hint(messages, cut)}"
 
 
-def compact(agent, thread_id: str, guide: str | None = None) -> str:
+def compact(agent, thread_id: str, guide: str | None = None) -> str:  # noqa: C901
     """压缩当前会话历史为一条延续性摘要，写回 checkpointer（纯消息层；文件/Inbox 不动）。
 
     序列化最近 200 条消息为「[用户]/[JARVIS]/[工具:名]」行（单条截 600 字），模型生成
@@ -1491,13 +1522,6 @@ def proxy_command_text(permission_state: dict | None, thread_id: str, raw_comman
     return "用法: /proxy on | /proxy off"
 
 
-_GOAL_STATUS_CN = {
-    "active": "进行中",
-    "paused": "已暂停",
-    "complete": "已完成",
-    "budget_limited": "回合预算耗尽",
-}
-
 
 def goal_text(thread_id: str, goals_path: Path | None = None) -> str:
     """#goal 03: goal 状态行：objective + 状态 + turns N/M（无 goal = 引导文案）。"""
@@ -1506,7 +1530,7 @@ def goal_text(thread_id: str, goals_path: Path | None = None) -> str:
     goal = g.goal_status(path=goals_path, thread_id=thread_id)
     if goal is None:
         return "本会话无目标（/goal <objective> 创建）"
-    label = _GOAL_STATUS_CN.get(goal.status, goal.status)
+    label = g.GOAL_STATUS_CN.get(goal.status, goal.status)
     line = f"目标 [{label}] {goal.turns_used}/{goal.max_turns}：{goal.objective}"
     if goal.status == g.GOAL_COMPLETE and goal.audit_evidence:
         line += f"｜证据: {goal.audit_evidence}"
@@ -1518,12 +1542,12 @@ def _goal_terminal_hint(thread_id: str, goals_path: Path | None = None, action: 
     from src import goals as g
 
     goal = g.goal_status(path=goals_path, thread_id=thread_id)
-    label = _GOAL_STATUS_CN.get(goal.status, goal.status) if goal else "终态"
+    label = g.GOAL_STATUS_CN.get(goal.status, goal.status) if goal else "终态"
     verb = {"pause": "暂停", "resume": "恢复", "create": "新建目标"}.get(action, "操作")
     return f"目标已终态（{label}），不可{verb}；/goal clear 清除后可新建"
 
 
-def goal_command_text(thread_id: str, raw_command: str, goals_path: Path | None = None) -> str:
+def goal_command_text(thread_id: str, raw_command: str, goals_path: Path | None = None) -> str:  # noqa: C901
     """#goal 03: /goal <objective>|status|pause|resume|clear——线程级持久目标（goals.json 跨重启持久）。
 
     四态幂等文案（yolo 先例）：子命令按状态回短文案；pause/resume 在终态显式报错指路 clear；
@@ -1564,7 +1588,7 @@ def goal_command_text(thread_id: str, raw_command: str, goals_path: Path | None 
             cleared = g.goal_clear(path=goals_path, thread_id=thread_id)
         except g.NoGoalError:
             return "本会话无目标，无需清除"
-        return f"目标已清除（{_GOAL_STATUS_CN.get(cleared.status, cleared.status)}）：'{cleared.objective}'——/goal 可新建"
+        return f"目标已清除（{g.GOAL_STATUS_CN.get(cleared.status, cleared.status)}）：'{cleared.objective}'——/goal 可新建"
     objective = raw_command[len("/goal"):].strip()
     if not objective:
         return "用法: /goal <objective> | status | pause | resume | clear"
@@ -1579,7 +1603,7 @@ def goal_command_text(thread_id: str, raw_command: str, goals_path: Path | None 
         )
     except g.GoalExistsError:
         cur = g.goal_status(path=goals_path, thread_id=thread_id)
-        label = _GOAL_STATUS_CN.get(cur.status, cur.status)
+        label = g.GOAL_STATUS_CN.get(cur.status, cur.status)
         return f"目标已存在（{label}：'{cur.objective}'）；/goal clear 替换，/goal pause|resume 调状态"
     except g.TerminalGoalError:
         return _goal_terminal_hint(thread_id, goals_path, "create")
@@ -1595,7 +1619,7 @@ def init_project() -> str:
     return project_init.init_project_instructions(project_root())
 
 
-def dispatch_command(
+def dispatch_command(  # noqa: C901
     agent,
     thread_id: str,
     command: str,
