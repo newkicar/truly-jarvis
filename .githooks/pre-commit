@@ -1,0 +1,5 @@
+#!/bin/sh
+if command -v python >/dev/null 2>&1; then
+  exec python .engineering-kit/python-style
+fi
+exec python3 .engineering-kit/python-style

@@ -1,0 +1,500 @@
+import argparse
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import venv
+from pathlib import Path
+
+RUFF_VERSION = "0.17.6"
+KIT_VERSION = "1.1.0"
+# Python can run this script directly. Ruff's normal Python file discovery leaves it out.
+PROJECT_SCRIPT = Path(".engineering-kit/python-style")
+CHECKER_METADATA = Path(".engineering-kit/python-style.json")
+# SHA-256 of the published v1.0.0 checker after normalizing CRLF to LF.
+LEGACY_CHECKER_HASHES = {
+    "9acac48440bdaeed8addd466ad6691411a8530eb23c63a872adbda9fac86fbe9": "1.0.0",
+}
+KIT_ROOT = Path(__file__).resolve().parent
+HOOK = b"""#!/bin/sh
+if command -v python >/dev/null 2>&1; then
+  exec python .engineering-kit/python-style
+fi
+exec python3 .engineering-kit/python-style
+"""
+TYPESCRIPT_HOOK = b"#!/bin/sh\nexec npm run fitness\n"
+MIXED_HOOK = b"""#!/bin/sh
+if command -v python >/dev/null 2>&1; then
+  python .engineering-kit/python-style || exit $?
+else
+  python3 .engineering-kit/python-style || exit $?
+fi
+exec npm run fitness
+"""
+PYTHON_GUIDANCE = (
+    "## Python 代码规范\n\n"
+    "- 改动 Python 代码后，运行 `python .engineering-kit/python-style` 检查。"
+    "提交前会运行同一个检查，规则沿用项目中的 Ruff 配置。重复错误记入 `docs/RULES.md`，"
+    "决策和例外记入 `docs/DECISION_LOG.tsv`。\n"
+)
+
+
+def normalized_script_bytes(contents):
+    return contents.replace(b"\r\n", b"\n")
+
+
+def checker_hash(contents):
+    return hashlib.sha256(normalized_script_bytes(contents)).hexdigest()
+
+
+def metadata_path(target):
+    return target.parent / CHECKER_METADATA.name
+
+
+def read_checker_metadata(target):
+    file = metadata_path(target)
+    if not file.exists():
+        return None
+    if not file.is_file():
+        raise ValueError(f"Expected a regular project file at {file}")
+    data = json.loads(file.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise TypeError(f"Invalid Python checker metadata at {file}")
+    return data
+
+
+def ensure_inside_project(root, target):
+    root = root.resolve(strict=True)
+    if target.is_symlink():
+        raise ValueError(f"Expected a regular project file at {target}")
+    resolved = target.resolve()
+    if not any(parent.exists() and parent.samefile(root) for parent in resolved.parents):
+        raise ValueError(f"Expected a file inside the project at {target}")
+
+
+def ensure_project_file(root, target):
+    root = root.resolve(strict=True)
+    ensure_inside_project(root, target)
+    resolved = target.resolve()
+    project_parent = next(parent for parent in resolved.parents if parent.exists() and parent.samefile(root))
+    relative = resolved.relative_to(project_parent)
+    parent = root
+    for part in relative.parts[:-1]:
+        parent = parent / part
+        if parent.exists() and not parent.is_dir():
+            raise ValueError(f"Expected a project directory at {parent}")
+    if target.exists() and not target.is_file():
+        raise ValueError(f"Expected a regular project file at {target}")
+
+
+def atomic_write(target, contents):
+    target.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=target.name + ".", suffix=".tmp", dir=target.parent)
+    try:
+        os.chmod(temporary, 0o644)
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(contents)
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def write_checker_metadata(target, source):
+    metadata = {
+        "kit_version": KIT_VERSION,
+        "ruff_version": RUFF_VERSION,
+        "checker_sha256": checker_hash(source.read_bytes()),
+    }
+    output = (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    file = metadata_path(target)
+    if not file.exists() or file.read_bytes() != output:
+        atomic_write(file, output)
+
+
+def upgrade_checker_copy(root, target, source):
+    ensure_project_file(root, target)
+    file = metadata_path(target)
+    ensure_project_file(root, file)
+    current = source.read_bytes()
+    wanted_hash = checker_hash(current)
+    if target.exists():
+        actual_hash = checker_hash(target.read_bytes())
+        if actual_hash not in (wanted_hash, *LEGACY_CHECKER_HASHES):
+            raise ValueError(
+                f"The Python checker at {target} is locally modified or from an unknown release. "
+                "Preserve its changes before upgrading."
+            )
+        if actual_hash != wanted_hash:
+            atomic_write(target, current)
+    else:
+        atomic_write(target, current)
+    write_checker_metadata(target, source)
+
+
+def verify_checker_copy(target):
+    metadata = read_checker_metadata(target)
+    if metadata is None:
+        raise ValueError(
+            f"Python checker metadata is missing at {metadata_path(target)}. "
+            "Run the kit installer with -Upgrade to restore the managed copy."
+        )
+    actual_hash = checker_hash(target.read_bytes())
+    if metadata.get("checker_sha256") != actual_hash:
+        raise ValueError(
+            f"The Python checker at {target} differs from its recorded version. "
+            "Restore it with the kit installer -Upgrade or review the local edit."
+        )
+    if metadata.get("kit_version") != KIT_VERSION or metadata.get("ruff_version") != RUFF_VERSION:
+        raise ValueError(
+            f"The Python checker at {target} is kit v{metadata.get('kit_version', 'unknown')} "
+            f"with Ruff {metadata.get('ruff_version', 'unknown')}; this source is kit v{KIT_VERSION} "
+            f"with Ruff {RUFF_VERSION}. Rerun the central installer with -Upgrade."
+        )
+
+
+def install_python_scaffold(root):
+    sources = {
+        "docs/RULES.md": KIT_ROOT / "template/python/docs/RULES.md",
+        "docs/DECISION_LOG.tsv": KIT_ROOT / "template/python/docs/DECISION_LOG.tsv",
+        ".agents/skills/correct/SKILL.md": KIT_ROOT / "template/.agents/skills/correct/SKILL.md",
+    }
+    python_rules = sources["docs/RULES.md"].read_bytes().replace(b"\r\n", b"\n")
+    typescript_rules = (KIT_ROOT / "template/docs/RULES.md").read_bytes().replace(b"\r\n", b"\n")
+    combined_marker = "<!-- engineering-kit:combined-rules -->"
+    typescript_rule_ids = (
+        b"adr-0012-c1", b"adr-0007-c1", b"adr-0009-c1", b"adr-0001-c1", b"adr-0005-c1",
+    )
+    for relative, source in sources.items():
+        target = root / relative
+        ensure_project_file(root, target)
+        if target.exists():
+            if not target.is_file():
+                raise ValueError(f"Expected a regular project file at {target}")
+            existing = target.read_bytes().replace(b"\r\n", b"\n")
+            is_typescript_ledger = (
+                existing.startswith("# 规则执行者台账".encode())
+                and all(rule_id in existing for rule_id in typescript_rule_ids)
+            )
+            if relative == "docs/RULES.md" and (existing == typescript_rules or is_typescript_ledger):
+                typescript_body = existing.decode("utf-8").split("\n", 1)[1].strip()
+                python_body = python_rules.decode("utf-8").split("\n", 1)[1].strip()
+                combined = (
+                    "# 规则执行者台账\n\n"
+                    f"{combined_marker}\n\n"
+                    "## TypeScript 规则\n\n"
+                    f"{typescript_body}\n\n"
+                    "## Python 规则\n\n"
+                    f"{python_body}\n"
+                )
+                atomic_write(target, combined.encode("utf-8"))
+                continue
+            if relative == "docs/RULES.md" and combined_marker.encode("utf-8") in existing:
+                continue
+            if relative == ".agents/skills/correct/SKILL.md":
+                legacy_skill = (KIT_ROOT / "migrations/correct-skill-v1.0.0.md").read_bytes().replace(b"\r\n", b"\n")
+                if existing == legacy_skill:
+                    atomic_write(target, source.read_bytes())
+                    continue
+            continue
+        atomic_write(target, source.read_bytes())
+
+
+def git(root, *args, check=True):
+    return subprocess.run(
+        ["git", *args], cwd=root, env={**os.environ, "LC_ALL": "C"},
+        capture_output=True, encoding="utf-8", check=check,
+    )
+
+
+def ensure_supported_git(root):
+    version = git(root, "--version", check=False)
+    match = re.match(r"git version (\d+)\.(\d+)", version.stdout.strip())
+    if version.returncode or not match:
+        raise ValueError("Could not determine the installed Git version")
+    if (int(match.group(1)), int(match.group(2))) < (2, 36):
+        raise ValueError("Git 2.36 or newer is required to run and verify the pre-commit hook")
+
+
+def project_repository_exists(root):
+    top = git(root, "rev-parse", "--show-toplevel", check=False)
+    exists = top.returncode == 0
+    if exists and root != Path(top.stdout.strip()).resolve():
+        raise ValueError(f"Use the Git project root at {top.stdout.strip()} or a separate project folder")
+    if not exists and "not a git repository" not in top.stderr:
+        raise ValueError(top.stderr.strip())
+    return exists
+
+
+def has_default_hook(root):
+    default_hooks = root / git(root, "rev-parse", "--git-path", "hooks").stdout.strip()
+    return default_hooks.is_dir() and any(entry.suffix != ".sample" for entry in default_hooks.iterdir())
+
+
+def managed_hook_path(root, exists, preserve_custom):
+    setting = git(root, "config", "--get", "core.hooksPath", check=False)
+    if setting.returncode not in (0, 1):
+        raise ValueError(setting.stderr.strip())
+    if setting.returncode == 0 and (root / setting.stdout.strip()).resolve() != (root / ".githooks").resolve():
+        if preserve_custom:
+            return False
+        raise ValueError(f"Existing Git hooks path {setting.stdout.strip()}. Integrate the Python check with that setup.")
+    if exists and setting.returncode == 1 and has_default_hook(root):
+        if preserve_custom:
+            return False
+        default_hooks = root / git(root, "rev-parse", "--git-path", "hooks").stdout.strip()
+        raise ValueError(f"Existing Git hooks in {default_hooks}. Integrate the Python check with that setup.")
+    return True
+
+
+def pick_hook(root, preserve_custom=False):
+    ensure_supported_git(root)
+    exists = project_repository_exists(root)
+    target = root / ".githooks/pre-commit"
+    if not managed_hook_path(root, exists, preserve_custom):
+        return exists, target, None
+
+    if target.is_symlink() or (target.exists() and not target.is_file()):
+        if preserve_custom:
+            return exists, target, None
+        raise ValueError(f"Existing custom hook at {target}. Integrate the Python check with that setup.")
+    if target.exists():
+        old = target.read_bytes().replace(b"\r\n", b"\n")
+        if old in (HOOK, MIXED_HOOK, TYPESCRIPT_HOOK):
+            return exists, target, HOOK if old == HOOK else MIXED_HOOK
+        if preserve_custom:
+            return exists, target, None
+        raise ValueError(f"Existing hook {target}. Integrate the Python check with that setup.")
+    return exists, target, HOOK
+
+
+def append_text(file, text):
+    previous = file.read_bytes() if file.exists() else b""
+    content = text.encode("utf-8")
+    if content.rstrip() not in previous.replace(b"\r\n", b"\n"):
+        with file.open("ab") as output:
+            if previous:
+                output.write(b"\n" if previous.endswith(b"\n") else b"\n\n")
+            output.write(content)
+
+
+def append_python_guidance(file):
+    previous = file.read_bytes() if file.exists() else b""
+    normalized = previous.replace(b"\r\n", b"\n")
+    guidance = PYTHON_GUIDANCE.encode("utf-8")
+    if guidance.rstrip() in normalized:
+        return
+
+    legacy = (KIT_ROOT / "migrations/python-guidance-v1.0.0.md").read_bytes()
+    if legacy.rstrip() in normalized:
+        updated = normalized.replace(legacy.rstrip(), guidance.rstrip(), 1)
+        newline = b"\r\n" if b"\r\n" in previous else b"\n"
+        atomic_write(file, updated.replace(b"\n", newline))
+        return
+    if "## Python 代码规范".encode() in normalized:
+        return
+    append_text(file, PYTHON_GUIDANCE)
+
+
+def local_hook_path_values(root):
+    result = git(root, "config", "--local", "--get-all", "core.hooksPath", check=False)
+    if result.returncode == 1:
+        return []
+    if result.returncode:
+        raise ValueError(result.stderr.strip())
+    return result.stdout.rstrip("\n").splitlines()
+
+
+def restore_local_hook_path(root, values):
+    current = local_hook_path_values(root)
+    if not values:
+        if current:
+            git(root, "config", "--local", "--unset-all", "core.hooksPath")
+        return
+    git(root, "config", "--local", "--replace-all", "core.hooksPath", values[0])
+    for value in values[1:]:
+        git(root, "config", "--local", "--add", "core.hooksPath", value)
+
+
+def install_hook(root, target, contents):
+    verify_hook_runtime(root)
+    existed = target.exists()
+    previous_contents = target.read_bytes() if existed else None
+    previous_mode = target.stat().st_mode & 0o777 if existed else None
+    previous_config = local_hook_path_values(root)
+    def rollback():
+        errors = []
+        try:
+            if existed:
+                atomic_write(target, previous_contents)
+                target.chmod(previous_mode)
+            elif target.exists():
+                target.unlink()
+        except OSError as error:
+            errors.append(str(error))
+        try:
+            restore_local_hook_path(root, previous_config)
+        except (OSError, ValueError, subprocess.CalledProcessError) as error:
+            errors.append(str(error))
+        if errors:
+            raise ValueError("Hook rollback failed: " + "; ".join(errors))
+
+    try:
+        atomic_write(target, contents)
+        target.chmod(target.stat().st_mode | 0o111)
+        git(root, "config", "--local", "core.hooksPath", ".githooks")
+        result = git(root, "-c", "core.hooksPath=.githooks", "hook", "run", "pre-commit", check=False)
+    except (OSError, ValueError, subprocess.CalledProcessError):
+        rollback()
+        raise
+    return result
+
+
+def verify_hook_runtime(root):
+    with tempfile.TemporaryDirectory(prefix="engineering-kit-hook-") as temporary:
+        directory = Path(temporary)
+        probe = directory / "pre-commit"
+        probe.write_bytes(b"#!/bin/sh\nexit 0\n")
+        probe.chmod(0o755)
+        result = git(
+            root, "-c", f"core.hooksPath={directory}", "hook", "run", "pre-commit", check=False,
+        )
+        if result.returncode:
+            detail = "\n".join(part for part in (result.stdout, result.stderr) if part)
+            raise ValueError(f"Git could not run a shell hook ({result.returncode}). {detail}")
+
+
+def install(root, upgrade=False):
+    exists, hook_target, hook_code = pick_hook(root, preserve_custom=upgrade)
+    script_target = root / PROJECT_SCRIPT
+    script_source = Path(__file__).resolve()
+    targets = [
+        script_target, metadata_path(script_target),
+        root / ".gitignore", root / ".gitattributes", root / "AGENTS.md",
+        root / "docs/RULES.md", root / "docs/DECISION_LOG.tsv",
+        root / ".agents/skills/correct/SKILL.md",
+    ]
+    if hook_code is not None:
+        targets.append(hook_target)
+    for target in targets:
+        ensure_project_file(root, target)
+    if not exists:
+        print(git(root, "init", "--initial-branch=main").stdout.strip(), flush=True)
+    if upgrade:
+        upgrade_checker_copy(root, script_target, script_source)
+    elif script_target.exists():
+        actual_hash = checker_hash(script_target.read_bytes())
+        expected_hash = checker_hash(script_source.read_bytes())
+        if actual_hash != expected_hash:
+            if actual_hash in LEGACY_CHECKER_HASHES:
+                raise ValueError(
+                    f"Python checker at {script_target} is from kit v{LEGACY_CHECKER_HASHES[actual_hash]}. "
+                    "Rerun the installer with -Upgrade."
+                )
+            raise ValueError(
+                f"Python checker at {script_target} is locally modified. "
+                "Preserve its changes before updating the kit."
+            )
+        write_checker_metadata(script_target, script_source)
+    else:
+        atomic_write(script_target, script_source.read_bytes())
+        write_checker_metadata(script_target, script_source)
+
+    install_python_scaffold(root)
+    append_text(root / ".gitignore", "/.cache/engineering-kit/\n")
+    append_text(root / ".gitattributes", "/.githooks/pre-commit text eol=lf\n")
+    append_python_guidance(root / "AGENTS.md")
+    return hook_target, hook_code
+
+
+def ruff_binary(cache):
+    env_dir = cache / f"ruff-{RUFF_VERSION}"
+    bin_dir = env_dir / ("Scripts" if os.name == "nt" else "bin")
+    ruff = bin_dir / ("ruff.exe" if os.name == "nt" else "ruff")
+    lock = cache / "installing-ruff"
+    if ruff.is_file() and not lock.exists():
+        return ruff
+
+    cache.mkdir(parents=True, exist_ok=True)
+    lock.mkdir()
+    try:
+        venv.EnvBuilder(with_pip=True).create(env_dir)
+        python = bin_dir / ("python.exe" if os.name == "nt" else "python")
+        subprocess.run(
+            [python, "-Im", "pip", "install", "--disable-pip-version-check", "--only-binary=:all:",
+             "--no-deps", f"ruff=={RUFF_VERSION}"],
+            check=True,
+        )
+    finally:
+        lock.rmdir()
+    return ruff
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Run or install the engineering kit's Python style check")
+    parser.add_argument("project", nargs="?", default=".")
+    operation = parser.add_mutually_exclusive_group()
+    operation.add_argument("--install", action="store_true")
+    operation.add_argument("--upgrade", action="store_true", help="upgrade the managed checker and install missing Python support files")
+    options = parser.parse_args()
+    root = Path(options.project).resolve(strict=True)
+    if not root.is_dir():
+        raise ValueError(f"Project path is not a directory: {root}")
+
+    # A one-off check can use the user's temporary directory without adding files to the project.
+    local = options.install or options.upgrade or Path(__file__).resolve() == root / PROJECT_SCRIPT
+    cache = (root / ".cache/engineering-kit" if local
+             else Path(tempfile.gettempdir()).resolve() / "codex-engineering-kit-python")
+    if local and root not in cache.resolve().parents:
+        raise ValueError(f"Expected tool cache inside the project at {cache}")
+
+    installed_copy = Path(__file__).resolve() == root / PROJECT_SCRIPT
+    if installed_copy and (options.install or options.upgrade):
+        raise ValueError("Use the central kit installer with -Language python to install or upgrade this checker.")
+    if installed_copy and not options.upgrade:
+        verify_checker_copy(Path(__file__).resolve())
+
+    if options.install or options.upgrade:
+        hook_target, hook_code = install(root, upgrade=options.upgrade)
+        if hook_code is None:
+            print("Python checker installed or upgraded. Existing Git hook setup was preserved; integrate the Python check there.", flush=True)
+            ruff = ruff_binary(cache)
+            cmd = [
+                ruff, "check", "--extend-select", "C90,I", "--config",
+                "lint.mccabe.max-complexity=10", "--no-fix", "--no-fix-only",
+                "--cache-dir", cache / "results", ".",
+            ]
+            return subprocess.run(cmd, cwd=root, check=False).returncode
+        hook_target.parent.mkdir(exist_ok=True)
+        result = install_hook(root, hook_target, hook_code)
+        if result.returncode:
+            print("The Git pre-commit hook is installed; the initial Python check failed.", file=sys.stderr, flush=True)
+        else:
+            print("Ruff and the Git pre-commit check are configured.", flush=True)
+        if result.returncode:
+            if result.stdout:
+                print(result.stdout, end="", file=sys.stdout)
+            if result.stderr:
+                print(result.stderr, end="", file=sys.stderr)
+            return result.returncode
+        return 0
+    else:
+        ruff = ruff_binary(cache)
+
+    cmd = [
+        ruff, "check", "--extend-select", "C90,I", "--config",
+        "lint.mccabe.max-complexity=10", "--no-fix", "--no-fix-only",
+        "--cache-dir", cache / "results", ".",
+    ]
+    return subprocess.run(cmd, cwd=root, check=False).returncode
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (OSError, TypeError, ValueError, subprocess.CalledProcessError) as error:
+        print(f"Python style check: {error}", file=sys.stderr)
+        sys.exit(2)

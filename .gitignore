@@ -77,3 +77,6 @@ tests/tmp_phase_a/
 
 # 侧会话残留快照目录（side-session 探针输出，不入仓库）
 .gstage_out/
+
+# 工程工具链缓存（engineering-kit ruff venv，含 ruff-0.17.6 二进制，不入仓库）
+/.cache/
