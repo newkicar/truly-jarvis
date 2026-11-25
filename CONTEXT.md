@@ -59,6 +59,10 @@ _Avoid_: 隐藏 skill、禁用 skill、私有 skill
 键盘输入到达 TUI 的路径分两种：console 事件通道（ReadConsoleInputW；git bash 隐藏控制台下同样生效）与字节流通道。IME/标点输入类 bug 先定通道与记录形态（input_probe）再谈修复。
 _Avoid_: 默认按 conhost 假设、不分通道直接改解码
 
+**目标续跑收口（after-turn 收口）**：
+回合结束后的目标处理序列（判定→记账→预算终态标记）统一收口在 `src/goals.after_turn`；CLI/TUI/GUI 三前端只做薄适配（入队/打印/重投语义留在各自适配器）；`AfterTurnResult(kind, prompt, budget_marked)` 为统一返回；`active` 门控记账与出 prompt，预算终态标记无门控。
+_Avoid_: 前端各自手拼 goal_status/continuation_decision/note_turn/mark_budget 序列（收口前旧写法）
+
 ## 文档
 
 - 使用与命令：[`README.md`](README.md)

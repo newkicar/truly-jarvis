@@ -1,7 +1,7 @@
 """goal 核心存储/状态机测试（src.goals）。
 
 Seam: goals.py 公开 API（goal_set/pause/resume/clear/status/complete/mark_budget
-/note_turn + should_continue/continuation_decision + 双 prompt + goals.json 存储）
+/note_turn + should_continue/continuation_decision + 双 prompt + after_turn/AfterTurnResult 收口 + goals.json 存储）
 与 src.config 的 goals.max_turns 解析。全部用例显式传 path 或 monkeypatch，
 绝不碰真实 ~/.jarvis；目录自建 .scratch/goal-test-tmp（禁 tmp_path/tempfile）。
 """
@@ -404,4 +404,124 @@ def test_config_goals_non_dict_falls_back(monkeypatch):
         json_file.write_text(json.dumps({"goals": "boom"}), encoding="utf-8")
         cfg = load_config(json_file=json_file, env_overrides=ENV_OVERRIDES)
         assert cfg.goals_max_turns == 5
+
+
+# ---------------------------------------------------------------- after_turn 收口
+
+
+@pytest.fixture()
+def _home(goal_dir, monkeypatch):
+    """after_turn 无 path 参 → 模块全局 goals_path 隔离到 goal_dir（禁碰真实 ~/.jarvis）。"""
+    monkeypatch.setattr(g, "goals_path", lambda: goal_dir)
+
+
+def test_after_turn_continuation_notes_and_prompts(goal_dir, _home):
+    """续跑轮：goal_note_turn 记账 + continuation prompt（前缀 [目标续跑 1/5]），无预算标记。"""
+    g.goal_set(path=goal_dir, thread_id="t1", objective="o", max_turns=5)
+    r = g.after_turn("t1", _Turn(), "干活")
+    assert r.kind == "continuation"
+    assert r.prompt.startswith("[目标续跑 1/5]")
+    assert g.goal_status(path=goal_dir, thread_id="t1").turns_used == 1
+    assert r.budget_marked is False
+
+
+def test_after_turn_budget_decision_clamps(goal_dir, _home):
+    """末轮判定 kind=budget（[目标预算耗尽 2/2]），turns_used 钳顶，终态标记留给交接轮。"""
+    g.goal_set(path=goal_dir, thread_id="t1", objective="o", max_turns=2)
+    g.goal_note_turn(path=goal_dir, thread_id="t1")
+    r = g.after_turn("t1", _Turn(), "干活")
+    assert r.kind == "budget"
+    assert r.prompt.startswith("[目标预算耗尽 2/2]")
+    assert g.goal_status(path=goal_dir, thread_id="t1").turns_used == 2
+    assert r.budget_marked is False
+
+
+def test_after_turn_no_goal_is_none(goal_dir, _home):
+    """无目标记录 -> kind=none，prompt 与 budget_marked 均为空。"""
+    r = g.after_turn("t1", _Turn(), "干活")
+    assert r.kind == "none"
+    assert r.prompt is None
+    assert r.budget_marked is False
+
+
+def test_after_turn_cancel_not_counted(goal_dir, _home):
+    """cancel 收尾 -> none，不记账（turns_used 保持 0）。"""
+    g.goal_set(path=goal_dir, thread_id="t1", objective="o", max_turns=5)
+    r = g.after_turn("t1", _Turn(outcome="cancel"), "干活")
+    assert r.kind == "none"
+    assert r.prompt is None
+    assert g.goal_status(path=goal_dir, thread_id="t1").turns_used == 0
+
+
+def test_after_turn_plan_mode_none(goal_dir, _home):
+    """Plan 模式 -> none，不记账。"""
+    g.goal_set(path=goal_dir, thread_id="t1", objective="o", max_turns=5)
+    r = g.after_turn("t1", _Turn(), "干活", plan_mode=True)
+    assert r.kind == "none"
+    assert r.prompt is None
+    assert g.goal_status(path=goal_dir, thread_id="t1").turns_used == 0
+
+
+def test_after_turn_pending_interrupt_none(goal_dir, _home):
+    """HITL 悬挂中断 -> none，不记账。"""
+    g.goal_set(path=goal_dir, thread_id="t1", objective="o", max_turns=5)
+    r = g.after_turn("t1", _Turn(), "干活", pending_interrupt=True)
+    assert r.kind == "none"
+    assert r.prompt is None
+    assert g.goal_status(path=goal_dir, thread_id="t1").turns_used == 0
+
+
+def test_after_turn_inactive_suppresses_but_budget_ungated(goal_dir, _home):
+    """active=False：记账与 prompt 双抑制（turns_used 保持 0）；预算终态标记不受 active 门控。"""
+    g.goal_set(path=goal_dir, thread_id="t1", objective="o", max_turns=5)
+    r1 = g.after_turn("t1", _Turn(), "干活", active=False)
+    assert r1.kind == "continuation"
+    assert r1.prompt is None
+    assert r1.budget_marked is False
+    assert g.goal_status(path=goal_dir, thread_id="t1").turns_used == 0
+    r2 = g.after_turn("t1", _Turn(), "[目标预算耗尽 5/5] 收尾", active=False)
+    assert r2.kind == "continuation"
+    assert r2.budget_marked is True
+    assert g.goal_status(path=goal_dir, thread_id="t1").status == g.GOAL_BUDGET_LIMITED
+
+
+def test_after_turn_non_str_user_input_skips_budget_marker(goal_dir, _home):
+    """user_input 非 str（list）-> 跳过预算标记判定，正常续跑。"""
+    g.goal_set(path=goal_dir, thread_id="t1", objective="o", max_turns=5)
+    r = g.after_turn("t1", _Turn(), ["干活", {"type": "image"}])
+    assert r.kind == "continuation"
+    assert r.prompt is not None
+    assert r.budget_marked is False
+
+
+def test_after_turn_note_error_swallowed_prompt_kept(goal_dir, _home, monkeypatch):
+    """goal_note_turn 抛 GoalError 被吞没，prompt 照常产出（续跑链不断）。"""
+    g.goal_set(path=goal_dir, thread_id="t1", objective="o", max_turns=5)
+
+    def _boom(**_kw):
+        raise g.GoalError("存储不可用")
+
+    monkeypatch.setattr(g, "goal_note_turn", _boom)
+    r = g.after_turn("t1", _Turn(), "干活")
+    assert r.kind == "continuation"
+    assert r.prompt.startswith("[目标续跑 1/5]")
+    assert r.budget_marked is False
+
+
+def test_after_turn_terminal_mark_swallowed(goal_dir, _home):
+    """终态 goal：kind=none（非 active 不续），预算标记吞没 TerminalGoalError。"""
+    g.goal_set(path=goal_dir, thread_id="t1", objective="o", max_turns=2)
+    g.goal_mark_budget_exhausted(path=goal_dir, thread_id="t1")
+    r = g.after_turn("t1", _Turn(), "[目标预算耗尽 2/2] 收尾")
+    assert r.kind == "none"
+    assert r.prompt is None
+    assert r.budget_marked is False
+
+
+def test_after_turn_no_record_budget_prefix_swallowed(goal_dir, _home):
+    """无 goal 记录：kind=none，预算标记吞没 NoGoalError，budget_marked 仍 False。"""
+    r = g.after_turn("t9", _Turn(), "[目标预算耗尽 1/1] 收尾")
+    assert r.kind == "none"
+    assert r.prompt is None
+    assert r.budget_marked is False
 
