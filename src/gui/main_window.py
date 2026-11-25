@@ -1054,6 +1054,7 @@ class MainWindow(QMainWindow):
             return
         pres = self._workspace.switch_project(root)
         if pres is None:
+            self.refresh_tree()  # ADR-0015：剪枝/拒绝切换 → 刷新左树（陈旧项目消失；空态由 _refresh_empty_hint 提示）
             return
         self.presenter = pres
         self._compact_action.setEnabled(True)  # 空态→活跃：恢复自动压缩菜单项

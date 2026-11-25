@@ -147,3 +147,54 @@ def test_pick_launch_none_when_registry_empty_or_all_missing():
         assert reg.pick_launch() is None
     finally:
         clean()
+
+# ---- prune_missing（ADR-0015：目录已不存在 = 用户弃用 → 剪条目；stale = 目录在但 json 缺 → 保留）
+
+def test_prune_missing_removes_missing_keeps_stale():
+    d, clean = _tmp()
+    try:
+        reg = ProjectRegistry(d / "projects.json")
+        alive = d / "alive"
+        alive.mkdir()
+        stale = d / "a" / "b" / "c" / "d" / "stale"
+        stale.mkdir(parents=True)  # 目录在、无 jarvis.json = stale（prune 不碰）
+        gone = d / "gone"  # 目录不存在（不创建）
+        reg.add(alive, now=1.0)
+        reg.add(stale, now=2.0)
+        reg.add(gone, now=3.0)
+        removed = reg.prune_missing()
+        assert removed == [str(gone.resolve())]
+        assert reg.get(gone) is None
+        assert reg.get(stale) is not None  # stale 保留（pick_launch 跳过域）
+        assert reg.get(alive) is not None
+    finally:
+        clean()
+
+
+def test_prune_missing_clears_active():
+    d, clean = _tmp()
+    try:
+        reg = ProjectRegistry(d / "projects.json")
+        gone = d / "gone"
+        reg.add(gone, now=1.0)
+        assert reg.active() == str(gone.resolve())
+        reg.prune_missing()
+        assert reg.active() is None
+    finally:
+        clean()
+
+
+def test_prune_missing_noop_does_not_rewrite_file():
+    d, clean = _tmp()
+    try:
+        reg = ProjectRegistry(d / "projects.json")
+        alive = d / "alive"
+        alive.mkdir()
+        reg.add(alive, now=1.0)
+        calls = []
+        real_save = reg._save
+        reg._save = lambda data: calls.append(1) or real_save(data)
+        assert reg.prune_missing() == []
+        assert calls == []  # 无缺失条目 → 幂等不重写注册表文件
+    finally:
+        clean()

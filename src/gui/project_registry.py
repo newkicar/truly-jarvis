@@ -3,7 +3,8 @@
 - 一个条目 = 一个已知项目（已解析绝对路径 + 显示名 + 置顶 + 最近打开 + 上次活动会话）。
 - 顺序 = 置顶优先，其次按最近打开降序（对齐 ChatGPT「pin 只改顺序、不加上下文」）。
 - 移除条目 = 只删注册表项，**永不**触碰项目文件夹里的数据。
-- 启动选取：取排序里第一个「路径仍存在」的条目；全都不在 → 无（上层落空状态）。
+- 启动选取：gui_main 先 prune_missing() 剪「目录已不存在」条目（ADR-0015，对标 VS Code Recent：绝不重建被删文件夹），
+  再取 pick_launch() 排序里第一个「目录在且仍是 jarvis 项目」的条目；全都不在 → 无（上层落空状态）。
 
 纯逻辑（无 Qt）；文件缺失/损坏一律回落空注册表，不崩。
 """
@@ -106,6 +107,23 @@ class ProjectRegistry:
         if data.get("active") == want:
             data["active"] = None
         self._save(data)
+
+    def prune_missing(self) -> list[str]:
+        """剪掉目录已不存在的条目（ADR-0015，对标 VS Code Recent：点不存在的 folder → 移除条目）。
+
+        只剪「目录已不存在」；「目录在但 jarvis.json 缺」的 stale 条目保留（pick_launch 跳过域）。
+        active 指向被剪条目时清空。幂等：无缺失 → 返回 [] 且不写文件。返回被剪的归一化路径列表。
+        """
+        data = self._load()
+        removed = [str(e.get("path")) for e in data["projects"]
+                   if e.get("path") and not Path(str(e.get("path"))).is_dir()]
+        if not removed:
+            return []
+        data["projects"] = [e for e in data["projects"] if str(e.get("path")) not in removed]
+        if data.get("active") in removed:
+            data["active"] = None
+        self._save(data)
+        return removed
 
     def set_pinned(self, path: Any, on: bool) -> None:
         data = self._load()

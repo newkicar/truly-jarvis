@@ -330,3 +330,49 @@ def test_static_workspace_sync_yolo_ledger_noop():
     fake_rt = SimpleNamespace(config=SimpleNamespace(project_root=P("x")))
     sw = StaticWorkspace(SimpleNamespace(runtime=fake_rt), object())
     assert sw.sync_yolo_ledger() is None
+
+
+# ---------------------------------------------------------------- 陈旧根（ADR-0015）
+
+def test_switch_project_removed_dir_prunes_and_stays():
+    """目标目录已不存在（关闭期间被用户删除）→ 剪注册表条目、**绝不**重建文件夹、停留（None）。"""
+    d, clean = _home()
+    try:
+        a, b = d / "a", d / "b"
+        a.mkdir(); b.mkdir()
+        (a / "jarvis.json").write_text("{}", encoding="utf-8")
+        (b / "jarvis.json").write_text("{}", encoding="utf-8")
+        reg, ctrl, _made, _ = _ctrl(d, a)
+        reg.add(b, now=2.0)
+        assert ctrl.switch_project(b) is not None
+        assert ctrl.active_root() == b.resolve()
+        shutil.rmtree(a)  # 用户关闭期间删了项目目录 a
+        pres = ctrl.switch_project(a)
+        assert pres is None  # 拒绝切换
+        assert not a.exists()  # 绝不重建被删的文件夹
+        assert reg.get(a) is None  # 陈旧条目被剪
+        assert reg.get(b) is not None
+        assert ctrl.active_root() == b.resolve()  # 停留当前活动
+    finally:
+        clean()
+
+
+def test_switch_project_missing_json_in_existing_dir_rebuilds_skeleton():
+    """P3 保留语义守护：目录在但 jarvis.json 被删 → 用户发起 → 重建骨架后再切（菜单语义）。"""
+    d, clean = _home()
+    try:
+        a, b = d / "a", d / "b"
+        a.mkdir(); b.mkdir()
+        (a / "jarvis.json").write_text("{}", encoding="utf-8")
+        (b / "jarvis.json").write_text("{}", encoding="utf-8")
+        reg, ctrl, _made, _ = _ctrl(d, a)
+        reg.add(b, now=2.0)
+        (b / "jarvis.json").unlink()
+        pres = ctrl.switch_project(b)
+        assert pres is not None
+        assert (b / "jarvis.json").is_file()  # 骨架已重建
+        assert (b / "schedules").is_dir()
+        assert ctrl.active_root() == b.resolve()
+        assert reg.get(b) is not None
+    finally:
+        clean()

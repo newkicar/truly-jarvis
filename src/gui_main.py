@@ -127,6 +127,7 @@ def main(argv: list[str] | None = None) -> int:
     # 多项目工作区（工单 05）：全局注册表 + 切项目控制器。启动 = 打开最近项目，
     # 首次（空注册表）= 登记并打开启动目录对应的项目。
     registry = ProjectRegistry(default_registry_path())
+    registry.prune_missing()  # ADR-0015：剪掉目录已不存在的条目（关闭期间被用户删除），对齐 VS Code Recent 语义
     launch = registry.pick_launch()
     start_root = Path(str(launch["path"])) if launch else Path(config.project_root)
     # 严格空态（工单 05）：空注册表**不**登记 cwd（避免"幽灵项目"）——cwd 仅作活动 runtime，

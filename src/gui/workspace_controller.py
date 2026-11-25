@@ -188,12 +188,18 @@ class WorkspaceController:
 
     # ---- 切换
     def switch_project(self, root: Any, *, proceed_if_running=None) -> Any:
-        # 陈旧根（用户点树/打开项目时 jarvis.json 已被删）= 用户发起 → 重建骨架后再切
-        # （与「打开项目/新建项目」菜单语义一致，区别于启动路径的「落空态、绝不自动重建」）。
+        # 陈旧根拆分（ADR-0015）：
+        # ① 目录已不存在（关闭期间被用户删除/改名）= 用户弃用 → 剪注册表条目、停留当前活动，
+        #    绝不重建文件夹（对标 VS Code Recent；pres 为 None → UI refresh_tree 刷新树）。
+        # ② 目录在但 jarvis.json 缺 = 用户发起（点树/打开菜单）→ 重建骨架后再切（菜单语义）。
         # OSError（网络盘不可达、权限等）→ 不切，返回 None。
         if jarvis_project_root_of(root) is None:
+            d = Path(str(root)).expanduser()
+            if not d.is_dir():
+                self.registry.remove(root)  # 剪枝陈旧条目（remove 幂等，条目本就不在则 no-op）
+                return None
             try:
-                init_project(Path(str(root)))
+                init_project(d)
             except OSError:
                 return None
         # ADR-0010：切走不再取消后台（busy runtime 保留），switch_to 恒返回目标 runtime；

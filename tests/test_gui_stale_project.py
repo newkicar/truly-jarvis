@@ -1,9 +1,12 @@
 """陈旧项目启动落空态回归（gui_main 的 jarvis.json 被删/目录已移场景）。
 
-契约：
-- 启动路径：pick_launch 跳过「目录还在但 jarvis.json 已删」的条目（不删条目、不自动重建文件）；
-- 手动切项目（controller.switch_project）：用户发起 → init_project 重建骨架后再切；
-- MainWindow(presenter=None) 空态：构造/刷新/提交/新会话按钮均不崩，输入区禁用。
+契约（ADR-0015）：
+- 启动路径：先 prune_missing() 剪掉「目录已不存在」的条目（绝不重建被删文件夹），
+  再 pick_launch() 跳过 stale 条目（目录在但 jarvis.json 缺，不删不重建）；
+- 手动切项目（controller.switch_project）：目录缺 → 剪枝 + 不重建 + 停留（None）；
+  目录在但 jarvis.json 缺 → 用户发起 → 重建骨架后再切（菜单语义）；
+- MainWindow(presenter=None) 空态：构造/刷新/提交/新会话按钮均不崩，输入区禁用；
+- switch_project 返回 None（剪枝/拒绝切换）→ _do_switch_project 刷新项目树（陈旧条目消失）。
 
 纪律：offscreen；不用 tmp_path（pytest-of-uida0712 基目录 WinError 5 中毒），
 目录自建在 .scratch/gui-test-tmp/<uuid>/ 并 finally rmtree。
@@ -216,3 +219,47 @@ def test_switch_project_stale_root_rebuilds_and_switches(qapp):
         ctrl.shutdown()
     finally:
         shutil.rmtree(d, ignore_errors=True)
+
+
+# ---- 5. 启动路径：prune_missing 剪「目录已不存在」→ pick_launch 落 healthy（ADR-0015）
+
+
+def test_startup_prune_then_pick_launch(base: Path):
+    gone = base / "gone"  # 目录不存在（关闭期间被用户删除）
+    stale = _stale_dir(base, "stale")
+    healthy = base / "healthy"
+    healthy.mkdir()
+    (healthy / "jarvis.json").write_text("{}", encoding="utf-8")
+    reg = ProjectRegistry(base / "projects.json")
+    reg.add(gone, now=9.0)  # 最「最近」→ ordered() 排前，须被剪
+    reg.add(stale, now=5.0)
+    reg.add(healthy, now=1.0)
+    removed = reg.prune_missing()
+    assert removed == [str(gone.resolve())]
+    assert not (gone / "jarvis.json").exists()  # 绝不重建被删文件夹
+    assert reg.get(gone) is None
+    assert reg.get(stale) is not None  # stale 保留（pick_launch 跳过域，prune 不碰）
+    entry = reg.pick_launch()
+    assert entry is not None
+    assert Path(str(entry["path"])).resolve() == healthy.resolve()
+
+
+# ---- 6. _do_switch_project：switch_project 返回 None → 刷新项目树（P4，ADR-0015）
+
+
+def test_do_switch_project_none_calls_refresh_tree(qapp):
+    bridge = UiBridge()
+    ws = _EmptyFakeWS(bridge)  # switch_project 恒 None（模拟剪枝后拒绝切换）
+    win = MainWindow(None, bridge, workspace=ws)
+    win.show()
+    calls = []
+    real_refresh = win.refresh_tree
+
+    def _spy(*a, **k):
+        calls.append(1)
+        return real_refresh(*a, **k)
+
+    win.refresh_tree = _spy
+    win._do_switch_project(TEST_ROOT / "no-such-project-xyz")
+    assert len(calls) == 1  # 旧代码静默 return（0 次）→ 红
+    win.close()
