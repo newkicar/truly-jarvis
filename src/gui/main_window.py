@@ -407,7 +407,7 @@ class MainWindow(QMainWindow):
             self.yolo_action.setChecked(False)
             return
         state = self.presenter.runtime.permission_state
-        tid = self.active_tid or ""
+        tid = self._mode_tid() or ""  # side 聚焦时 YOLO 写主线线程（side 只读不持有 YOLO）
         if on:
             permissions.yolo_on(state, tid)
         else:
@@ -814,9 +814,13 @@ class MainWindow(QMainWindow):
         from src import permissions, plan_mode
 
         state = self.presenter.runtime.permission_state
-        mode = plan_mode.effective_mode(state, self.active_tid or "")
-        yolo = permissions.yolo_active(state, self.active_tid or "")
-        proxy = permissions.proxy_active(state, self.active_tid or "")
+        # side 隔离：全局模式面（徽标 + 菜单勾选态）跟随主线会话 tid——side 被强制
+        # 只读（effective_mode=plan）且不持有 YOLO，用 active_tid 会把主线徽标翻成
+        # [Plan] 并清掉 YOLO 勾选（开侧边会话污染主对话的症状）。
+        tid = self._mode_tid() or ""
+        mode = plan_mode.effective_mode(state, tid)
+        yolo = permissions.yolo_active(state, tid)
+        proxy = permissions.proxy_active(state, tid)
         from src.gui import theme as _theme_mod
 
         tok = _theme_mod.current_tokens()
@@ -833,7 +837,10 @@ class MainWindow(QMainWindow):
             html += (f' <span style="color: {tok["ok"]}; font-weight: bold;">'
                      f'[GOAL] {g.turns_used}/{g.max_turns} {_goals.GOAL_STATUS_CN.get(g.status, g.status)}</span>')
         self.mode_badge.setText(html)
-        # 菜单勾选态与真实状态同步（切会话后 YOLO 态随会话变）
+        # 菜单勾选态与真实状态同步（全局模式面随主线会话；side 聚焦/切换不污染）
+        self.plan_action.blockSignals(True)
+        self.plan_action.setChecked(plan_mode.current_mode(state) == "plan")
+        self.plan_action.blockSignals(False)
         self.yolo_action.blockSignals(True)
         self.yolo_action.setChecked(yolo)
         self.yolo_action.blockSignals(False)
@@ -920,8 +927,18 @@ class MainWindow(QMainWindow):
         """gui-ux22 工单 03：逐槽 tid；legacy 回落（只设 active_tid 的旧路径/测试，按槽归属路由）。"""
         tid = self._side_slot_tid if slot == "side" else self._main_slot_tid
         if tid is None and self.active_tid and self._slot_of_tid(self.active_tid) == slot:
-            return self.active_tid
+            tid = self.active_tid
+        # gui-ux22 双槽路由修复：stale side tid 兜底——一切漏清路径（如 slash 跨线程
+        # close 后未清槽）下 side 槽视为无侧边会话，由调用方拒收（不回落主线）
+        if tid is not None and slot == "side" and self.presenter is not None \
+                and not self.presenter.is_side(tid):
+            return None
         return tid
+
+    def _mode_tid(self) -> str | None:
+        """全局模式面（徽标/菜单勾选态/YOLO 写）跟随的主线会话 tid：side 聚焦时
+        仍是主线 tid（plan 为全局键、side 强制只读不持有 YOLO）；空态回落 active_tid。"""
+        return self._main_slot_tid or self.active_tid
 
     def _cancel_slot(self, slot: str) -> None:
         """gui-ux22 工单 03：逐槽取消（零参 _cancel_active 保留，实体走主槽）。"""
@@ -1484,25 +1501,35 @@ class MainWindow(QMainWindow):
             self.input_bar.edit.setFocus()
 
     def _on_side_pill_clicked(self) -> None:
-        """pill = 关闭 side 会话（关了就没了：删除会话并回主线；右键菜单同语义）。"""
-        if not self.active_tid or self.presenter is None:
+        """pill = 关闭 side 会话（关了就没了：删除会话并回主线；右键菜单同语义）。
+
+        gui-ux22 双槽路由修复：pill 跟随右槽实际持有的 _side_slot_tid（右槽持 side
+        会话即可见），不再跟随 active_tid——消除「pill 标在主对话输入框上」的错位。"""
+        if self.presenter is None:
             return
-        note, parent = self.presenter.close_side(self.active_tid)
-        self._collapse_side_slot()  # gui-ux22 工单 02：右槽折叠
-        self.status_label.setText(note)
+        tid = self._side_slot_tid
+        if tid is None or not self.presenter.is_side(tid):
+            return
+        note, parent = self.presenter.close_side(tid)
         if parent:
+            self._collapse_side_slot()  # gui-ux22 工单 02：右槽折叠
+            self.status_label.setText(note)
             self._switch_to(parent)
         else:
+            # 内核拒绝：不折叠真实开着的右槽，仅提示
+            self.status_label.setText(note)
             self.input_bar.edit.setFocus()
 
     def _refresh_side_pill(self) -> None:
         if not hasattr(self, "side_pill") or self.presenter is None:
             return
-        show = bool(self.active_tid) and self.presenter.is_side(self.active_tid)
+        # gui-ux22 双槽路由修复：显示判定跟随右槽持有的 side tid，不依赖 active_tid
+        sid = getattr(self, "_side_slot_tid", None)
+        show = sid is not None and self.presenter.is_side(sid)
         if not show:
             self.side_pill.setVisible(False)
             return
-        parent = self.presenter.side_parent(self.active_tid)
+        parent = self.presenter.side_parent(sid)
         tip = (
             commands.side_parent_status(
                 self.presenter.runtime.agent,
@@ -1558,6 +1585,10 @@ class MainWindow(QMainWindow):
         images = imgs.paths()
         user_input, user_input_fallback, _ = build_image_submit(payload, images)
         tid = self._slot_tid(slot)
+        if slot == "side" and (tid is None or not self.presenter.is_side(tid)):
+            # 双槽路由修复：侧槽无（合法）side 会话时拒收——不回落到主线对话
+            st.setText("还没有侧边会话，先在主对话 /side 开一个")
+            return
         verdict = self.presenter.start_turn(
             tid, payload,
             user_input=user_input, user_input_fallback=user_input_fallback,
@@ -1606,6 +1637,10 @@ class MainWindow(QMainWindow):
             if err:
                 st.setText(err)
                 return True
+            if tid is None:
+                # 双槽路由修复：侧槽无（合法）side 会话时拒收，不建 None pane
+                st.setText("还没有侧边会话，先在主对话 /side 开一个")
+                return True
             p = self._ensure_pane(tid)
             p.append_user(payload, None)
             verdict = self.presenter.start_turn(tid, msg)
@@ -1625,6 +1660,37 @@ class MainWindow(QMainWindow):
                 )
                 return True
             self._on_undo_for(tid)  # gui-ux22 工单 03：按槽 tid（侧槽 /undo 作用于 side tid）
+            return True
+        if first == '/side':
+            # gui-ux22 双槽路由修复：/side 与 /side close 走主线程直调 presenter
+            #（镜像树右键路径），不再落 worker 跨线程 emit——右槽展开与
+            # pane 重定位同帧完成，消除 slot 归属错位（pill 标错对话）
+            parts = stripped.split(None, 1)
+            if len(parts) > 1 and parts[1].lower() != 'close':
+                st.setText('用法: /side 或 /side close')
+                return True
+            if len(parts) > 1:
+                # /side close：右槽折叠清 stale tid；仅内核成功（parent 非空）才折叠
+                stid = self._slot_tid('side')
+                if stid is None:
+                    st.setText('还没有侧边会话，无需关闭')
+                    return True
+                note, parent = self.presenter.close_side(stid)
+                st.setText(note)
+                if parent:
+                    self._collapse_side_slot()
+                    self._switch_to(parent)
+                else:
+                    # 内核拒绝（如 tid 已失 side 身份）：不折叠真实开着的右槽
+                    self.input_bar.edit.setFocus()
+                return True
+            # /side：从主槽 tid 开侧边会话
+            mtid = self._slot_tid('main') or tid
+            note, new_sid = self.presenter.open_side(mtid)
+            st.setText(note)
+            if new_sid:
+                self._switch_to(new_sid)
+                self._expand_side_slot()
             return True
         self._execute_slash(payload, tid=tid)  # gui-ux22 工单 03：按槽 tid（缺省回落 active_tid）
         return True
