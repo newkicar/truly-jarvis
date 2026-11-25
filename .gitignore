@@ -74,3 +74,6 @@ release/
 
 # 测试临时工作目录（Phase A 契约测试自目录，不入仓库）
 tests/tmp_phase_a/
+
+# 侧会话残留快照目录（side-session 探针输出，不入仓库）
+.gstage_out/
