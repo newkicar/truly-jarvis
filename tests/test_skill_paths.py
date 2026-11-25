@@ -181,3 +181,26 @@ def test_seed_builtin_skills_never_overwrites_user_edited_files(monkeypatch):
         assert (user_skill / "references" / "flow.md").read_text(encoding="utf-8") == "BUILTIN-ref"
     finally:
         shutil.rmtree(base, ignore_errors=True)
+
+
+def test_discover_skill_layers_reads_dotdir_skills(monkeypatch):
+    """ADR-0016: 项目 skills 收进 .jarvis/skills/ 后，发现层与后端路由指向 /workspace/.jarvis/skills/。"""
+    import os
+    import shutil
+    import tempfile
+    import uuid
+
+    root = Path(os.path.join(tempfile.gettempdir(), f"jx_dotdir_skills_{uuid.uuid4().hex[:8]}"))
+    home = root / "fake_home"
+    sk = root / ".jarvis" / "skills"
+    sk.mkdir(parents=True)
+    (sk / "my-skill").mkdir()
+    (sk / "my-skill" / "SKILL.md").write_text("---\nname: my-skill\ndescription: d\n---\n", encoding="utf-8")
+    try:
+        monkeypatch.setenv("JARVIS_HOME", str(home))
+        cfg = replace(make_fake_config(root), skills=(sk,))
+        vpaths = [layer.virtual_path for layer in discover_skill_layers(cfg)]
+        assert "/workspace/.jarvis/skills/" in vpaths
+        assert skill_backend_routes(cfg)["/workspace/.jarvis/skills/"] == sk.resolve()
+    finally:
+        shutil.rmtree(root, ignore_errors=True)

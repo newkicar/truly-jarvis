@@ -22,6 +22,7 @@
 - 全局配置用 `jarvis.json`（模拟 opencode）；可变项放这里，不写死（含 `checkpoint_db`、`schedules_dir`）。**不含**用户所在地（用户可能在任意地点）。定时任务**外置**到 `schedules/*.json`（每任务一 JSON：时间/任务/保存路径/要求），增删 = 加删文件。
 - **系统上下文**（ADR-0003）：启动 prompt 仅注入**当天日期+星期**；精确时间/城市**只用 `execute`**（Get-Date、curl IP），**禁止** CodeInterpreter/eval；**不**读 user-profile 找所在地，**不**写死 `jarvis.json` location。
 - **用户全局目录**：`~/.jarvis`（`JARVIS_HOME` 可改）存放全局 skill 与可写配置；内置 skill 随包分发，首次运行 seed 到 `~/.jarvis/skills/`。
+- **项目 skill 收进 .jarvis/skills/`（ADR-0016）：`jarvis.json` 的 skills 条目用 `.jarvis/skills/`；启动迁移 = 整目录 move、同名冲突目标（`.jarvis/` 侧）优先无备份、项目根 == 安装根（开发模式）跳过；`--init` / auto_init 直接创建 `.jarvis/skills/`。
 - **复用 deepagents 原生工具**（ls/read_file/write_file/edit_file/glob/grep/execute/task），不重造轮子。
 - 架构：主代理 + 子代理（researcher / knowledge_keeper / executor）；研究类问题二期用动态子代理 fan-out。`jarvis.json` 的 `agents` 段可**追加**自定义子代理（`description` + `system_prompt`，可选 `permissions`），**不可**覆盖内置 researcher/knowledge_keeper，**不可**在 JSON 里开放任意 tools 列表。
 - Time travel 双层：会话回退 = checkpointer（thread_id + checkpoint_id）；文件回退 = git 快照（仅项目目录，vault 不纳入 git），**手动 `/snapshot` 触发**（不用自动每轮 commit）。 2026-11-20：undo 撤区段含文件写工具（write_file/edit_file/delete）时成功返回串追加 /snapshot+/rollback 回退指引行（GUI 状态栏/TUI transcript 透传），语义仍纯消息层，ADR-0005 不变。
