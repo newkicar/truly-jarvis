@@ -1,0 +1,25 @@
+........................................................................ [ 87%]
+..........                                                               [100%]
+============================== warnings summary ===============================
+..\..\python_env\Lib\site-packages\google\genai\types.py:42
+  D:\python_env\Lib\site-packages\google\genai\types.py:42: DeprecationWarning: '_UnionGenericAlias' is deprecated and slated for removal in Python 3.17
+    VersionedUnionType = Union[builtin_types.UnionType, _UnionGenericAlias]
+
+tests/test_gui_split.py::test_dual_tid_concurrent_no_deadlock
+  D:\Python Project\truly-jarvis-main\src\agent.py:484: LangChainBetaWarning: The class `CodeInterpreterMiddleware` is in beta. It is actively being worked on, so the API may change.
+    *([CodeInterpreterMiddleware(subagents=True)] if CodeInterpreterMiddleware is not None else []),
+
+tests/test_gui_split.py::test_real_graph_dual_concurrent_sqlite_persist
+  D:\python_env\Lib\site-packages\langgraph\pregel\main.py:3805: LangChainBetaWarning: The v3 streaming protocol on Pregel is experimental.
+    return self._pregel_stream_v3(
+
+tests/test_gui_split.py::test_real_graph_dual_concurrent_sqlite_persist
+  D:\python_env\Lib\site-packages\langgraph\pregel\main.py:3647: LangChainBetaWarning: The v3 streaming protocol on Pregel is experimental.
+    return GraphRunStream(graph_iter, mux)
+
+..\..\python_env\Lib\site-packages\_pytest\cacheprovider.py:469
+  D:\python_env\Lib\site-packages\_pytest\cacheprovider.py:469: PytestCacheWarning: could not create cache path D:\Python Project\truly-jarvis-main\.pytest_cache\v\cache\nodeids: [WinError 183] 当文件已存在时，无法创建该文件。: 'D:\\Python Project\\truly-jarvis-main\\.pytest_cache\\v\\cache'
+    config.cache.set("cache/nodeids", sorted(self.cached_nodeids))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+82 passed, 5 warnings in 50.21s

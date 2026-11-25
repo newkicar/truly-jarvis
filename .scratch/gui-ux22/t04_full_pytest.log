@@ -1,0 +1,750 @@
+E.EEEEEEEEE.EEEEEEEE.EEE................................................ [  3%]
+.....................................E.E...EEEEEEEEEEE........EEEE.E.... [  7%]
+..............EE.E.........E............EE.....EEE.............EE....... [ 11%]
+...........................EEE..EEEEEEEEEEEE..................E......... [ 15%]
+......................................................s................. [ 19%]
+........................................................................ [ 23%]
+........................................................................ [ 27%]
+........................................................................ [ 31%]
+........................................................................ [ 35%]
+........................................................................ [ 39%]
+........................................................................ [ 43%]
+.......EE.E.......................EEEE.................................. [ 47%]
+........................................................................ [ 51%]
+.....................................................................EEE [ 55%]
+EEE............E.EEEE.E.....E.................................EEE....... [ 59%]
+........................................................................ [ 63%]
+...............EEEEE.EEEEE.....EEEE.EEEE............................EEEE [ 67%]
+EEEE.....................................F.............................. [ 71%]
+...................EEEEEEEEEEEEE.EEEEEEEEEEEEEEEEEEEEEEEEEEEEE.......... [ 75%]
+........................E.EEEE........EEEEEEE..E........................ [ 79%]
+.............................EEEEE...................................EEE [ 83%]
+...............EE...............................EEEEEEE................. [ 87%]
+.........................EE.EE.......................................... [ 91%]
+........................................................................ [ 95%]
+.................................EEE...EEEEEEEEE.......................E [ 99%]
+EEEEEEE.....                                                             [100%]
+=================================== ERRORS ====================================
+________________ ERROR at setup of test_build_agent_assembles _________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_build_agent_uses_build_main_prompt __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_build_agent_invoke_returns_message __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____ ERROR at setup of test_build_agent_with_sqlite_checkpointer_assembles ____
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____________ ERROR at setup of test_build_agent_injects_mcp_tools _____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___ ERROR at setup of test_build_agent_no_mcp_tools_still_has_quick_search ____
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_build_agent_registers_skill_sources __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_build_agent_loads_memory_md_files ___________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_ ERROR at setup of test_build_agent_registers_researcher_and_knowledge_keeper _
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__ ERROR at setup of test_build_agent_wires_deny_middleware_and_shared_state __
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____________ ERROR at setup of test_make_backend_supports_execute _____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+______ ERROR at setup of test_build_agent_includes_todo_list_middleware _______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________ ERROR at setup of test_build_agent_registers_harness_profile _________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__ ERROR at setup of test_stream_events_v3_does_not_throw_and_produces_text ___
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___________ ERROR at setup of test_environment_block_without_vault ____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_______ ERROR at setup of test_environment_block_with_vault_shows_path ________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_______ ERROR at setup of test_build_agent_without_vault_no_vault_route _______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_ ERROR at setup of test_build_agent_registers_provider_qualified_harness_profile _
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___ ERROR at setup of test_build_main_prompt_includes_project_instructions ____
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___ ERROR at setup of test_build_agent_injects_dream_knowledge_when_present ___
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+______ ERROR at setup of test_build_agent_no_dream_injection_when_absent ______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________________ ERROR at setup of test_virtual_path_mappings _________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________________ ERROR at setup of test_path_anchor_lines_hit _________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_shell_guard_error_includes_real_dir __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_shell_guard_error_without_prefix_map _________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_completion_default_virtual_unchanged _________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________________ ERROR at setup of test_completion_dual_style _________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________________ ERROR at setup of test_completion_real_style _________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___ ERROR at setup of test_completion_real_style_without_mapping_falls_back ___
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_completion_directory_virtual_style __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___________ ERROR at setup of test_completion_directory_dual_style ____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___________ ERROR at setup of test_completion_directory_real_style ____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_is_virtual_path_reference_positive __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_is_virtual_path_reference_negative __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________________ ERROR at setup of test_looks_like_image_path _________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____ ERROR at setup of test_looks_like_image_path_allows_spaces_in_dirs ______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________________ ERROR at setup of test_image_to_data_url ___________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____________ ERROR at setup of test_build_multimodal_content_parts ____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____________ ERROR at setup of test_build_multimodal_over_limit ______________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____________ ERROR at setup of test_delete_session_removes_thread _____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________ ERROR at setup of test_delete_session_current_switches_thread ________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___________ ERROR at setup of test_dispatch_delete_session_command ____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_always_approve_persists_gated_tool __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_______ ERROR at setup of test_dispatch_rollback_includes_inbox_listing _______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________ ERROR at setup of test_dispatch_rollback_reports_empty_inbox _________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____________ ERROR at setup of test_format_doctor_report_healthy _____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+______________ ERROR at setup of test_format_doctor_report_stuck ______________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___________________ ERROR at setup of test_dispatch_doctor ____________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___________ ERROR at setup of test_dispatch_skills_lists_manual_tag ___________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+______ ERROR at setup of test_expand_use_command_missing_skill_and_usage ______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+______________ ERROR at setup of test_parse_env_colon_separated _______________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+______________ ERROR at setup of test_parse_env_equals_separated ______________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____________ ERROR at setup of test_parse_env_key_case_insensitive ____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____________ ERROR at setup of test_load_config_builds_dataclass _____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____________ ERROR at setup of test_load_config_absolutizes_paths _____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_______ ERROR at setup of test_load_config_missing_required_key_raises ________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____________ ERROR at setup of test_load_config_parses_mcps_dict _____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+______ ERROR at setup of test_load_config_mcps_inherits_global_defaults _______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+______________ ERROR at setup of test_load_config_rag_from_json _______________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+______________ ERROR at setup of test_load_config_tui_from_json _______________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___ ERROR at setup of test_load_config_knowledge_base_preferred_over_legacy ___
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_ ERROR at setup of test_load_config_knowledge_base_falls_back_to_obsidian_vault _
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__ ERROR at setup of test_load_config_empty_knowledge_base_disables_vault[] ___
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_ ERROR at setup of test_load_config_empty_knowledge_base_disables_vault[None] _
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________ ERROR at setup of test_load_config_no_kb_keys_vault_optional _________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_build_agent_appends_config_subagents _________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_hitl_interrupt_triggers_and_resumes __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____________ ERROR at setup of test_hitl_reject_returns_rejection _____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_ ERROR at setup of test_handle_interrupts_always_approve_updates_state_and_json _
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________________ ERROR at setup of test_record_and_list_writes ________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_______________ ERROR at setup of test_restore_deletes_new_file _______________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________________ ERROR at setup of test_restore_reverts_edit _________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____ ERROR at setup of test_sched_thread_not_restored_on_session_rollback _____
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_collect_paths_workspace_before_vault _________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___________ ERROR at setup of test_collect_paths_vault_scope_prefix ___________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_collect_paths_includes_directories __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________ ERROR at setup of test_collect_paths_directory_suffix_filter _________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_collect_paths_directory_query_filter _________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____ ERROR at setup of test_collect_paths_directory_sort_before_children _____
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________________ ERROR at setup of test_parse_permission_hooks ________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___________ ERROR at setup of test_run_permission_hook_allow_script ___________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________ ERROR at setup of test_resolve_permission_hook_deny_git_push _________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___ ERROR at setup of test_hook_allow_skips_modal_via_action_from_tool_call ___
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_hook_deny_middleware_returns_error __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____________ ERROR at setup of test_hook_failure_falls_back_to_ask ____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+______________ ERROR at setup of test_dump_permissions_roundtrip ______________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____ ERROR at setup of test_always_approve_execute_with_args_writes_prefix ____
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____ ERROR at setup of test_always_approve_execute_explicit_prefix_wins ______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_______ ERROR at setup of test_always_approve_legacy_no_args_whole_tool _______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________________ ERROR at setup of test_builtin_always_present ________________
+E   FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\uida0712\\jarvis_pytest_disco\\uh\\agents\\alpha'
+
+During handling of the above exception, another exception occurred:
+E   FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\uida0712\\jarvis_pytest_disco\\uh\\agents'
+
+During handling of the above exception, another exception occurred:
+E   FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\uida0712\\jarvis_pytest_disco\\uh'
+
+During handling of the above exception, another exception occurred:
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\jarvis_pytest_disco'
+________________ ERROR at setup of test_user_layer_discovered _________________
+E   FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\uida0712\\jarvis_pytest_disco\\uh\\agents\\alpha'
+
+During handling of the above exception, another exception occurred:
+E   FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\uida0712\\jarvis_pytest_disco\\uh\\agents'
+
+During handling of the above exception, another exception occurred:
+E   FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\uida0712\\jarvis_pytest_disco\\uh'
+
+During handling of the above exception, another exception occurred:
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\jarvis_pytest_disco'
+_____________ ERROR at setup of test_user_layer_overrides_builtin _____________
+E   FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\uida0712\\jarvis_pytest_disco\\uh\\agents\\alpha'
+
+During handling of the above exception, another exception occurred:
+E   FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\uida0712\\jarvis_pytest_disco\\uh\\agents'
+
+During handling of the above exception, another exception occurred:
+E   FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\uida0712\\jarvis_pytest_disco\\uh'
+
+During handling of the above exception, another exception occurred:
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\jarvis_pytest_disco'
+___________ ERROR at setup of test_project_layer_requires_workspace ___________
+E   FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\uida0712\\jarvis_pytest_disco\\uh\\agents\\alpha'
+
+During handling of the above exception, another exception occurred:
+E   FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\uida0712\\jarvis_pytest_disco\\uh\\agents'
+
+During handling of the above exception, another exception occurred:
+E   FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\uida0712\\jarvis_pytest_disco\\uh'
+
+During handling of the above exception, another exception occurred:
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\jarvis_pytest_disco'
+______________ ERROR at setup of test_list_profiles_is_read_only ______________
+E   FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\uida0712\\jarvis_pytest_disco\\uh\\agents\\alpha'
+
+During handling of the above exception, another exception occurred:
+E   FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\uida0712\\jarvis_pytest_disco\\uh\\agents'
+
+During handling of the above exception, another exception occurred:
+E   FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\uida0712\\jarvis_pytest_disco\\uh'
+
+During handling of the above exception, another exception occurred:
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\jarvis_pytest_disco'
+_________ ERROR at setup of test_lazy_export_does_not_pull_src_agent __________
+E   FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\uida0712\\jarvis_pytest_disco\\uh\\agents\\alpha'
+
+During handling of the above exception, another exception occurred:
+E   FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\uida0712\\jarvis_pytest_disco\\uh\\agents'
+
+During handling of the above exception, another exception occurred:
+E   FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\uida0712\\jarvis_pytest_disco\\uh'
+
+During handling of the above exception, another exception occurred:
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\jarvis_pytest_disco'
+_____________ ERROR at setup of test_init_project_creates_layout ______________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________ ERROR at setup of test_init_project_skips_existing_javis_json ________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_______ ERROR at setup of test_init_project_force_overwrites_javis_json _______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_______________ ERROR at setup of test_suggest_init_if_missing ________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____ ERROR at setup of test_discover_project_root_finds_javis_in_parent ______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____ ERROR at setup of test_discover_project_root_uses_cwd_when_no_javis _____
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_discover_project_root_env_override __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_resolve_jarvis_json_prefers_project __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_______ ERROR at setup of test_resolve_env_file_project_before_install ________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____ ERROR at setup of test_load_project_instructions_empty_when_missing _____
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_______ ERROR at setup of test_load_project_instructions_project_level ________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____ ERROR at setup of test_load_project_instructions_global_plus_project _____
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____________ ERROR at setup of test_refresh_indexes_all_md_files _____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________________ ERROR at setup of test_refresh_is_incremental ________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____________ ERROR at setup of test_refresh_removes_deleted_file _____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_search_finds_semantically_close_note _________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_search_returns_empty_when_no_index __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___________ ERROR at setup of test_search_empty_query_returns_empty ___________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____________ ERROR at setup of test_semantic_search_tool_output ______________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___ ERROR at setup of test_replay_completed_hello_is_faster_than_model_call ___
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___________ ERROR at setup of test_load_schedules_filters_disabled ____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________ ERROR at setup of test_load_schedules_skips_example_templates ________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_load_schedules_requires_id_and_task __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____________ ERROR at setup of test_resolve_save_path_inbox_only _____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_resolve_save_path_rejects_workspace __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+______ ERROR at setup of test_resolve_save_path_rejects_non_inbox_vault _______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_load_schedules_rejects_bad_save_path _________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________________ ERROR at setup of test_run_task_writes_file _________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+______________ ERROR at setup of test_run_task_cleans_own_thread ______________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____________ ERROR at setup of test_make_scheduler_registers_jobs _____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+______________ ERROR at setup of test_register_jobs_returns_list ______________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____________ ERROR at setup of test_reload_schedules_replaces_cron ____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_run_task_error_writes_error_marker __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+______ ERROR at setup of test_resolve_save_path_vault_without_kb_raises _______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_make_scheduler_registers_dream_job __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_______ ERROR at setup of test_register_dream_job_disabled_removes_job ________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____ ERROR at setup of test_register_dream_job_disabled_no_existing_job ______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____________ ERROR at setup of test_register_dream_job_bad_cron ______________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_reload_schedules_reregisters_dream __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____________ ERROR at setup of test_run_task_success_calls_on_done ____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+______ ERROR at setup of test_run_task_failure_calls_on_done_then_raises ______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_run_task_on_done_exception_swallowed _________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____________ ERROR at setup of test_make_scheduler_threads_on_done ____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_make_scheduler_default_on_done_none __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____________________ ERROR at setup of test_env_inherited _____________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________________ ERROR at setup of test_env_override_merges __________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________________ ERROR at setup of test_basic_command_runs __________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_external_program_found_on_windows ___________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________________ ERROR at setup of test_nonzero_exit_reported _________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___________________ ERROR at setup of test_stderr_prefixed ____________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________________ ERROR at setup of test_timeout_returns_124 __________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________________ ERROR at setup of test_empty_command_rejected ________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_______ ERROR at setup of test_virtual_prefix_guard_blocks_and_explains _______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________ ERROR at setup of test_virtual_prefix_guard_allows_real_paths ________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_virtual_prefix_guard_ignores_urls ___________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____________ ERROR at setup of test_make_backend_wires_prefixes ______________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_ ERROR at setup of test_virtual_prefix_guard_matches_without_trailing_slash __
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_make_backend_default_unrestricted ___________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___ ERROR at setup of test_unrestricted_backend_accesses_paths_outside_root ___
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____ ERROR at setup of test_resolve_path_driveless_abs_resolves_under_cwd _____
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_resolve_path_true_absolute_unchanged _________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___________ ERROR at setup of test_resolve_path_relative_unchanged ____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________ ERROR at setup of test_discover_skill_catalog_finds_skill_md _________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___________ ERROR at setup of test_manual_only_detection_and_flags ____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____________ ERROR at setup of test_summarize_tags_manual_skills _____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____ ERROR at setup of test_build_skill_use_message_expands_body_and_task _____
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_ ERROR at setup of test_build_skill_use_message_case_insensitive_and_missing _
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___________ ERROR at setup of test_user_home_default_uses_dot_javis ___________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________________ ERROR at setup of test_user_home_env_override ________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___________ ERROR at setup of test_ensure_user_home_creates_skills ____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____________ ERROR at setup of test_discover_skill_layers_order ______________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____ ERROR at setup of test_skill_backend_routes_includes_project_layer ______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_______ ERROR at setup of test_backend_lists_project_skill_clean_paths ________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+______ ERROR at setup of test_skill_virtual_sources_includes_user_layer _______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_______________ ERROR at setup of test_backend_lists_user_skill _______________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________________ ERROR at setup of test_snapshot_and_rollback _________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_______ ERROR at setup of test_rollback_unknown_checkpoint_returns_none _______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____________________ ERROR at setup of test_list_snapshots ____________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_list_snapshots_orders_oldest_first __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_resolve_commit_supports_short_prefix _________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___ ERROR at setup of test_at_completion_shows_candidates_and_inserts_path ____
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_at_completion_escape_closes_overlay __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________________ ERROR at setup of test_theme_persistence ___________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_slash_use_missing_skill_shows_error __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___ ERROR at setup of test_slash_use_manual_skill_streams_expanded_message ____
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________________ ERROR at setup of test_resolve_slash_overlay _________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________________ ERROR at setup of test_resolve_path_overlay _________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+______ ERROR at setup of test_resolve_path_overlay_includes_directories _______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_______ ERROR at setup of test_resolve_path_overlay_directory_narrowing _______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_____ ERROR at setup of test_apply_suggestion_directory_no_trailing_space _____
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_______ ERROR at setup of test_apply_suggestion_file_has_trailing_space _______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_apply_suggestion_on_line_directory __________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_permission_preview_write_new_file ___________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_permission_preview_edit_unified_diff _________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___________ ERROR at setup of test_permission_preview_write_content ___________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____ ERROR at setup of test_permission_preview_reads_existing_file_as_diff ____
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+______ ERROR at setup of test_real_drive_path_to_protected_zone_blocked _______
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____________ ERROR at setup of test_real_drive_path_inbox_allowed _____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____________ ERROR at setup of test_non_vault_real_path_unaffected ____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________ ERROR at setup of test_resolve_link_by_title_case_insensitive ________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________________ ERROR at setup of test_resolve_link_by_path _________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+________________ ERROR at setup of test_resolve_link_by_alias _________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_resolve_link_missing_returns_none ___________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+______________ ERROR at setup of test_vault_links_lists_outgoing ______________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____________ ERROR at setup of test_vault_links_dangling_detected _____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_______ ERROR at setup of test_vault_backlinks_finds_referencing_notes ________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+____________ ERROR at setup of test_vault_backlinks_resolves_alias ____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+__________ ERROR at setup of test_make_wiki_tools_returns_two_tools ___________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________ ERROR at setup of test_ls_workspace_entries_are_clean_paths _________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_________________ ERROR at setup of test_ls_workspace_subdir __________________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+_______________ ERROR at setup of test_read_via_workspace_route _______________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+______________ ERROR at setup of test_write_via_workspace_route _______________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___________ ERROR at setup of test_glob_grep_workspace_clean_paths ____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___________ ERROR at setup of test_skills_route_longer_prefix_wins ____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___________ ERROR at setup of test_default_route_stays_unrestricted ___________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+___________ ERROR at setup of test_execute_virtual_guard_unchanged ____________
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\pytest-of-uida0712'
+================================== FAILURES ===================================
+E   PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\tmpio9asij8\\blocker'
+D:\python_env\Lib\pathlib\__init__.py:1011: PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\uida0712\\AppData\\Local\\Temp\\tmpio9asij8\\blocker'
+============================== warnings summary ===============================
+..\..\python_env\Lib\site-packages\google\genai\types.py:42
+  D:\python_env\Lib\site-packages\google\genai\types.py:42: DeprecationWarning: '_UnionGenericAlias' is deprecated and slated for removal in Python 3.17
+    VersionedUnionType = Union[builtin_types.UnionType, _UnionGenericAlias]
+
+tests/test_agent_profile_runtime.py::TestDefaultPathGate::test_default_tools_and_prompt
+  D:\Python Project\truly-jarvis-main\src\agent.py:484: LangChainBetaWarning: The class `CodeInterpreterMiddleware` is in beta. It is actively being worked on, so the API may change.
+    *([CodeInterpreterMiddleware(subagents=True)] if CodeInterpreterMiddleware is not None else []),
+
+tests/test_dream.py::test_distill_tool_call_ok
+  D:\python_env\Lib\site-packages\trustcall\_base.py:46: LangGraphDeprecatedSinceV10: Importing Send from langgraph.constants is deprecated. Please use 'from langgraph.types import Send' instead. Deprecated in LangGraph V1.0 to be removed in V2.0.
+    from langgraph.constants import Send
+
+tests/test_gui_cards.py::test_full_reject_reroute_approve_chain
+  D:\python_env\Lib\site-packages\langgraph\pregel\main.py:3805: LangChainBetaWarning: The v3 streaming protocol on Pregel is experimental.
+    return self._pregel_stream_v3(
+
+tests/test_gui_cards.py::test_full_reject_reroute_approve_chain
+  D:\python_env\Lib\site-packages\langgraph\pregel\main.py:3647: LangChainBetaWarning: The v3 streaming protocol on Pregel is experimental.
+    return GraphRunStream(graph_iter, mux)
+
+tests/test_gui_image_strip.py::test_chip_rightclick_removes_leftclick_keeps
+  D:\Python Project\truly-jarvis-main\tests\test_gui_image_strip.py:226: DeprecationWarning: Function: 'QMouseEvent.QMouseEvent(QEvent.Type type, const QPointF &localPos, Qt.MouseButton button, QFlags<Qt.MouseButton> buttons, QFlags<Qt.KeyboardModifier> modifiers, const QPointingDevice *device)' is marked as deprecated, please check the documentation for more information.
+    ev_right = QMouseEvent(
+
+tests/test_gui_image_strip.py::test_chip_rightclick_removes_leftclick_keeps
+  D:\Python Project\truly-jarvis-main\tests\test_gui_image_strip.py:236: DeprecationWarning: Function: 'QMouseEvent.QMouseEvent(QEvent.Type type, const QPointF &localPos, Qt.MouseButton button, QFlags<Qt.MouseButton> buttons, QFlags<Qt.KeyboardModifier> modifiers, const QPointingDevice *device)' is marked as deprecated, please check the documentation for more information.
+    ev_left = QMouseEvent(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_resilience.py::test_tool_boundary_hilt_resume_no_crash - Pe...
+ERROR tests/test_agent.py::test_build_agent_assembles - PermissionError: [Win...
+ERROR tests/test_agent.py::test_build_agent_uses_build_main_prompt - Permissi...
+ERROR tests/test_agent.py::test_build_agent_invoke_returns_message - Permissi...
+ERROR tests/test_agent.py::test_build_agent_with_sqlite_checkpointer_assembles
+ERROR tests/test_agent.py::test_build_agent_injects_mcp_tools - PermissionErr...
+ERROR tests/test_agent.py::test_build_agent_no_mcp_tools_still_has_quick_search
+ERROR tests/test_agent.py::test_build_agent_registers_skill_sources - Permiss...
+ERROR tests/test_agent.py::test_build_agent_loads_memory_md_files - Permissio...
+ERROR tests/test_agent.py::test_build_agent_registers_researcher_and_knowledge_keeper
+ERROR tests/test_agent.py::test_build_agent_wires_deny_middleware_and_shared_state
+ERROR tests/test_agent.py::test_make_backend_supports_execute - PermissionErr...
+ERROR tests/test_agent.py::test_build_agent_includes_todo_list_middleware - P...
+ERROR tests/test_agent.py::test_build_agent_registers_harness_profile - Permi...
+ERROR tests/test_agent.py::test_stream_events_v3_does_not_throw_and_produces_text
+ERROR tests/test_agent.py::test_environment_block_without_vault - PermissionE...
+ERROR tests/test_agent.py::test_environment_block_with_vault_shows_path - Per...
+ERROR tests/test_agent.py::test_build_agent_without_vault_no_vault_route - Pe...
+ERROR tests/test_agent.py::test_build_agent_registers_provider_qualified_harness_profile
+ERROR tests/test_agent.py::test_build_main_prompt_includes_project_instructions
+ERROR tests/test_agent.py::test_build_agent_injects_dream_knowledge_when_present
+ERROR tests/test_agent.py::test_build_agent_no_dream_injection_when_absent - ...
+ERROR tests/test_at_reference.py::test_virtual_path_mappings - PermissionErro...
+ERROR tests/test_at_reference.py::test_path_anchor_lines_hit - PermissionErro...
+ERROR tests/test_at_reference.py::test_shell_guard_error_includes_real_dir - ...
+ERROR tests/test_at_reference.py::test_shell_guard_error_without_prefix_map
+ERROR tests/test_at_reference.py::test_completion_default_virtual_unchanged
+ERROR tests/test_at_reference.py::test_completion_dual_style - PermissionErro...
+ERROR tests/test_at_reference.py::test_completion_real_style - PermissionErro...
+ERROR tests/test_at_reference.py::test_completion_real_style_without_mapping_falls_back
+ERROR tests/test_at_reference.py::test_completion_directory_virtual_style - P...
+ERROR tests/test_at_reference.py::test_completion_directory_dual_style - Perm...
+ERROR tests/test_at_reference.py::test_completion_directory_real_style - Perm...
+ERROR tests/test_at_reference.py::test_is_virtual_path_reference_positive - P...
+ERROR tests/test_at_reference.py::test_is_virtual_path_reference_negative - P...
+ERROR tests/test_clipboard_image.py::test_looks_like_image_path - PermissionE...
+ERROR tests/test_clipboard_image.py::test_looks_like_image_path_allows_spaces_in_dirs
+ERROR tests/test_clipboard_image.py::test_image_to_data_url - PermissionError...
+ERROR tests/test_clipboard_image.py::test_build_multimodal_content_parts - Pe...
+ERROR tests/test_clipboard_image.py::test_build_multimodal_over_limit - Permi...
+ERROR tests/test_commands.py::test_delete_session_removes_thread - Permission...
+ERROR tests/test_commands.py::test_delete_session_current_switches_thread - P...
+ERROR tests/test_commands.py::test_dispatch_delete_session_command - Permissi...
+ERROR tests/test_commands.py::test_always_approve_persists_gated_tool - Permi...
+ERROR tests/test_commands.py::test_dispatch_rollback_includes_inbox_listing
+ERROR tests/test_commands.py::test_dispatch_rollback_reports_empty_inbox - Pe...
+ERROR tests/test_commands.py::test_format_doctor_report_healthy - PermissionE...
+ERROR tests/test_commands.py::test_format_doctor_report_stuck - PermissionErr...
+ERROR tests/test_commands.py::test_dispatch_doctor - PermissionError: [WinErr...
+ERROR tests/test_commands.py::test_dispatch_skills_lists_manual_tag - Permiss...
+ERROR tests/test_commands.py::test_expand_use_command_missing_skill_and_usage
+ERROR tests/test_config.py::test_parse_env_colon_separated - PermissionError:...
+ERROR tests/test_config.py::test_parse_env_equals_separated - PermissionError...
+ERROR tests/test_config.py::test_parse_env_key_case_insensitive - PermissionE...
+ERROR tests/test_config.py::test_load_config_builds_dataclass - PermissionErr...
+ERROR tests/test_config.py::test_load_config_absolutizes_paths - PermissionEr...
+ERROR tests/test_config.py::test_load_config_missing_required_key_raises - Pe...
+ERROR tests/test_config.py::test_load_config_parses_mcps_dict - PermissionErr...
+ERROR tests/test_config.py::test_load_config_mcps_inherits_global_defaults - ...
+ERROR tests/test_config.py::test_load_config_rag_from_json - PermissionError:...
+ERROR tests/test_config.py::test_load_config_tui_from_json - PermissionError:...
+ERROR tests/test_config.py::test_load_config_knowledge_base_preferred_over_legacy
+ERROR tests/test_config.py::test_load_config_knowledge_base_falls_back_to_obsidian_vault
+ERROR tests/test_config.py::test_load_config_empty_knowledge_base_disables_vault[]
+ERROR tests/test_config.py::test_load_config_empty_knowledge_base_disables_vault[None]
+ERROR tests/test_config.py::test_load_config_no_kb_keys_vault_optional - Perm...
+ERROR tests/test_config_agents.py::test_build_agent_appends_config_subagents
+ERROR tests/test_hitl.py::test_hitl_interrupt_triggers_and_resumes - Permissi...
+ERROR tests/test_hitl.py::test_hitl_reject_returns_rejection - PermissionErro...
+ERROR tests/test_hitl.py::test_handle_interrupts_always_approve_updates_state_and_json
+ERROR tests/test_inbox_snapshots.py::test_record_and_list_writes - Permission...
+ERROR tests/test_inbox_snapshots.py::test_restore_deletes_new_file - Permissi...
+ERROR tests/test_inbox_snapshots.py::test_restore_reverts_edit - PermissionEr...
+ERROR tests/test_inbox_snapshots.py::test_sched_thread_not_restored_on_session_rollback
+ERROR tests/test_path_completion.py::test_collect_paths_workspace_before_vault
+ERROR tests/test_path_completion.py::test_collect_paths_vault_scope_prefix - ...
+ERROR tests/test_path_completion.py::test_collect_paths_includes_directories
+ERROR tests/test_path_completion.py::test_collect_paths_directory_suffix_filter
+ERROR tests/test_path_completion.py::test_collect_paths_directory_query_filter
+ERROR tests/test_path_completion.py::test_collect_paths_directory_sort_before_children
+ERROR tests/test_permission_hooks.py::test_parse_permission_hooks - Permissio...
+ERROR tests/test_permission_hooks.py::test_run_permission_hook_allow_script
+ERROR tests/test_permission_hooks.py::test_resolve_permission_hook_deny_git_push
+ERROR tests/test_permission_hooks.py::test_hook_allow_skips_modal_via_action_from_tool_call
+ERROR tests/test_permission_hooks.py::test_hook_deny_middleware_returns_error
+ERROR tests/test_permission_hooks.py::test_hook_failure_falls_back_to_ask - P...
+ERROR tests/test_permissions.py::test_dump_permissions_roundtrip - Permission...
+ERROR tests/test_permissions_prefix.py::test_always_approve_execute_with_args_writes_prefix
+ERROR tests/test_permissions_prefix.py::test_always_approve_execute_explicit_prefix_wins
+ERROR tests/test_permissions_prefix.py::test_always_approve_legacy_no_args_whole_tool
+ERROR tests/test_profiles_discovery.py::test_builtin_always_present - Permiss...
+ERROR tests/test_profiles_discovery.py::test_user_layer_discovered - Permissi...
+ERROR tests/test_profiles_discovery.py::test_user_layer_overrides_builtin - P...
+ERROR tests/test_profiles_discovery.py::test_project_layer_requires_workspace
+ERROR tests/test_profiles_discovery.py::test_list_profiles_is_read_only - Per...
+ERROR tests/test_profiles_discovery.py::test_lazy_export_does_not_pull_src_agent
+ERROR tests/test_project_init.py::test_init_project_creates_layout - Permissi...
+ERROR tests/test_project_init.py::test_init_project_skips_existing_javis_json
+ERROR tests/test_project_init.py::test_init_project_force_overwrites_javis_json
+ERROR tests/test_project_init.py::test_suggest_init_if_missing - PermissionEr...
+ERROR tests/test_project_paths.py::test_discover_project_root_finds_javis_in_parent
+ERROR tests/test_project_paths.py::test_discover_project_root_uses_cwd_when_no_javis
+ERROR tests/test_project_paths.py::test_discover_project_root_env_override - ...
+ERROR tests/test_project_paths.py::test_resolve_jarvis_json_prefers_project
+ERROR tests/test_project_paths.py::test_resolve_env_file_project_before_install
+ERROR tests/test_project_paths.py::test_load_project_instructions_empty_when_missing
+ERROR tests/test_project_paths.py::test_load_project_instructions_project_level
+ERROR tests/test_project_paths.py::test_load_project_instructions_global_plus_project
+ERROR tests/test_rag.py::test_refresh_indexes_all_md_files - PermissionError:...
+ERROR tests/test_rag.py::test_refresh_is_incremental - PermissionError: [WinE...
+ERROR tests/test_rag.py::test_refresh_removes_deleted_file - PermissionError:...
+ERROR tests/test_rag.py::test_search_finds_semantically_close_note - Permissi...
+ERROR tests/test_rag.py::test_search_returns_empty_when_no_index - Permission...
+ERROR tests/test_rag.py::test_search_empty_query_returns_empty - PermissionEr...
+ERROR tests/test_rag.py::test_semantic_search_tool_output - PermissionError: ...
+ERROR tests/test_replay_latency.py::test_replay_completed_hello_is_faster_than_model_call
+ERROR tests/test_scheduler.py::test_load_schedules_filters_disabled - Permiss...
+ERROR tests/test_scheduler.py::test_load_schedules_skips_example_templates - ...
+ERROR tests/test_scheduler.py::test_load_schedules_requires_id_and_task - Per...
+ERROR tests/test_scheduler.py::test_resolve_save_path_inbox_only - Permission...
+ERROR tests/test_scheduler.py::test_resolve_save_path_rejects_workspace - Per...
+ERROR tests/test_scheduler.py::test_resolve_save_path_rejects_non_inbox_vault
+ERROR tests/test_scheduler.py::test_load_schedules_rejects_bad_save_path - Pe...
+ERROR tests/test_scheduler.py::test_run_task_writes_file - PermissionError: [...
+ERROR tests/test_scheduler.py::test_run_task_cleans_own_thread - PermissionEr...
+ERROR tests/test_scheduler.py::test_make_scheduler_registers_jobs - Permissio...
+ERROR tests/test_scheduler.py::test_register_jobs_returns_list - PermissionEr...
+ERROR tests/test_scheduler.py::test_reload_schedules_replaces_cron - Permissi...
+ERROR tests/test_scheduler.py::test_run_task_error_writes_error_marker - Perm...
+ERROR tests/test_scheduler.py::test_resolve_save_path_vault_without_kb_raises
+ERROR tests/test_scheduler.py::test_make_scheduler_registers_dream_job - Perm...
+ERROR tests/test_scheduler.py::test_register_dream_job_disabled_removes_job
+ERROR tests/test_scheduler.py::test_register_dream_job_disabled_no_existing_job
+ERROR tests/test_scheduler.py::test_register_dream_job_bad_cron - PermissionE...
+ERROR tests/test_scheduler.py::test_reload_schedules_reregisters_dream - Perm...
+ERROR tests/test_scheduler.py::test_run_task_success_calls_on_done - Permissi...
+ERROR tests/test_scheduler.py::test_run_task_failure_calls_on_done_then_raises
+ERROR tests/test_scheduler.py::test_run_task_on_done_exception_swallowed - Pe...
+ERROR tests/test_scheduler.py::test_make_scheduler_threads_on_done - Permissi...
+ERROR tests/test_scheduler.py::test_make_scheduler_default_on_done_none - Per...
+ERROR tests/test_shell_backend.py::test_env_inherited - PermissionError: [Win...
+ERROR tests/test_shell_backend.py::test_env_override_merges - PermissionError...
+ERROR tests/test_shell_backend.py::test_basic_command_runs - PermissionError:...
+ERROR tests/test_shell_backend.py::test_external_program_found_on_windows - P...
+ERROR tests/test_shell_backend.py::test_nonzero_exit_reported - PermissionErr...
+ERROR tests/test_shell_backend.py::test_stderr_prefixed - PermissionError: [W...
+ERROR tests/test_shell_backend.py::test_timeout_returns_124 - PermissionError...
+ERROR tests/test_shell_backend.py::test_empty_command_rejected - PermissionEr...
+ERROR tests/test_shell_backend.py::test_virtual_prefix_guard_blocks_and_explains
+ERROR tests/test_shell_backend.py::test_virtual_prefix_guard_allows_real_paths
+ERROR tests/test_shell_backend.py::test_virtual_prefix_guard_ignores_urls - P...
+ERROR tests/test_shell_backend.py::test_make_backend_wires_prefixes - Permiss...
+ERROR tests/test_shell_backend.py::test_virtual_prefix_guard_matches_without_trailing_slash
+ERROR tests/test_shell_backend.py::test_make_backend_default_unrestricted - P...
+ERROR tests/test_shell_backend.py::test_unrestricted_backend_accesses_paths_outside_root
+ERROR tests/test_shell_backend.py::test_resolve_path_driveless_abs_resolves_under_cwd
+ERROR tests/test_shell_backend.py::test_resolve_path_true_absolute_unchanged
+ERROR tests/test_shell_backend.py::test_resolve_path_relative_unchanged - Per...
+ERROR tests/test_skill_discovery.py::test_discover_skill_catalog_finds_skill_md
+ERROR tests/test_skill_discovery.py::test_manual_only_detection_and_flags - P...
+ERROR tests/test_skill_discovery.py::test_summarize_tags_manual_skills - Perm...
+ERROR tests/test_skill_discovery.py::test_build_skill_use_message_expands_body_and_task
+ERROR tests/test_skill_discovery.py::test_build_skill_use_message_case_insensitive_and_missing
+ERROR tests/test_skill_paths.py::test_user_home_default_uses_dot_javis - Perm...
+ERROR tests/test_skill_paths.py::test_user_home_env_override - PermissionErro...
+ERROR tests/test_skill_paths.py::test_ensure_user_home_creates_skills - Permi...
+ERROR tests/test_skill_paths.py::test_discover_skill_layers_order - Permissio...
+ERROR tests/test_skill_paths.py::test_skill_backend_routes_includes_project_layer
+ERROR tests/test_skill_paths.py::test_backend_lists_project_skill_clean_paths
+ERROR tests/test_skill_paths.py::test_skill_virtual_sources_includes_user_layer
+ERROR tests/test_skill_paths.py::test_backend_lists_user_skill - PermissionEr...
+ERROR tests/test_time_travel.py::test_snapshot_and_rollback - PermissionError...
+ERROR tests/test_time_travel.py::test_rollback_unknown_checkpoint_returns_none
+ERROR tests/test_time_travel.py::test_list_snapshots - PermissionError: [WinE...
+ERROR tests/test_time_travel.py::test_list_snapshots_orders_oldest_first - Pe...
+ERROR tests/test_time_travel.py::test_resolve_commit_supports_short_prefix - ...
+ERROR tests/test_tui.py::test_at_completion_shows_candidates_and_inserts_path
+ERROR tests/test_tui.py::test_at_completion_escape_closes_overlay - Permissio...
+ERROR tests/test_tui.py::test_theme_persistence - PermissionError: [WinError ...
+ERROR tests/test_tui.py::test_slash_use_missing_skill_shows_error - Permissio...
+ERROR tests/test_tui.py::test_slash_use_manual_skill_streams_expanded_message
+ERROR tests/test_tui_completion.py::test_resolve_slash_overlay - PermissionEr...
+ERROR tests/test_tui_completion.py::test_resolve_path_overlay - PermissionErr...
+ERROR tests/test_tui_completion.py::test_resolve_path_overlay_includes_directories
+ERROR tests/test_tui_completion.py::test_resolve_path_overlay_directory_narrowing
+ERROR tests/test_tui_completion.py::test_apply_suggestion_directory_no_trailing_space
+ERROR tests/test_tui_completion.py::test_apply_suggestion_file_has_trailing_space
+ERROR tests/test_tui_completion.py::test_apply_suggestion_on_line_directory
+ERROR tests/test_tui_format.py::test_permission_preview_write_new_file - Perm...
+ERROR tests/test_tui_format.py::test_permission_preview_edit_unified_diff - P...
+ERROR tests/test_tui_format.py::test_permission_preview_write_content - Permi...
+ERROR tests/test_tui_format.py::test_permission_preview_reads_existing_file_as_diff
+ERROR tests/test_vault_guard.py::test_real_drive_path_to_protected_zone_blocked
+ERROR tests/test_vault_guard.py::test_real_drive_path_inbox_allowed - Permiss...
+ERROR tests/test_vault_guard.py::test_non_vault_real_path_unaffected - Permis...
+ERROR tests/test_wiki.py::test_resolve_link_by_title_case_insensitive - Permi...
+ERROR tests/test_wiki.py::test_resolve_link_by_path - PermissionError: [WinEr...
+ERROR tests/test_wiki.py::test_resolve_link_by_alias - PermissionError: [WinE...
+ERROR tests/test_wiki.py::test_resolve_link_missing_returns_none - Permission...
+ERROR tests/test_wiki.py::test_vault_links_lists_outgoing - PermissionError: ...
+ERROR tests/test_wiki.py::test_vault_links_dangling_detected - PermissionErro...
+ERROR tests/test_wiki.py::test_vault_backlinks_finds_referencing_notes - Perm...
+ERROR tests/test_wiki.py::test_vault_backlinks_resolves_alias - PermissionErr...
+ERROR tests/test_wiki.py::test_make_wiki_tools_returns_two_tools - Permission...
+ERROR tests/test_workspace_route.py::test_ls_workspace_entries_are_clean_paths
+ERROR tests/test_workspace_route.py::test_ls_workspace_subdir - PermissionErr...
+ERROR tests/test_workspace_route.py::test_read_via_workspace_route - Permissi...
+ERROR tests/test_workspace_route.py::test_write_via_workspace_route - Permiss...
+ERROR tests/test_workspace_route.py::test_glob_grep_workspace_clean_paths - P...
+ERROR tests/test_workspace_route.py::test_skills_route_longer_prefix_wins - P...
+ERROR tests/test_workspace_route.py::test_default_route_stays_unrestricted - ...
+ERROR tests/test_workspace_route.py::test_execute_virtual_guard_unchanged - P...
+1 failed, 1599 passed, 1 skipped, 7 warnings, 211 errors in 484.81s (0:08:04)
