@@ -349,3 +349,162 @@ def test_migrate_sessions_json_incompatible_kept_with_warn():
         assert any("sessions.json" in n for n in notes), "冲突需留痕 note"
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+
+def test_migrate_moves_legacy_skills_dir_and_rewrites_json():
+    import json
+    import shutil
+
+    root = _fresh_root()
+    try:
+        sk = root / "skills"
+        (sk / "alpha").mkdir(parents=True)
+        (sk / "alpha" / "SKILL.md").write_text("alpha", encoding="utf-8")
+        (sk / "beta").mkdir()
+        (sk / "beta" / "SKILL.md").write_text("beta", encoding="utf-8")
+        (root / "jarvis.json").write_text('{"skills": ["skills/", "my-skills"]}', encoding="utf-8")
+        notes = migrate_project_dotdir(_stub_config(root))
+        assert not (root / "skills").exists(), "整目录 move 后源应消失"
+        assert (root / ".jarvis" / "skills" / "alpha" / "SKILL.md").read_text(encoding="utf-8") == "alpha"
+        assert (root / ".jarvis" / "skills" / "beta" / "SKILL.md").read_text(encoding="utf-8") == "beta"
+        data = json.loads((root / "jarvis.json").read_text(encoding="utf-8"))
+        assert data["skills"] == [".jarvis/skills", "my-skills"], "skills 前缀条目改写、自定义条目不动"
+        assert any("skills/ 已迁移" in n for n in notes)
+        assert any("jarvis.json" in n for n in notes)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_migrate_rewrites_json_skills_subpath_only():
+    import json
+    import shutil
+
+    root = _fresh_root()
+    try:
+        (root / "jarvis.json").write_text('{"skills": ["skills/plugins/foo", "my-skills"]}', encoding="utf-8")
+        notes = migrate_project_dotdir(_stub_config(root))
+        data = json.loads((root / "jarvis.json").read_text(encoding="utf-8"))
+        assert data["skills"] == [".jarvis/skills/plugins/foo", "my-skills"]
+        assert not (root / ".jarvis").exists(), "仅 JSON 改写不创建 .jarvis 目录"
+        assert notes == ["jarvis.json skills 条目已改写 → .jarvis/skills（1 条）"]
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_migrate_custom_skills_entries_untouched():
+    import shutil
+
+    root = _fresh_root()
+    try:
+        text = '{"skills": ["my-skills"]}'
+        (root / "jarvis.json").write_text(text, encoding="utf-8")
+        notes = migrate_project_dotdir(_stub_config(root))
+        assert notes == [], "无遗留 skills/ 目录、无 skills 前缀条目 → 零 note"
+        assert (root / "jarvis.json").read_text(encoding="utf-8") == text, "字节不变"
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_migrate_skills_collision_target_wins_source_removed():
+    import shutil
+
+    root = _fresh_root()
+    try:
+        old = root / "skills"
+        (old / "a").mkdir(parents=True)
+        (old / "a" / "SKILL.md").write_text("OLD", encoding="utf-8")
+        (old / "b").mkdir()
+        (old / "b" / "SKILL.md").write_text("b", encoding="utf-8")
+        (old / "f.txt").write_text("f", encoding="utf-8")
+        new = root / ".jarvis" / "skills"
+        (new / "a").mkdir(parents=True)
+        (new / "a" / "SKILL.md").write_text("NEW", encoding="utf-8")
+        (new / "c").mkdir()
+        (new / "c" / "SKILL.md").write_text("c", encoding="utf-8")
+        (new / "f.txt").write_text("f", encoding="utf-8")
+        notes = migrate_project_dotdir(_stub_config(root))
+        assert not (root / "skills").exists(), "源目录清空后 rmdir"
+        assert (new / "a" / "SKILL.md").read_text(encoding="utf-8") == "NEW", "同名冲突目标优先"
+        assert (new / "b" / "SKILL.md").read_text(encoding="utf-8") == "b", "源独有 → move 进目标"
+        assert (new / "f.txt").read_text(encoding="utf-8") == "f"
+        assert (new / "c" / "SKILL.md").read_text(encoding="utf-8") == "c", "目标独有保持"
+        assert any("目标优先" in n and "a" in n for n in notes)
+        assert any("目标优先" in n and "f.txt" in n for n in notes)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_migrate_skills_idempotent_second_run():
+    import json
+    import shutil
+
+    root = _fresh_root()
+    try:
+        sk = root / "skills"
+        (sk / "x").mkdir(parents=True)
+        (sk / "x" / "SKILL.md").write_text("x", encoding="utf-8")
+        (root / "jarvis.json").write_text('{"skills": ["skills/"]}', encoding="utf-8")
+        migrate_project_dotdir(_stub_config(root))
+        notes2 = migrate_project_dotdir(_stub_config(root))
+        assert notes2 == [], "第二跑幂等零 note"
+        data = json.loads((root / "jarvis.json").read_text(encoding="utf-8"))
+        assert data["skills"] == [".jarvis/skills"]
+        assert (root / ".jarvis" / "skills" / "x" / "SKILL.md").is_file()
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_migrate_skills_skipped_when_root_is_install_root(monkeypatch):
+    import shutil
+
+    import src.project_paths as pp
+
+    root = _fresh_root()
+    try:
+        sk = root / "skills"
+        (sk / "x").mkdir(parents=True)
+        (sk / "x" / "SKILL.md").write_text("x", encoding="utf-8")
+        (root / "jarvis.json").write_text('{"skills": ["skills/"]}', encoding="utf-8")
+        monkeypatch.setattr(pp, "install_root", lambda: root)
+        notes = pp.migrate_project_dotdir(_stub_config(root))
+        assert notes == [], "项目根 == 安装根（开发模式）跳过 skills 迁移"
+        assert sk.is_dir() and (sk / "x" / "SKILL.md").read_text(encoding="utf-8") == "x"
+        assert not (root / ".jarvis").exists()
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_migrate_skills_creates_dotdir_parent_when_missing():
+    import shutil
+
+    root = _fresh_root()
+    try:
+        sk = root / "skills"
+        (sk / "x").mkdir(parents=True)
+        (sk / "x" / "SKILL.md").write_text("x", encoding="utf-8")
+        notes = migrate_project_dotdir(_stub_config(root))
+        assert not (root / "skills").exists()
+        assert (root / ".jarvis" / "skills" / "x" / "SKILL.md").read_text(encoding="utf-8") == "x"
+        assert any("skills/ 已迁移" in n for n in notes)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_migrate_skills_target_is_file_keeps_source():
+    import shutil
+
+    root = _fresh_root()
+    try:
+        sk = root / "skills"
+        (sk / "x").mkdir(parents=True)
+        (sk / "x" / "SKILL.md").write_text("x", encoding="utf-8")
+        dot = root / ".jarvis"
+        dot.mkdir()
+        (dot / "skills").write_text("i am a file", encoding="utf-8")
+        notes = migrate_project_dotdir(_stub_config(root))
+        assert (sk / "x" / "SKILL.md").read_text(encoding="utf-8") == "x", "源保留"
+        assert (dot / "skills").read_text(encoding="utf-8") == "i am a file", "目标文件未动"
+        assert any("人工处理" in n for n in notes)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+

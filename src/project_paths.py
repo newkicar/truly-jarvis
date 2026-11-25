@@ -192,6 +192,8 @@ def migrate_project_dotdir(config) -> list[str]:
 
     - 遗留 checkpoints/（整目录或逐文件）→ .jarvis/checkpoints/
     - 遗留 sessions.json → .jarvis/sessions.json（相同→删源；两边 dict→union 合并后删源；否则留源 warn）
+    - 遗留 skills/（整目录 move）→ .jarvis/skills/（同名冲突 .jarvis/ 侧优先，源侧同名内容删除，无备份）；
+      jarvis.json 的 skills 条目以 "skills" 开头者改写为 .jarvis/skills 前缀；项目根 == 安装根（开发模式）跳过
     返回人类可读 note 列表（调用方打印、不阻塞）；全新项目无遗留 → []。
     源与目标同名文件字节相同 = 视为已迁移（保留源，下版本清理）。
     """
@@ -245,5 +247,69 @@ def migrate_project_dotdir(config) -> list[str]:
                     notes.append("sessions.json 已并入 .jarvis/（冲突键以 .jarvis/ 为准，源已删除）")
                 else:
                     notes.append("sessions.json 两边不可自动合并，目标未动，请人工处理（源保留）")
+
+    # ---- skills/ → .jarvis/skills/（ADR-0016：整目录 move；同名冲突 .jarvis/ 侧优先，源侧同名内容删除，无备份）----
+    if root != install_root().resolve():
+        import json
+        import shutil
+
+        old_sk = root / "skills"
+        new_sk = root / DOTDIR / "skills"
+        if old_sk.is_dir():
+            if new_sk.is_file():
+                notes.append(".jarvis/skills 是文件而非目录，请人工处理（源 skills/ 保留）")
+            elif not new_sk.exists():
+                new_sk.parent.mkdir(parents=True, exist_ok=True)
+                old_sk.rename(new_sk)
+                notes.append(f"skills/ 已迁移 → {new_sk.relative_to(root)}（整目录 move）")
+            else:
+                for entry in sorted(old_sk.iterdir()):
+                    dst = new_sk / entry.name
+                    if dst.exists() or dst.is_symlink():
+                        # 目标优先：源侧同名内容永久删除（用户约定，无备份）
+                        if entry.is_dir() and not entry.is_symlink():
+                            shutil.rmtree(entry)
+                        else:
+                            entry.unlink()
+                        notes.append(f".jarvis/skills/{entry.name} 已存在，目标优先，旧 skills/{entry.name} 已移除")
+                    else:
+                        entry.rename(dst)
+                try:
+                    old_sk.rmdir()  # 源清空才删；有残留（rename 失败）则保留
+                except OSError:
+                    pass
+
+        # jarvis.json skills 条目改写（与目录 move 相互独立：JSON 缺失/损坏不影响目录 move）
+        json_path = root / JARVIS_JSON
+        try:
+            data = json.loads(json_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = None
+        if isinstance(data, dict):
+            skills_list = data.get("skills")
+            if isinstance(skills_list, list):
+                changed = 0
+                rewritten = []
+                for item in skills_list:
+                    if not isinstance(item, str):
+                        rewritten.append(item)
+                        continue
+                    norm = item.strip().strip("/").casefold()
+                    if norm == "skills":
+                        rewritten.append(".jarvis/skills")
+                        changed += 1
+                    elif norm.startswith("skills/"):
+                        suffix = item.strip().strip("/")[len("skills/"):]
+                        rewritten.append(f".jarvis/skills/{suffix}")
+                        changed += 1
+                    else:
+                        rewritten.append(item)
+                if changed:
+                    data["skills"] = rewritten
+                    json_path.write_text(
+                        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+                    notes.append(f"jarvis.json skills 条目已改写 → .jarvis/skills（{changed} 条）")
 
     return notes
