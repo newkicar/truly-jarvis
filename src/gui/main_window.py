@@ -325,7 +325,7 @@ class MainWindow(QMainWindow):
         self._completion_timer.timeout.connect(self._refresh_completion_now)
         # Tab/Esc 在输入框侧处理（弹层 NoFocus 不抢键盘；接受/关闭不进弹层）
         self.input_bar.set_tab_hook(self._completion_tab_accept)
-        self.input_bar.set_esc_hook(self._on_esc_pressed)  # 工单 13：Esc 三级（弹层/取消/撤回）
+        self.input_bar.set_esc_hook(lambda: self._on_esc_pressed("main"))  # 工单 03：主编辑裸 Esc 恒主槽语义（工单 13 三级不变）
         self._skills_cache: list = [0.0, None]  # [ts, catalog]，TTL 10s；None=未扫过
         # 工单 13 — Esc 三级语义（对标 TUI ESC_UNDO_WINDOW=1.5s）；gui-ux15 增取消→撤回级联（对标 TUI tui-ux15）：
         # ① 补全弹层开着→关弹层；② 回合进行中且未取消→Esc#1 prime、Esc#2 取消并立即 prime 撤回；
@@ -341,6 +341,38 @@ class MainWindow(QMainWindow):
         self._esc_undo_timer = QTimer(self)
         self._esc_undo_timer.setSingleShot(True)
         self._esc_undo_timer.timeout.connect(self._esc_undo_disarm)
+        # gui-ux22 工单 03：侧槽独立交互四件套（补全弹层/草稿 hooks/Esc 双级 primed）——
+        # 与主槽 L314-343 同构镜像；侧条**不**接 esc_hook（c5：裸 Esc 走窗口 eventFilter，P-Q）
+        self._last_side_input_text = ""
+        self._side_completion_state = None
+        self._side_completion_popup = CompletionPopup(self._on_side_completion_accept, self)
+        self._side_completion_popup.hide()
+        self.side_input_bar.edit.textChanged.connect(lambda: self._side_completion_timer.start())
+        self.side_input_bar.edit.cursorPositionChanged.connect(lambda: self._side_completion_timer.start())
+        self.side_input_bar.edit.textChanged.connect(lambda: self._save_slot_draft("side"))  # 镜像主条：侧草稿随侧会话
+        self.side_image_strip.changed.connect(lambda: self._save_slot_draft("side"))
+        # 逐键防抖（120ms singleShot 重启），与主槽同节拍
+        self._side_completion_timer = QTimer(self)
+        self._side_completion_timer.setSingleShot(True)
+        self._side_completion_timer.setInterval(120)
+        self._side_completion_timer.timeout.connect(lambda: self._refresh_completion("side"))
+        # Tab 在侧输入条侧处理（弹层 NoFocus 不抢键盘）
+        self.side_input_bar.set_tab_hook(self._side_completion_tab_accept)
+        self.side_input_bar.edit.installEventFilter(self)  # c5：窗口级 filter 后装（只匹配侧编辑，见 P-Q 注释）
+        self.side_input_bar.submit_requested.connect(self._on_side_input_submit)
+        self.side_input_bar.cancel_requested.connect(lambda: self._cancel_slot("side"))
+        self.side_input_bar.set_image_paste_hook(lambda: self._try_image_paste("side"))
+        # 侧槽 Esc 双级 primed（属性名 _side_ 前缀，P-G _esc_attr 契约）
+        self._side_esc_run_primed = False
+        self._side_esc_run_primed_at = 0.0
+        self._side_esc_undo_primed = False
+        self._side_esc_undo_primed_at = 0.0
+        self._side_esc_run_timer = QTimer(self)
+        self._side_esc_run_timer.setSingleShot(True)
+        self._side_esc_run_timer.timeout.connect(self._side_esc_run_disarm)
+        self._side_esc_undo_timer = QTimer(self)
+        self._side_esc_undo_timer.setSingleShot(True)
+        self._side_esc_undo_timer.timeout.connect(self._side_esc_undo_disarm)
         # Ctrl+N 新建对话（TUI 键位迁移；_on_new_session_clicked 已含空态守卫）
         self._sc_new_session = QShortcut(QKeySequence("Ctrl+N"), self)
         self._sc_new_session.activated.connect(self._on_new_session_clicked)
@@ -351,6 +383,10 @@ class MainWindow(QMainWindow):
         self._completion_timer.stop()
         self._esc_run_timer.stop()
         self._esc_undo_timer.stop()
+        # gui-ux22 工单 03：侧槽三个 timer 同停（与主槽同卫生：不泵进下一个测试事件循环）
+        self._side_completion_timer.stop()
+        self._side_esc_run_timer.stop()
+        self._side_esc_undo_timer.stop()
         super().closeEvent(event)
 
     def _on_new_session_clicked(self) -> None:
@@ -388,7 +424,11 @@ class MainWindow(QMainWindow):
         self._refresh_mode_badges()
 
     def _on_undo(self) -> None:
-        tid = self.active_tid
+        # gui-ux22 工单 03：零参主入口保留（Esc ③ 主路径 / 菜单 / slash 兼容）；逐槽版 _on_undo_for
+        # 菜单 undo = 当前焦点槽的主线语义（对标 TUI「undo 作用当前焦点 pane」）；offscreen 无焦点回 main
+        self._on_undo_for(self._slot_tid(self._focus_slot()))
+
+    def _on_undo_for(self, tid: str | None) -> None:
         if not tid:
             return
         b = self.presenter.bridge
@@ -402,7 +442,7 @@ class MainWindow(QMainWindow):
             msg = commands.undo(agent, tid)
             b.rebuild_pane.emit(tid)  # 主线程重建 pane 记录（worker 不碰 widget）
             if msg.startswith("已撤回") and restored:
-                b.input_set.emit(restored)  # 队列信号 → 主线程写输入框
+                b.input_set.emit(tid, restored)  # 队列信号 → 主线程按被撤回会话的槽写输入框
             if msg.startswith("已撤回"):
                 # ADR-0014: 撤到空白 → 清该会话压缩基线并去 🗜 标（防屏幕残影）
                 from src.gui import compact_baseline, replay
@@ -490,9 +530,12 @@ class MainWindow(QMainWindow):
         except Exception:  # noqa: BLE001 — 重建失败保留原 pane，不崩 app
             pass
 
-    def _on_input_set(self, text: str) -> None:
-        """undo 回填（gui-ux16）：被撤回的用户消息进活动会话所属槽的输入框，可改可再发。"""
-        self._slot_input_widgets(self._slot_of_tid(self.active_tid))[0].fill_text(text)
+    def _on_input_set(self, tid: str, text: str) -> None:
+        """undo 回填（gui-ux16；gui-ux22 03 双参）：被撤回的用户消息进「被撤回会话」所属槽的输入框。
+
+        双槽下 active_tid 可能已漂移到侧会话，按 tid 路由才不会把主线 undo 的回填错写进侧输入框。
+        """
+        self._slot_input_widgets(self._slot_of_tid(tid))[0].fill_text(text)
 
     # ---- 工单 09：时间旅行（渲染入口）
     def _on_snapshot(self) -> None:
@@ -561,8 +604,8 @@ class MainWindow(QMainWindow):
         dlg = doctor.make_doctor_dialog(rows, self)
         dlg.exec()
 
-    def _execute_slash(self, raw: str) -> None:
-        tid = self.active_tid
+    def _execute_slash(self, raw: str, tid: str | None = None) -> None:
+        tid = tid or self.active_tid
         if not tid:
             return
         agent = self.presenter.runtime.agent
@@ -672,39 +715,59 @@ class MainWindow(QMainWindow):
         self._skills_cache = [now, cat if cat is not None else []]
         return self._skills_cache[1]
 
-    def _refresh_completion_now(self) -> None:
+    def _refresh_completion(self, slot: str = "main") -> None:
+        """gui-ux22 工单 03：逐槽补全刷新（120ms 防抖不变；各槽 popup 独立，仅焦点槽活跃）。"""
         from PySide6.QtWidgets import QApplication
 
         from src.gui.completion import has_query_no_match
 
+        bar, _ = self._slot_input_widgets(slot)
+        if slot == "side":
+            popup, state_attr = self._side_completion_popup, "_side_completion_state"
+        else:
+            popup, state_attr = self.completion_popup, "_completion_state"
         if self.presenter is None:
-            self.completion_popup.hide()
+            popup.hide()
+            setattr(self, state_attr, None)
             return
         skills = self._skills_cached()
         state = resolve_for_input(
-            self.input_bar.edit,
+            bar.edit,
             skills=skills,
             config=self.presenter.runtime.config,
         )
-        self._completion_state = state
+        setattr(self, state_attr, state)
         if state.kind != "none":
-            no_match = has_query_no_match(self.input_bar.edit, state)
-            self.completion_popup.show_items(state.items, no_match=no_match)
+            no_match = has_query_no_match(bar.edit, state)
+            popup.show_items(state.items, no_match=no_match)
             # 弹层底边贴输入条上沿（不挡输入框）；上方放不下时翻到输入条下沿之下
-            bar_geo = self.input_bar.geometry()
-            anchor = self.input_bar.mapToGlobal(QPoint(0, 0))
-            ph = self.completion_popup.sizeHint().height()
+            bar_geo = bar.geometry()
+            anchor = bar.mapToGlobal(QPoint(0, 0))
+            ph = popup.sizeHint().height()
             y = anchor.y() - ph - 4
             screen = QApplication.primaryScreen().availableGeometry()
             if y < screen.y() + 2:
                 y = anchor.y() + bar_geo.height() + 4
-            self.completion_popup.move(anchor.x() + 4, y)
-            self.completion_popup.show()
+            popup.move(anchor.x() + 4, y)
+            popup.show()
         else:
-            self.completion_popup.hide()
+            popup.hide()
 
-    # 兼容旧调用名（测试/既有代码）
-    _refresh_completion = _refresh_completion_now
+    def _refresh_completion_now(self) -> None:
+        # gui-ux22 工单 03：降级主槽委托（L325 timer / ticket 10 十二处调用点零改动）
+        self._refresh_completion("main")
+
+    def _side_completion_tab_accept(self) -> bool:
+        """侧输入条裸 Tab：侧弹层开着且有候选 → 接受首项（True 消费）；否则 False 原生。"""
+        return self._side_completion_popup.accept_top() if self._side_completion_popup.isVisible() else False
+
+    def _on_side_completion_accept(self, insert: str) -> None:
+        bar, _ = self._slot_input_widgets("side")
+        if self._side_completion_state is not None:
+            accept_suggestion(bar.edit, self._side_completion_state, insert)
+        self._side_completion_popup.hide()
+        self._side_completion_state = None
+        self._refresh_completion("side")
 
     def _completion_tab_accept(self) -> bool:
         """输入框裸 Tab：弹层开着且有候选 → 接受首项（True 消费）；否则 False 原生。"""
@@ -844,6 +907,60 @@ class MainWindow(QMainWindow):
         """指定槽的状态行。"""
         return self.side_status if slot == "side" else self.status_label
 
+    def _slot_tid(self, slot: str) -> str | None:
+        """gui-ux22 工单 03：逐槽 tid；legacy 回落（只设 active_tid 的旧路径/测试，按槽归属路由）。"""
+        tid = self._side_slot_tid if slot == "side" else self._main_slot_tid
+        if tid is None and self.active_tid and self._slot_of_tid(self.active_tid) == slot:
+            return self.active_tid
+        return tid
+
+    def _cancel_slot(self, slot: str) -> None:
+        """gui-ux22 工单 03：逐槽取消（零参 _cancel_active 保留，实体走主槽）。"""
+        tid = self._slot_tid(slot)
+        if tid and self.presenter is not None:
+            self.presenter.cancel(tid)
+
+    def _esc_attr(self, slot: str) -> str:
+        """逐槽 Esc primed 属性前缀：主 "_" / 侧 "_side_"（裸名四件套共享）。"""
+        return "_side_" if slot == "side" else "_"
+
+    def _esc_timers(self, slot: str) -> dict:
+        if slot == "side":
+            return {"run": self._side_esc_run_timer, "undo": self._side_esc_undo_timer}
+        return {"run": self._esc_run_timer, "undo": self._esc_undo_timer}
+
+    def _esc_disarm(self, slot: str, which: str) -> None:
+        """逐槽解除 primed 标记（which ∈ run/undo；主槽与旧 _esc_run_disarm/_esc_undo_disarm 等价）。"""
+        setattr(self, self._esc_attr(slot) + "esc_" + which + "_primed", False)
+
+    def _esc_slot_esc_dismiss(self, slot: str) -> bool:
+        """逐槽 ①：补全弹层开着 → 关掉（主槽必经 _completion_esc_dismiss，保留 monkeypatch 面）。"""
+        if slot == "side":
+            if self._side_completion_popup.isVisible():
+                self._side_completion_popup.hide()
+                return True
+            return False
+        return self._completion_esc_dismiss()
+
+    def _esc_slot_banner(self, slot: str, text: str) -> None:
+        """逐槽 Esc 状态行 banner（主槽落 status_label，逐字文案见 _on_esc_pressed）。"""
+        self._slot_status(slot).setText(text)
+
+    def _reset_side_esc_state(self) -> None:
+        """gui-ux22 工单 03：侧槽折叠/切项目时复位两级 primed 与 timer（状态不跨会话带）。"""
+        self._side_esc_run_primed = False
+        self._side_esc_run_primed_at = 0.0
+        self._side_esc_undo_primed = False
+        self._side_esc_undo_primed_at = 0.0
+        self._side_esc_run_timer.stop()
+        self._side_esc_undo_timer.stop()
+
+    def _side_esc_run_disarm(self) -> None:
+        self._esc_disarm("side", "run")
+
+    def _side_esc_undo_disarm(self) -> None:
+        self._esc_disarm("side", "undo")
+
     def _update_slot_ownership(self, tid: str) -> None:
         """切换会话时更新左右槽 tid 归属（side 占右槽；主线 tid 取 side 的 parent 回填）。"""
         if self._slot_of_tid(tid) == "side":
@@ -873,6 +990,7 @@ class MainWindow(QMainWindow):
         """关 side 会话：右槽折叠 0 宽（布局回到现状单列）。"""
         self._side_slot_tid = None
         self.chat_splitter.setSizes([1, 0])
+        self._reset_side_esc_state()  # gui-ux22 工单 03：折叠即复位侧槽 Esc 双级 primed
 
     def _save_slot_draft(self, slot: str) -> None:
         """#1 槽版：把指定槽未提交输入（文本+图片条）记为该槽 tid 会话的草稿。"""
@@ -1040,6 +1158,7 @@ class MainWindow(QMainWindow):
         self._main_slot_tid = None
         self._side_slot_tid = None
         self.chat_splitter.setSizes([1, 0])
+        self._reset_side_esc_state()  # gui-ux22 工单 03：切项目同样复位侧槽 Esc 双级状态
 
     def _do_switch_project(self, root, focus_tid: str | None = None) -> None:
         """切到项目 root（关旧建新 + 打开 focus_tid / 上次活动 / 新会话）。"""
@@ -1351,6 +1470,9 @@ class MainWindow(QMainWindow):
         self.status_label.setText(note)
         if parent:
             self._switch_to(parent)
+        else:
+            # gui-ux22 工单 03：无 parent 兜底（孤儿 side 会话删除等）——焦点回左槽输入条
+            self.input_bar.edit.setFocus()
 
     def _on_side_pill_clicked(self) -> None:
         """pill = 关闭 side 会话（关了就没了：删除会话并回主线；右键菜单同语义）。"""
@@ -1361,6 +1483,8 @@ class MainWindow(QMainWindow):
         self.status_label.setText(note)
         if parent:
             self._switch_to(parent)
+        else:
+            self.input_bar.edit.setFocus()
 
     def _refresh_side_pill(self) -> None:
         if not hasattr(self, "side_pill") or self.presenter is None:
@@ -1383,77 +1507,82 @@ class MainWindow(QMainWindow):
         self.side_pill.setVisible(True)
 
     # ---- 图片粘贴（工单 07）：剪贴板图 / 图片路径 → 附件条
-    def _try_image_paste(self) -> bool:
+    def _try_image_paste(self, slot: str = "main") -> bool:
         from PySide6.QtWidgets import QApplication
 
+        imgs = self._slot_input_widgets(slot)[1]
+        st = self._slot_status(slot)
         cb = QApplication.clipboard()
         img = cb.image()
         if img is not None and not img.isNull():
             path = save_clipboard_image_to_temp(img)
             if path:
-                self.image_strip.add_image(path)
-                self.status_label.setText("已添加图片附件（发送前可 ✕ 移除）")
+                imgs.add_image(path)
+                st.setText("已添加图片附件（发送前可 ✕ 移除）")
                 return True
         p = clipboard_image.looks_like_image_path(cb.text() or "")
         if p:
-            self.image_strip.add_image(p)
-            self.status_label.setText("已添加图片附件")
+            imgs.add_image(p)
+            st.setText("已添加图片附件")
             return True
         return False  # 普通文本走原生粘贴
 
     # ---- 发送 / 回合
-    def _submit(self) -> None:
+    def _submit(self, slot: str = "main") -> None:
+        st = self._slot_status(slot)
+        bar, imgs = self._slot_input_widgets(slot)
         if self.presenter is None:
-            self.status_label.setText("还没有关联项目，请先「打开项目 / 新建项目」")
+            st.setText("还没有关联项目，请先「打开项目 / 新建项目」")
             return
         # InputBar 已清空编辑框并 emit 原始多行文本（含换行，走 build_submission）
-        raw = self._last_input_text
+        raw = self._last_side_input_text if slot == "side" else self._last_input_text
         payload, note = commands.build_submission(
             raw, tuple(commands.virtual_path_mappings(self.presenter.runtime.config))
         )
         if note:
-            self.status_label.setText(note)
+            st.setText(note)
             return
         if payload is None:
             return
-        if self._route_slash(payload):
+        if self._route_slash(payload, slot):
             return
-        images = self.image_strip.paths()
+        images = imgs.paths()
         user_input, user_input_fallback, _ = build_image_submit(payload, images)
-        tid = self.active_tid
+        tid = self._slot_tid(slot)
         verdict = self.presenter.start_turn(
             tid, payload,
             user_input=user_input, user_input_fallback=user_input_fallback,
             images=images,  # #2: 排队载荷带图，回合结束重投时图片不丢
         )
-        self.input_bar.set_cancel_enabled(verdict == "started")
+        bar.set_cancel_enabled(verdict == "started")
         if verdict == "started":
             p = self._ensure_pane(tid)
             p.append_user(payload, images or None)
-            self.status_label.setText("已发送，执行中…")
+            st.setText("已发送，执行中…")
         else:
             # 排队：用户气泡等回合真正开跑（queued_flush）才进窗，期间固定在队列条
-            self.status_label.setText("已排队，回合结束后自动续发")
+            st.setText("已排队，回合结束后自动续发")
         # #2 根因修复：提交后无条件清空图片条——排队载荷的图已存进队列 tuple（清空无损）；
         # 旧图片条残留到「切会话再提交」是图片发到错误对话的泄漏路径
-        self.image_strip.clear()
+        imgs.clear()
         self._refresh_queue_strip()
 
     # ---- slash 命令路由（工单 07）：输入框 /xxx 走本地命令，不再发给 AI
-    def _route_slash(self, payload: str) -> bool:
+    def _route_slash(self, payload: str, slot: str = "main") -> bool:
         stripped = payload.lstrip()
         if not stripped.startswith('/'):
             return False
-        # 空态守卫（同 _submit）：未关联项目时 /xxx 不进 dispatch
+        # 空态守卫（同 _submit）：未关联项目时 /xxx 不进 dispatch（守卫最先 + 写 status_label：__new__ 空态测试面）
         if self.presenter is None:
             self.status_label.setText("还没有关联项目，请先「打开项目 / 新建项目」")
             return True
+        st = self._slot_status(slot)
         cfg = self.presenter.runtime.config
         # 虚拟路径引用（/workspace/、/skills/ 等）仍发模型，不走命令
         if commands.is_virtual_path_reference(payload, commands.virtual_path_mappings(cfg)):
             return False
         first = stripped.split(None, 1)[0]
-        tid = self.active_tid
+        tid = self._slot_tid(slot)
         if first == '/help':
             # GUI 专属：dispatch 命令表不含 /help（CLI/TUI 在分发前特判），走对话框（可滚动/可选中），不进状态栏
             self._show_text("命令帮助", commands.GUI_HELP)
@@ -1466,13 +1595,13 @@ class MainWindow(QMainWindow):
         if first == '/use':
             msg, err = commands.expand_use_command(cfg, payload)
             if err:
-                self.status_label.setText(err)
+                st.setText(err)
                 return True
             p = self._ensure_pane(tid)
             p.append_user(payload, None)
             verdict = self.presenter.start_turn(tid, msg)
-            self.input_bar.set_cancel_enabled(verdict == 'started')
-            self.status_label.setText('使用 skill…')
+            self._slot_input_widgets(slot)[0].set_cancel_enabled(verdict == 'started')
+            st.setText('使用 skill…')
             return True
         if first == '/doctor':
             # 自检走对话框（可滚动/可选中），不塞状态栏（多行文本会顶爆布局、把输入框挤出屏）
@@ -1482,22 +1611,27 @@ class MainWindow(QMainWindow):
             # gui-ux16：输入框/菜单 /undo 与 Esc 级联统一走 _on_undo——检查点撤回 + pane
             # 重建 + 输入框回填一体；不再落入 _execute_slash（该路径只 notify 不重建 pane）
             if len(stripped.split(None, 1)) > 1:
-                self.status_label.setText(
+                st.setText(
                     "用法: /undo（无参）；/undo 只撤回最近 1 条，多轮请反复调用"
                 )
                 return True
-            self._on_undo()
+            self._on_undo_for(tid)  # gui-ux22 工单 03：按槽 tid（侧槽 /undo 作用于 side tid）
             return True
-        self._execute_slash(payload)
+        self._execute_slash(payload, tid=tid)  # gui-ux22 工单 03：按槽 tid（缺省回落 active_tid）
         return True
 
     def _on_input_submit(self, raw: str) -> None:
         self._last_input_text = raw
         self._submit()
 
+    def _on_side_input_submit(self, raw: str) -> None:
+        # gui-ux22 工单 03：侧槽提交（独立草稿字段；slot 路由进 _submit）
+        self._last_side_input_text = raw
+        self._submit("side")
+
     def _cancel_active(self) -> None:
-        if self.active_tid:
-            self.presenter.cancel(self.active_tid)
+        # gui-ux22 工单 03：零参名保留（L261 主条 cancel_requested 连线语义逐字等价）
+        self._cancel_slot("main")
 
     # ---- 工单 13：Esc 三级（补全弹层 / 运行中取消 / 取消后或空闲撤回；gui-ux15 取消→撤回级联，对标 TUI tui-ux15）
     ESC_UNDO_WINDOW = 1.5
@@ -1508,57 +1642,58 @@ class MainWindow(QMainWindow):
     def _esc_undo_disarm(self) -> None:
         self._esc_undo_primed = False
 
-    def _on_esc_pressed(self) -> bool:
-        """裸 Esc 统一入口（输入框 eventFilter hook + 窗口 keyPressEvent 兜底）。
+    def _on_esc_pressed(self, slot: str = "main") -> bool:
+        """裸 Esc 统一入口（主条 esc_hook + 窗口 keyPressEvent 兜底 + 侧条窗口 eventFilter，工单 03）。
 
         True=已消费；False=不处理（原生无操作；单 Esc 永不退 app）。
 
-        gui-ux15 Esc 级联（对标 TUI tui-ux15 三段）：运行中 Esc#1 prime 取消 →
-        Esc#2 取消并立即 prime 撤回 → Esc#3（drain 中或空闲）即撤回；
-        空闲态双 Esc 撤回语义不变。"""
+        gui-ux15 Esc 级联（对标 TUI tui-ux15 三段）+ gui-ux22 工单 03 逐槽化：
+        primed 时间戳/状态行/取消/撤回均按槽独立（主槽零参调用语义逐字等价）。"""
         import time as _time
 
-        # ① 补全弹层开着 → 先关弹层（原语义不变）
-        if self._completion_esc_dismiss():
+        # ① 本槽补全弹层开着 → 先关弹层（主槽必经 _completion_esc_dismiss，保留 monkeypatch 面）
+        if self._esc_slot_esc_dismiss(slot):
             return True
         now = _time.monotonic()
-        tid = self.active_tid
+        tid = self._slot_tid(slot)
         running = bool(tid and self.presenter.gate.is_running(tid))
         # drain：取消已请求、worker 收尾中（gate 未释放）——不再重新武装「取消」，落入撤回段
         draining = running and self.presenter.gate.peek_cancelled(tid)
+        pfx = self._esc_attr(slot)  # 逐槽属性前缀（裸名四件套共享）
         # ② 回合进行中且未取消：1.5s 内二 Esc → 取消；取消成功即 prime 撤回（级联第三击）
         if running and not draining:
-            self._esc_undo_disarm()
-            if self._esc_run_primed and now - self._esc_run_primed_at < self.ESC_UNDO_WINDOW:
-                self._esc_run_primed = False
-                self._esc_run_timer.stop()
-                self._cancel_active()
+            self._esc_disarm(slot, "undo")
+            if getattr(self, pfx + "esc_run_primed") and now - getattr(self, pfx + "esc_run_primed_at") < self.ESC_UNDO_WINDOW:
+                setattr(self, pfx + "esc_run_primed", False)
+                self._esc_timers(slot)["run"].stop()
+                self._cancel_slot(slot)
                 # gui-ux15：取消完成 → 直接进撤回 prime，第三击 Esc（drain 中或空闲）即撤回
-                self._esc_undo_primed = True
-                self._esc_undo_primed_at = now
-                self._esc_undo_timer.start(int(self.ESC_UNDO_WINDOW * 1000))
-                self.status_label.setText(
-                    f"已取消；{self.ESC_UNDO_WINDOW:g}s 内再按一次 Esc 可撤回上一轮"
+                setattr(self, pfx + "esc_undo_primed", True)
+                setattr(self, pfx + "esc_undo_primed_at", now)
+                self._esc_timers(slot)["undo"].start(int(self.ESC_UNDO_WINDOW * 1000))
+                self._esc_slot_banner(
+                    slot,
+                    f"已取消；{self.ESC_UNDO_WINDOW:g}s 内再按一次 Esc 可撤回上一轮",
                 )
                 return True
-            self._esc_run_primed = True
-            self._esc_run_primed_at = now
-            self._esc_run_timer.start(int(self.ESC_UNDO_WINDOW * 1000))
-            self.status_label.setText("再按一次 Esc 取消执行")
+            setattr(self, pfx + "esc_run_primed", True)
+            setattr(self, pfx + "esc_run_primed_at", now)
+            self._esc_timers(slot)["run"].start(int(self.ESC_UNDO_WINDOW * 1000))
+            self._esc_slot_banner(slot, "再按一次 Esc 取消执行")
             return True
         # ③ 空闲或取消收尾（drain）：1.5s 内二 Esc → 撤回最近一轮（对标 TUI 双 Esc 撤回）
         if tid:
-            self._esc_run_disarm()
-            if self._esc_undo_primed and now - self._esc_undo_primed_at < self.ESC_UNDO_WINDOW:
-                self._esc_undo_primed = False
-                self._esc_undo_timer.stop()
-                self._on_undo()
-                self.status_label.setText("已撤回最近一轮")
+            self._esc_disarm(slot, "run")
+            if getattr(self, pfx + "esc_undo_primed") and now - getattr(self, pfx + "esc_undo_primed_at") < self.ESC_UNDO_WINDOW:
+                setattr(self, pfx + "esc_undo_primed", False)
+                self._esc_timers(slot)["undo"].stop()
+                self._on_undo_for(tid)
+                self._esc_slot_banner(slot, "已撤回最近一轮")
                 return True
-            self._esc_undo_primed = True
-            self._esc_undo_primed_at = now
-            self._esc_undo_timer.start(int(self.ESC_UNDO_WINDOW * 1000))
-            self.status_label.setText("再按一次 Esc 撤回最近一轮")
+            setattr(self, pfx + "esc_undo_primed", True)
+            setattr(self, pfx + "esc_undo_primed_at", now)
+            self._esc_timers(slot)["undo"].start(int(self.ESC_UNDO_WINDOW * 1000))
+            self._esc_slot_banner(slot, "再按一次 Esc 撤回最近一轮")
             return True
         return False
 
@@ -1566,10 +1701,43 @@ class MainWindow(QMainWindow):
         from PySide6.QtGui import QKeyEvent
 
         if isinstance(event, QKeyEvent) and event.key() == Qt.Key_Escape and not event.modifiers():
-            if self._on_esc_pressed():
+            # gui-ux22 工单 03：逐槽兜底——键盘焦点在右槽（pane/输入条/图片条）走侧槽，否则主槽
+            slot = self._focus_slot()
+            if self._on_esc_pressed(slot):
                 event.accept()
                 return
         super().keyPressEvent(event)
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802
+        # gui-ux22 工单 03（c5 侧编辑裸 Esc 无双触发）：侧条**不**接 esc_hook（InputBar 自身
+        # filter 在 hook=None 时放行裸 Esc），窗口级 filter 后装、只匹配 side_input_bar.edit，
+        # 消费后链上无第二处处理；非 Esc 事件走原生链。主编辑条保持 esc_hook 路径（工单 13 语义不变）。
+        from PySide6.QtGui import QKeyEvent
+
+        if (
+            obj is self.side_input_bar.edit
+            and isinstance(event, QKeyEvent)
+            and event.key() == Qt.Key_Escape
+            and not event.modifiers()
+        ):
+            if self._on_esc_pressed("side"):
+                event.accept()
+                return True
+        return super().eventFilter(obj, event)
+
+    def _focus_slot(self) -> str:
+        """gui-ux22 工单 03：当前键盘焦点属哪槽（右槽任意子件 → side；否则 main）。"""
+        from PySide6.QtWidgets import QApplication
+
+        w = QApplication.focusWidget()
+        if w is None:
+            return "main"
+        cur = w
+        while cur is not None:
+            if cur is self.side_stack or cur is self.side_input_bar or cur is self.side_image_strip:
+                return "side"
+            cur = cur.parentWidget()
+        return "main"
 
     def _flush_all_dirty(self) -> None:
         for p in self.panes.values():

@@ -18,8 +18,13 @@ def _win(qapp, monkeypatch, record: list) -> MainWindow:
     p = GuiPresenter(rt, UiBridge())
     win = MainWindow(p, p.bridge)
     win.active_tid = "t-1"
+    # gui-ux22 工单 03：构造期 auto _switch_to 已把 _main_slot_tid 写成 session-*，
+    # 逐槽路由下槽 tid 优先于 active_tid legacy 回落，须覆盖回测试语义（主槽 = t-1）
+    win._main_slot_tid = "t-1"
     monkeypatch.setattr(
-        win, "_execute_slash", lambda raw: record.append(("slash", raw))
+        win,
+        "_execute_slash",
+        lambda raw, tid=None: record.append(("slash", raw)),
     )
     monkeypatch.setattr(
         win.presenter,
@@ -132,6 +137,7 @@ def _win_live(qapp, monkeypatch, record: list) -> MainWindow:
     p = GuiPresenter(rt, UiBridge())
     win = MainWindow(p, p.bridge)
     win.active_tid = "t-1"
+    win._main_slot_tid = "t-1"  # gui-ux22 工单 03：同 _win，槽 tid 对齐测试语义
 
     def sync_run_command(fn, tid):
         try:

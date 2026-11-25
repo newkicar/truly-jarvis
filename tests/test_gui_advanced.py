@@ -277,7 +277,10 @@ def test_set_auto_compaction_empty_state_hints_status(qapp):
         cleanup_home(home)
 
 def test_undo_backfills_input_box_on_success(qapp, monkeypatch):
-    """gui-ux16：undo 成功 → 被撤回的用户消息经 input_set 回填输入框（对标 codex：可改可再发）。"""
+    """gui-ux16：undo 成功 → 被撤回的用户消息经 input_set 回填输入框（对标 codex：可改可再发）。
+
+    gui-ux22 03：input_set 载荷双参 (tid, text)——按「被撤回会话」路由，不再随 active_tid 漂移。
+    """
     from src import commands
     from src.gui import replay
 
@@ -289,9 +292,10 @@ def test_undo_backfills_input_box_on_success(qapp, monkeypatch):
         monkeypatch.setattr(p, "run_command", lambda fn, tid: fn())
         win._switch_to("sess-bf")
         captured = []
-        win.bridge.input_set.connect(captured.append)
+        win.bridge.input_set.connect(lambda tid, text: captured.append((tid, text)))
         win._on_undo()
-        assert captured == ["这个人叫什么"]
+        assert captured == [("sess-bf", "这个人叫什么")]
+        assert win.input_bar.edit.toPlainText() == "这个人叫什么"  # 双参 handler 回填主槽输入条
     finally:
         cleanup_home(home)
 
@@ -315,15 +319,15 @@ def test_undo_no_input_backfill_on_failure_or_empty(qapp, monkeypatch):
             monkeypatch.setattr(p, "run_command", lambda fn, tid: fn())
             win._switch_to("sess-bf2")
             captured = []
-            win.bridge.input_set.connect(captured.append)
+            win.bridge.input_set.connect(lambda tid, text: captured.append((tid, text)))
             win._on_undo()
             assert captured == [], note
         finally:
             cleanup_home(home)
 
 
-def test_slash_undo_routes_to_on_undo(qapp, monkeypatch):
-    """gui-ux16：输入框 /undo 与菜单/Esc 级联统一走 _on_undo（检查点撤回 + pane 重建 + 输入框回填一体）。"""
+def test_slash_undo_routes_by_slot_tid(qapp, monkeypatch):
+    """gui-ux22 03：输入框 /undo 按槽 tid 直接进 _on_undo_for（侧槽 /undo 作用于 side tid，不走零参 _on_undo）。"""
     from src.gui import replay
 
     win, p, rt, home = _win(qapp)
@@ -332,12 +336,41 @@ def test_slash_undo_routes_to_on_undo(qapp, monkeypatch):
         monkeypatch.setattr(p, "run_command", lambda fn, tid: fn())
         win._switch_to("sess-s")
         hits = []
-        monkeypatch.setattr(win, "_on_undo", lambda: hits.append(1))
+        monkeypatch.setattr(win, "_on_undo_for", lambda tid: hits.append(tid))
         assert win._route_slash("/undo") is True
-        assert hits == [1]
+        assert hits == ["sess-s"]
         # 带参 → 不执行，提示用法
         assert win._route_slash("/undo 2") is True
-        assert hits == [1]
+        assert hits == ["sess-s"]
         assert "用法: /undo（无参）" in win.status_label.text()
+    finally:
+        cleanup_home(home)
+
+
+def test_undo_backfill_routes_by_unundown_tid_in_split(qapp, monkeypatch):
+    """gui-ux22 03 bug③：active_tid 已漂移到侧会话时，主线 undo 的回填仍进主槽输入条，不写侧框；
+    侧线 undo 的回填进侧输入条，主框不动（双槽「按被操作会话路由」回归）。"""
+    from src import commands, permissions
+    from src.gui import replay
+
+    win, p, rt, home = _win(qapp)
+    try:
+        permissions.side_open(rt.permission_state, "side-1", "main-1")
+        monkeypatch.setattr(commands, "undo", lambda agent, tid, n=1: "已撤回 1 条")
+        monkeypatch.setattr(commands, "last_user_input", lambda agent, tid: "主对话最后一条")
+        monkeypatch.setattr(replay, "thread_record", lambda agent, tid, **k: [])
+        monkeypatch.setattr(p, "run_command", lambda fn, tid: fn())
+        win._switch_to("main-1")
+        win._switch_to("side-1")  # active_tid 漂移到侧会话（用户症状复现前置）
+        assert win._slot_of_tid("main-1") == "main" and win._slot_of_tid("side-1") == "side"
+        # 主线 undo → 回填主槽输入条，侧框保持空
+        win._on_undo_for("main-1")
+        assert win.input_bar.edit.toPlainText() == "主对话最后一条"
+        assert win.side_input_bar.edit.toPlainText() == ""
+        # 侧线 undo → 回填侧槽输入条，主框不动
+        monkeypatch.setattr(commands, "last_user_input", lambda agent, tid: "侧对话最后一条")
+        win._on_undo_for("side-1")
+        assert win.side_input_bar.edit.toPlainText() == "侧对话最后一条"
+        assert win.input_bar.edit.toPlainText() == "主对话最后一条"
     finally:
         cleanup_home(home)

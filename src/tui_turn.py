@@ -34,10 +34,12 @@ class TurnPresenter:
         *,
         image_input: str | None = None,
         image_fallback: str | None = None,
+        thread_id: str | None = None,
     ):
         self.app = app
         # tui-ux14 #03: spawn 时捕获本轮归属 thread（YOLO bg 切会话后 app.thread_id 已被换走）
-        self.thread_id = app.thread_id
+        # tui-ux22 03: 双 pane——显式传入本轮 tid（侧栏回合）时优先于 app.thread_id
+        self.thread_id = thread_id if thread_id is not None else app.thread_id
         self.user_input = user_input
         self.checkpoint_id = checkpoint_id
         self.image_input = image_input  # #03: model.image_input 能力门（None=读 config 默认）
@@ -45,7 +47,7 @@ class TurnPresenter:
         self.started = time()
         # 模式标注取流开始时的快照（中途 Tab 切换不改变本轮回复的归属）；
         # 先于 log 的 UI 往返捕获，与重构前顺序一致。
-        self.start_mode = effective_mode(app.permission_state, app.thread_id)
+        self.start_mode = effective_mode(app.permission_state, self.thread_id)
         self.log: RichLog | None = app.call_from_thread(
             app.query_one, "#messages", RichLog
         )

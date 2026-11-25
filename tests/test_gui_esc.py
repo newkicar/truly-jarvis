@@ -21,8 +21,12 @@ def _win(monkeypatch, record: list) -> tuple[MainWindow, GuiPresenter]:
     p = GuiPresenter(rt, UiBridge())
     win = MainWindow(p, p.bridge)
     win.active_tid = "t-1"
+    # gui-ux22 03：Esc 级联逐槽化后实体走 _cancel_slot/_on_undo_for；
+    # 零参 _cancel_active/_on_undo 保留作兼容面，一并 patch（主槽逐字等价）
     monkeypatch.setattr(win, "_cancel_active", lambda: record.append("cancel"))
+    monkeypatch.setattr(win, "_cancel_slot", lambda slot: record.append("cancel"))
     monkeypatch.setattr(win, "_on_undo", lambda: record.append("undo"))
+    monkeypatch.setattr(win, "_on_undo_for", lambda tid: record.append("undo"))
     monkeypatch.setattr(win, "close", lambda: record.append("close"))
     return win, p
 
@@ -85,6 +89,11 @@ def test_running_triple_esc_cascels_to_undo_drain(qapp, monkeypatch):
         win,
         "_cancel_active",
         lambda: (flag.update(cancelled=True), record.append("cancel")),
+    )
+    monkeypatch.setattr(
+        win,
+        "_cancel_slot",
+        lambda slot: (flag.update(cancelled=True), record.append("cancel")),
     )
     assert win._on_esc_pressed() is True
     assert record == []
