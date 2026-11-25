@@ -71,6 +71,12 @@ def _run_session(agent, thread_id: str, sched=None, permission_state: dict | Non
             if new_thread:
                 thread_id = new_thread
                 print(f"已切换到会话 {thread_id}")
+            if user_input.startswith("/goal"):
+                # diagnosing-bugs /goal 修复：create/resume 后若自动续跑链断裂（如零工具轮），
+                # 以续跑 prompt 立即重开一轮（不打印 prompt 原文——回合内 _cli_goal_step 会打印目标行）
+                kick = commands.goal_kick_prompt(thread_id, user_input)
+                if kick is not None:
+                    _stream_turn(agent, thread_id, kick, permission_state, config)
             continue
 
         _stream_turn(agent, thread_id, user_input, permission_state, config)

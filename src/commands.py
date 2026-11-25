@@ -1534,6 +1534,8 @@ def goal_text(thread_id: str, goals_path: Path | None = None) -> str:
     line = f"目标 [{label}] {goal.turns_used}/{goal.max_turns}：{goal.objective}"
     if goal.status == g.GOAL_COMPLETE and goal.audit_evidence:
         line += f"｜证据: {goal.audit_evidence}"
+    if goal.status == g.GOAL_ACTIVE and getattr(goal, "last_stop_reason", None):
+        line += f"｜已停：{goal.last_stop_reason}（/goal resume 重启）"
     return line
 
 
@@ -1580,8 +1582,18 @@ def goal_command_text(thread_id: str, raw_command: str, goals_path: Path | None 
             return "本会话无目标，无需恢复"
         except g.TerminalGoalError:
             return _goal_terminal_hint(thread_id, goals_path, "resume")
-        except g.GoalError as exc:  # 已 active → 存储层幂等文案
-            return str(exc)
+        except g.GoalError:
+            # 已 active：链可能已断（零工具轮等）→ 给重启文案；预算耗尽等仍走原存储层文案
+            cur = g.goal_status(path=goals_path, thread_id=thread_id)
+            if (
+                cur is not None
+                and cur.status == g.GOAL_ACTIVE
+                and cur.turns_used < cur.max_turns
+            ):
+                return (
+                    f"目标已 active（{cur.turns_used}/{cur.max_turns}），重新开跑目标「{cur.objective}」（自动续跑链重启，/goal status 查看）"
+                )
+            return "goal 已 active，无需 resume"
         return f"目标已恢复：'{resumed.objective}'（{resumed.turns_used}/{resumed.max_turns}，继续自动续跑）"
     if sub == "clear":
         try:
@@ -1610,6 +1622,24 @@ def goal_command_text(thread_id: str, raw_command: str, goals_path: Path | None 
     except g.GoalError as exc:
         return str(exc)
     return f"目标已创建：'{goal.objective}'（最多 {goal.max_turns} 回合自动续跑，/goal status 查看）"
+
+
+def goal_kick_prompt(thread_id: str, raw_command: str, goals_path: Path | None = None) -> str | None:
+    """#goal diagnosing-bugs 修复：/goal create & resume 的链重启手柄（纯只读，调用方在
+    dispatch 已写盘后调用——paused→active 已生效可读；create 失败仍 kick 旧 active 目标
+    为已知边界，见 ADR）。status/pause/clear/裸 /goal/无目标/非 active/预算耗尽 → None。"""
+    from src import goals as g
+
+    parts = raw_command.split()
+    sub = ""
+    if len(parts) == 2 and parts[1].lower() in ("status", "pause", "resume", "clear"):
+        sub = parts[1].lower()
+    if sub in ("status", "pause", "clear") or len(parts) < 2:
+        return None
+    goal = g.goal_status(path=goals_path, thread_id=thread_id)
+    if goal is None or goal.status != g.GOAL_ACTIVE or goal.turns_used >= goal.max_turns:
+        return None
+    return g.continuation_prompt(goal, goal.turns_used + 1)
 
 
 def init_project() -> str:

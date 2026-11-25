@@ -113,6 +113,7 @@ class Goal:
     max_turns: int
     completed_at: str | None = None
     audit_evidence: str | None = None
+    last_stop_reason: str | None = None
 
     def to_dict(self) -> dict:
         d: dict = {
@@ -127,6 +128,8 @@ class Goal:
             d["completed_at"] = self.completed_at
         if self.audit_evidence is not None:
             d["audit_evidence"] = self.audit_evidence
+        if self.last_stop_reason is not None:
+            d["last_stop_reason"] = self.last_stop_reason
         return d
 
     @classmethod
@@ -140,6 +143,7 @@ class Goal:
             max_turns=_as_int(d.get("max_turns", DEFAULT_GOAL_MAX_TURNS), DEFAULT_GOAL_MAX_TURNS),
             completed_at=d.get("completed_at"),
             audit_evidence=d.get("audit_evidence"),
+            last_stop_reason=d.get("last_stop_reason"),
         )
 
 
@@ -359,10 +363,35 @@ def goal_mark_budget_exhausted(
 
 
 def goal_note_turn(path: Path | None = None, thread_id: str = "") -> Goal:
-    """turns_used = min(+1, max_turns)（续跑入队后调用）；无记录 → NoGoalError。"""
+    """turns_used = min(+1, max_turns)（续跑入队后调用）；无记录 → NoGoalError。
+
+    续跑链活着 = 上次停止原因作废（last_stop_reason 清除，status 行不再带「已停」尾注）。
+    """
     goals, rec, target = _require_record(path, thread_id)
     m = _as_int(rec.get("max_turns", DEFAULT_GOAL_MAX_TURNS), DEFAULT_GOAL_MAX_TURNS)
     rec["turns_used"] = min(_as_int(rec.get("turns_used", 0), 0) + 1, m)
+    rec.pop("last_stop_reason", None)
+    goals[thread_id] = rec
+    _atomic_write(target, goals)
+    return Goal.from_dict(rec, thread_id)
+
+
+def goal_note_stop_reason(path: Path | None = None, thread_id: str = "", reason: str = "") -> Goal:
+    """链断裂留痕（diagnosing-bugs /goal 修复）：记录该轮未续跑的 reason（如「该轮零工具调用」）。
+
+    纯追加字段，不改 status/turns_used；commands.goal_text 与 /goal resume 重启手柄
+    读此字段给断链原因与重启指引。无记录 → NoGoalError；非 active → 显式 GoalError。
+    """
+    reason = str(reason).strip()
+    if not reason:
+        raise GoalError("stop reason 为空，不记录")
+    goals, rec, target = _require_record(path, thread_id)
+    status = str(rec.get("status", GOAL_ACTIVE))
+    if status in TERMINAL_STATUSES:
+        raise TerminalGoalError("goal 已终态（" + status + "），不再记录停止原因")
+    if status != GOAL_ACTIVE:
+        raise GoalError("goal 非 active（status=" + status + "），无需记录停止原因")
+    rec["last_stop_reason"] = reason
     goals[thread_id] = rec
     _atomic_write(target, goals)
     return Goal.from_dict(rec, thread_id)
@@ -527,6 +556,20 @@ def after_turn(
         try:
             goal_mark_budget_exhausted(thread_id=thread_id)
             budget_marked = True
+        except GoalError:
+            pass
+    # diagnosing-bugs /goal 修复：active 但本轮断链（kind=none、非存储/终态类）→ 留痕
+    # （goal_text 带「已停」尾注 + /goal resume 重启手柄读此字段）；存储异常吞没（展示层 best-effort）
+    if (
+        decision.kind == "none"
+        and active
+        and goal is not None
+        and goal.status == GOAL_ACTIVE
+        and goal.turns_used < goal.max_turns
+        and decision.reason
+    ):
+        try:
+            goal_note_stop_reason(thread_id=thread_id, reason=decision.reason)
         except GoalError:
             pass
     return AfterTurnResult(kind=decision.kind, prompt=prompt, budget_marked=budget_marked)

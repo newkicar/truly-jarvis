@@ -607,7 +607,7 @@ class MainWindow(QMainWindow):
         b = self.presenter.bridge
         first = raw.lstrip().split(None, 1)[0]
 
-        def _run() -> str:
+        def _run() -> str:  # noqa: C901
             # ADR-0014: 会话正在执行中禁止手动 /compact（压缩会覆盖历史，
             # 并发回合会丢失压缩边界）——直接拒绝并提示
             if first == "/compact" and self.presenter.gate.is_running(tid):
@@ -648,6 +648,14 @@ class MainWindow(QMainWindow):
             # 菜单勾选 / [YOLO][PROXY] 徽标（_refresh_mode_badges 单一同步点；状态栏由 notify 承载）
             if first in ("/yolo", "/proxy"):
                 b.sync_modes.emit()
+            # diagnosing-bugs /goal 修复：/goal 族 → 状态行常驻目标行（status 信号按槽路由，
+            # 非瞬态 notify）+ 徽标刷新（[GOAL]）+ 链重启（create/resume kick 经 start_turn）
+            if first == "/goal":
+                b.status.emit(tid, commands.goal_text(tid))
+                b.sync_modes.emit()
+                kick = commands.goal_kick_prompt(tid, raw)
+                if kick is not None:
+                    self.presenter.start_turn(tid, kick)
             return text or ""
 
         self.presenter.run_command(_run, tid)
@@ -817,6 +825,13 @@ class MainWindow(QMainWindow):
             html += f' <span style="color: {tok["negative"]}; font-weight: bold;">[YOLO]</span>'
         if proxy:
             html += f' <span style="color: {tok["ok"]}; font-weight: bold;">[PROXY]</span>'
+        # diagnosing-bugs /goal 修复：goal 标签+状态徽标（thread 级存储，按 active_tid 显示；
+        # side 会话强制只读无 goal 记录，与 _mode_tid() 侧边隔离正交）
+        from src import goals as _goals
+        g = _goals.goal_status(thread_id=(self.active_tid or ""))
+        if g is not None:
+            html += (f' <span style="color: {tok["ok"]}; font-weight: bold;">'
+                     f'[GOAL] {g.turns_used}/{g.max_turns} {_goals.GOAL_STATUS_CN.get(g.status, g.status)}</span>')
         self.mode_badge.setText(html)
         # 菜单勾选态与真实状态同步（切会话后 YOLO 态随会话变）
         self.yolo_action.blockSignals(True)

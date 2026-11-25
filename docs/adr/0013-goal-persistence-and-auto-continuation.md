@@ -73,6 +73,33 @@ goal 状态与 HITL 审批、Plan/Act 模式、YOLO、vault 写保护、韧性�
   test_gui_goal / test_tui_goal），正交回归 test_permissions / test_vault_guard /
   test_resilience / test_plan_mode 零改全绿。
 
+## 补充（diagnosing-bugs 修复，2026-11-25）：断链留痕 + create/resume 重启手柄
+
+用户实证缺陷：goal 续跑链在「该轮零工具调用（decision=none）」等场景静默断裂，goal 保持 active 却无任何
+「为何停」信息；`/goal resume` 遇 active 只回「已 active，无需 resume」，用户以为系统在跑其实已停；GUI 徽标区
+只有 [act][YOLO]，无 goal 标签/状态；`/goal status` 在 GUI 侧走瞬态 notify 一闪没，用户感知「没有反应」。
+
+1. **断链留痕**：`Goal.last_stop_reason` + `goal_note_stop_reason`（纯追加字段，终态拒绝）；`goal_note_turn`
+续跑入队即 pop 清除（链活着 = 原因作废）。after_turn 在 decision=none + active + 预算未尽 + decision.reason
+时落停止原因（GoalError 吞掉不影响主流程）。`goal_text` 在 active 且 last_stop_reason 时行尾注
+「｜已停：{reason}（/goal resume 重启）」；`goal_command_text` resume 分支遇 active 且 turns_used<max
+改「重新开跑目标（自动续跑链重启）」幂等文案，预算耗尽等仍走原存储层文案（存储层 `goal_resume` 语义不变，
+重启是 prompt 层而非存储层）。
+2. **`commands.goal_kick_prompt`（纯只读）**：仅 create/resume 子命令且当前 goal active 且预算未尽时返回
+continuation_prompt；status/pause/clear/裸 /goal/无目标/非 active/预算耗尽 → None。调用方必须在 dispatch
+已写盘后调用（paused→active 已生效才可读）；create 失败仍 kick 旧 active 目标 = 已知边界。预算耗尽不走
+kick（预算收尾轮 prompt 路径独立）。
+3. **三前端接线**：CLI `main.py` dispatch 返回后 /goal 输入 kick → `_stream_turn`（不打印 prompt 原文，
+回合内 `_cli_goal_step` 打印目标行）；GUI `MainWindow._execute_slash` /goal 分支 kick → `presenter.start_turn`；
+TUI `JarvisApp._goal_kick` → `_handle_user_message`（复用 tui-ux7 门控队列：门占用排队+notify，门释放
+经 `_release_turn_gate` 重投；dim 系统行走 `goal_input_label` 既有路径，零新机制）。
+4. **GUI 展示面**：`_refresh_mode_badges` 在 [YOLO]/[PROXY] 之后加 `[GOAL] n/m {GOAL_STATUS_CN}` 徽标（与
+[act][YOLO] 并排；thread 级存储按 active_tid 键控；side 会话只读无 goal 记录 → no-op，与 `_mode_tid()` 侧边
+隔离正交）；`/goal` 分支 `status.emit` 常驻状态行（非瞬态 notify，对位「没有反应」）+ `sync_modes` 刷徽标。
+
+测试面：新增 `tests/test_goal_chain_fix.py` 8 测（断链留痕/续跑清除/resume 文案幂等/kick 纯读四态/终态拒绝），
+`tests/test_tui_goal.py` +3 真应用测（create/resume 后自动开续跑轮、status 不 kick）；全量无新增失败。
+
 ## 考虑过但拒绝的选项
 
 - **sqlite 存 goals**：checkpoint db 属 SqliteSaver 职责；goal 是高频小写、机器管理、

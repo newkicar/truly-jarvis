@@ -1442,12 +1442,20 @@ def test_goal_pause_four_states():
 
 
 def test_goal_resume_four_states():
+    import json
+
     from src import goals as g
     with _goal_tmp("resume") as d:
         p = d / "goals.json"
         assert "本会话无目标，无需恢复" in commands.goal_command_text("t1", "/goal resume", p)
         commands.goal_command_text("t1", "/goal A", p)
-        assert "无需 resume" in commands.goal_command_text("t1", "/goal resume", p)  # 幂等：active 上 resume（存储层文案）
+        # diagnosing-bugs 修复：active+预算未尽 → 链重启手枍文案（不再静默"无需 resume"）
+        assert "重新开跑目标「A」" in commands.goal_command_text("t1", "/goal resume", p)
+        # active+预算耗尽（turns_used>=max，终态 mark 未做）→ 仍存储层文案
+        rec = json.loads(p.read_text(encoding="utf-8"))
+        rec["t1"]["turns_used"] = rec["t1"]["max_turns"]
+        p.write_text(json.dumps(rec, ensure_ascii=False, indent=2), encoding="utf-8")
+        assert "goal 已 active，无需 resume" in commands.goal_command_text("t1", "/goal resume", p)
         g.goal_pause(path=p, thread_id="t1")
         assert "目标已恢复：'A'" in commands.goal_command_text("t1", "/goal resume", p)
         g.goal_complete(path=p, thread_id="t1", audit_evidence="e")

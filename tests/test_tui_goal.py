@@ -8,6 +8,7 @@ import pytest
 from src import goals
 from src.streaming import TurnOutcome
 from src.tui_turn import TurnPresenter
+from tests.test_tui import FakeAgent
 
 
 def _turn(ok=True, outcome="complete", tools=1):
@@ -266,6 +267,42 @@ async def test_real_app_sub_title_goal_badge(monkeypatch, goal_store):
         await pilot.pause()
 
 
+# ---------- ⑤b 真实 app：/goal status 命令回路（症状C回归：类型后状态行进对话区+徽章即时刷新） ----------
+
+
+@pytest.mark.asyncio
+async def test_real_app_goal_status_command_refreshes_badge(monkeypatch, goal_store):
+    """#goal 05 症状C回归：输入 /goal status → 状态行写 #messages + sub_title 徽章刷新。
+
+    修复前该命令无 dispatch 分支（无任何反应）；断言双信号：
+    ①状态行进对话区（goal_text 文案）；②[GOAL] 徽章经 dispatch 后 _update_sub_title 刷新。
+    """
+    import asyncio
+
+    from textual.widgets import RichLog
+
+    from src.tui import JarvisApp
+    from tests.test_tui import FakeAgent, _type_and_enter
+
+    goals.goal_set(thread_id="default", objective="修好 CI", max_turns=5)
+    goals.goal_note_turn(thread_id="default")
+    app = JarvisApp(None, FakeAgent(reply="好"), {"default": "ask", "tools": {}}, thread_id="default")
+    async with app.run_test() as pilot:
+        app._update_sub_title()
+        await _type_and_enter(pilot, "/goal status")
+        log = app.query_one("#messages", RichLog)
+        joined = ""
+        for _ in range(120):
+            joined = "".join(ln.text for ln in log.lines)
+            if "目标 [进行中] 1/5" in joined:
+                break
+            await asyncio.sleep(0.05)
+        assert "目标 [进行中] 1/5：修好 CI" in joined, "/goal status 状态行应进对话区"
+        assert "正在执行 /goal" in joined
+        assert "[GOAL] 1/5 进行中" in app.sub_title, "dispatch 后徽章应刷新"
+        await pilot.pause()
+
+
 # ---------- ⑥ 真实 app：续跑输入渲染 dim 系统行 ----------
 
 
@@ -306,3 +343,114 @@ def test_create_goal_notify_non_json_fallback(monkeypatch, goal_store):
     args = "objective" + "a" * 80
     p.on_tool_call("create_goal", args, False, None, 0)
     assert app.notifies[0][0] == "已设目标：" + args[:60]
+
+
+# ---------- diagnosing-bugs /goal 修复：TUI create/resume 链重启 kick ----------
+
+
+class _RecordingAgent(FakeAgent):
+    """记录每次 stream_events 的输入（续跑 kick 到达模型层的断言面）。"""
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.recorded_inputs = []
+
+    def stream_events(self, *args, **kwargs):
+        self.recorded_inputs.append(args[0])
+        return super().stream_events(*args, **kwargs)
+
+
+def _kick_text(stream_input):
+    """stream_events 首参 → 续跑 prompt 原文（str 原样；{'messages': [...]} 取首条 user content）。"""
+    if isinstance(stream_input, dict):
+        msgs = stream_input.get("messages") or []
+        return str(msgs[-1].get("content") if msgs else "")
+    return str(stream_input)
+
+
+async def _wait_inputs(agent, predicate, timeout=6.0):
+    import asyncio
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        await asyncio.sleep(0.05)
+    pytest.fail("等待超时：未观察到预期的 agent 输入序列")
+
+
+@pytest.mark.asyncio
+async def test_real_app_goal_create_kicks_continuation_turn(monkeypatch, goal_store):
+    """"jarvis停了就停了"修复回归：TUI /goal create 后自动 kick 一条续跑轮。
+
+    create 成功 → dispatch 后 goal_kick_prompt 命中 active 0/5 → _goal_kick 经
+    门控队列重入 → FakeAgent 收到 [目标续跑 1/5] 作为新一轮输入（零新机制验证）。
+    """
+    from textual.widgets import RichLog
+
+    from src.tui import JarvisApp
+    from tests.test_tui import _type_and_enter
+
+    agent = _RecordingAgent(reply="好")
+    app = JarvisApp(None, agent, {"default": "ask", "tools": {}}, thread_id="default")
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "/goal create 修好 CI")
+        log = app.query_one("#messages", RichLog)
+        joined = ""
+        import asyncio
+        for _ in range(120):
+            joined = "".join(ln.text for ln in log.lines)
+            if "正在执行 /goal" in joined:
+                break
+            await asyncio.sleep(0.05)
+        await _wait_inputs(agent, lambda: any("[目标续跑 1/5]" in _kick_text(i) for i in agent.recorded_inputs))
+        kick = _kick_text([i for i in agent.recorded_inputs if "[目标续跑 1/5]" in _kick_text(i)][0])
+        assert kick.startswith("[目标续跑 1/5]"), "kick 应为 continuation prompt 原文"
+        assert "修好 CI" in kick
+
+
+@pytest.mark.asyncio
+async def test_real_app_goal_status_does_not_kick(monkeypatch, goal_store):
+    """/goal status 是读类命令：只刷新状态行与徽章，不触发任何模型轮。"""
+    import asyncio
+
+    from textual.widgets import RichLog
+
+    from src.tui import JarvisApp
+    from tests.test_tui import _type_and_enter
+
+    goals.goal_set(thread_id="default", objective="修好 CI", max_turns=5)
+    agent = _RecordingAgent(reply="好")
+    app = JarvisApp(None, agent, {"default": "ask", "tools": {}}, thread_id="default")
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "/goal status")
+        log = app.query_one("#messages", RichLog)
+        joined = ""
+        for _ in range(120):
+            joined = "".join(ln.text for ln in log.lines)
+            if "目标 [进行中] 0/5" in joined:
+                break
+            await asyncio.sleep(0.05)
+        assert "目标 [进行中] 0/5：修好 CI" in joined
+        await asyncio.sleep(0.3)
+        assert agent.recorded_inputs == [], "/goal status 不得 kick 新轮"
+
+
+@pytest.mark.asyncio
+async def test_real_app_goal_resume_kicks_continuation_turn(monkeypatch, goal_store):
+    """/goal resume：paused → active 后 kick [目标续跑 N/5]（N=turns_used+1）。"""
+
+    from src.tui import JarvisApp
+    from tests.test_tui import _type_and_enter
+
+    goals.goal_set(thread_id="default", objective="修好 CI", max_turns=5)
+    goals.goal_note_turn(thread_id="default")
+    goals.goal_pause(thread_id="default")
+    agent = _RecordingAgent(reply="好")
+    app = JarvisApp(None, agent, {"default": "ask", "tools": {}}, thread_id="default")
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "/goal resume")
+        await _wait_inputs(agent, lambda: any("[目标续跑 2/5]" in _kick_text(i) for i in agent.recorded_inputs))
+        kick = _kick_text([i for i in agent.recorded_inputs if "[目标续跑 2/5]" in _kick_text(i)][0])
+        assert "自动续跑目标「修好 CI」" in kick

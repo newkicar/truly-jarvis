@@ -1676,6 +1676,10 @@ class JarvisApp(App):
         if raw is not None:
             self._handle_user_message(raw)
 
+    def _goal_kick(self, kick: str) -> None:
+        """goal 修复：/goal create/resume 后自动重入一条续跑轮（经 tui-ux7 门控队列）。"""
+        self._handle_user_message(kick)
+
     def _schedule_queue_refresh(self) -> None:
         """tui-ux14 #04: registry on_change 回调（worker 线程经 call_from_thread 刷 UI；UI 线程直刷——Textual 8.2.8 call_from_thread 同线程抛 RuntimeError；_thread_id 未设=app 未跑 → no-op）。"""
         try:
@@ -1948,6 +1952,10 @@ class JarvisApp(App):
         # 与 _adopt_thread 自带刷新无竞态）
         if text.startswith("/goal ") or text == "/goal":
             self.call_from_thread(self._update_sub_title)
+        # goal 修复：/goal create/resume 后自动重入一条续跑轮（经 tui-ux7 门控队列）
+        kick = commands.goal_kick_prompt(self.thread_id, text)
+        if kick:
+            self.call_from_thread(self._goal_kick, kick)
 
     def _gate_command_worker(self, text: str) -> None:
         """tui-ux15: /compact、/dream 门控 worker（模型调用可阻塞，完成后释放回合门）。"""
