@@ -12,6 +12,9 @@
   （.outcome/.tool_calls_count），与 streaming.TurnOutcome 结构兼容但本模块
   不 import streaming。ctx 约定：{"thread_id": str, "plan_mode": bool,
   "pending_interrupt": bool}，缺键视为 False/空。
+- 收口：after_turn（文件尾「回合后收口」区）把 判定→记账→预算终态标记
+  序列统一成单一入口（CLI/TUI/GUI 三前端只做薄适配：入队/打印/重投留在
+  适配器），active 门控记账+出 prompt，预算终态标记无门控。
 - 纪律（双 prompt）：微调参数≠换方案；harness 拦截的命令不许重发；complete
   必须附审计证据；预算耗尽轮 = 收尾交接轮（禁开新工作）。
 """
@@ -455,3 +458,66 @@ def budget_prompt(goal: Goal, next_turns_used: int | None = None) -> str:
             n, goal.max_turns
         )
     )
+
+
+# ---------------------------------------------------------------- 回合后收口
+
+
+@dataclass(frozen=True)
+class AfterTurnResult:
+    """回合后收口结果（CLI/TUI/GUI 三个适配器统一读取，前端不各自拼序列）。
+
+    - kind: 续跑判定结论 "continuation" / "budget" / "none"（continuation_decision 原样透传）
+    - prompt: kind ∈ {continuation, budget} 且 active=True 时为下轮输入（str），
+      其余 None（active=False = 运行环境已收尾：不记账、不出 prompt；预算标记不受其门控）
+    - budget_marked: 本轮输入带 [目标预算耗尽] 前缀且 goal_mark_budget_exhausted
+      成功置终态（无记录 / 终态等 GoalError 吞没后保持 False）
+    """
+
+    kind: str
+    prompt: str | None = None
+    budget_marked: bool = False
+
+
+def after_turn(
+    thread_id: str,
+    turn,
+    user_input,
+    *,
+    plan_mode: bool = False,
+    pending_interrupt: bool = False,
+    active: bool = True,
+) -> AfterTurnResult:
+    """回合结束后的目标收口序列（CLI/TUI/GUI 单一收口点，纯逻辑不 import 任何前端）。
+
+    序列（与各前端收口前手写实现的既有行为等价）：
+    1. goal_status → continuation_decision（ctx 由本函数内部构造：
+       thread_id / plan_mode / pending_interrupt，前端不再手拼 ctx）
+    2. kind ∈ {continuation, budget} 且 active=True → goal_note_turn 记账
+       （GoalError 吞没：存储异常时仍出 prompt，续跑链不断）
+    3. user_input 以 [目标预算耗尽] 开头 → goal_mark_budget_exhausted 后置终态
+       （独立于 kind 门与 active 门；GoalError 吞没——NoGoalError/TerminalGoalError
+       同为 GoalError 子类）
+    入队 / 打印 / 重投等队列语义留在调用方适配器，本函数不碰队列。
+    """
+    goal = goal_status(thread_id=thread_id)
+    decision = continuation_decision(
+        goal,
+        turn,
+        {"thread_id": thread_id, "plan_mode": plan_mode, "pending_interrupt": pending_interrupt},
+    )
+    prompt: str | None = None
+    if decision.kind in ("continuation", "budget") and active:
+        try:
+            goal_note_turn(thread_id=thread_id)
+        except GoalError:
+            pass
+        prompt = decision.prompt
+    budget_marked = False
+    if isinstance(user_input, str) and user_input.startswith("[目标预算耗尽 "):
+        try:
+            goal_mark_budget_exhausted(thread_id=thread_id)
+            budget_marked = True
+        except GoalError:
+            pass
+    return AfterTurnResult(kind=decision.kind, prompt=prompt, budget_marked=budget_marked)

@@ -131,9 +131,10 @@ def _cli_status_line(text: str) -> None:
 
 
 def _cli_goal_step(thread_id: str, user_input, turn, permission_state: dict | None) -> str | None:
-    """#goal 06: CLI 目标自动续跑判定（纯函数）。返回续跑 prompt 或 None。
+    """#goal 06: CLI 目标自动续跑收口（纯函数）。返回续跑 prompt 或 None。
 
-    - continuation/budget → goal_note_turn 记账 + 打印目标行 + 返回下轮 prompt
+    序列统一在 goals.after_turn 收口（CLI 无运行环境收尾门，active 恒 True）：
+    - continuation/budget → 记账 + 打印目标行 + 返回下轮 prompt
     - 消耗预算交接 prompt（[目标预算耗尽 n/m]）的回合跑完 → 标 budget_limited 终态
       （独立于该轮续跑判定——预算轮判定必为 none/turns≥max，放在 kind 门后不可达）
     - 无 goal / 终态 / 零工具 / cancel / Plan 模式等 → None
@@ -141,33 +142,15 @@ def _cli_goal_step(thread_id: str, user_input, turn, permission_state: dict | No
     from src import commands, goals
     from src.plan_mode import effective_mode
 
-    goal = goals.goal_status(thread_id=thread_id)
-    if goal is None:
-        return None
     plan_mode = (
         effective_mode(permission_state, thread_id) == "plan"
         if permission_state is not None
         else False
     )
-    decision = goals.continuation_decision(
-        goal,
-        turn,
-        {"thread_id": thread_id, "plan_mode": plan_mode, "pending_interrupt": False},
-    )
-    if decision.kind in ("continuation", "budget"):
-        try:
-            goals.goal_note_turn(thread_id=thread_id)
-        except goals.GoalError:
-            pass
+    result = goals.after_turn(thread_id, turn, user_input, plan_mode=plan_mode)
+    if result.prompt:
         print(commands.goal_text(thread_id))
-    if isinstance(user_input, str) and user_input.startswith("[目标预算耗尽 "):
-        try:
-            goals.goal_mark_budget_exhausted(thread_id=thread_id)
-        except goals.GoalError:
-            pass
-    if decision.kind not in ("continuation", "budget"):
-        return None
-    return decision.prompt
+    return result.prompt
 
 
 def _stream_turn(agent, thread_id: str, user_input: str, permission_state: dict | None = None, config=None):

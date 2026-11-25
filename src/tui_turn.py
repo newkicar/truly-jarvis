@@ -254,29 +254,20 @@ class TurnPresenter:
                 else:
                     self.write_line(f"[dim]▌ {model} ({elapsed:.1f}s)[/dim]")
             self.app.call_from_thread(self.app._refresh_todos_panel)
-            # #goal 05: 自动续跑接线——turn 正常结束（turn 非 None）时走 goals 纯函数判定：
-            # continuation/budget → goal_note_turn 记账 + 排队 prompt（_release_turn_gate 经 UI 线程
-            # 重投队首，零新机制）；收尾交接轮跑完才后置 budget_limited 终态（docstring 契约：
-            # 过早标记会让收尾轮 complete_goal 抛 TerminalGoalError）。
+            # #goal 05: 自动续跑收口——turn 正常结束（turn 非 None）时走 goals.after_turn
+            # 单一收口序列：continuation/budget → 记账 + 出 prompt（入队留在本适配器：
+            # _release_turn_gate 经 UI 线程重投队首，零新机制）；收尾交接轮跑完才后置
+            # budget_limited 终态（过早标记会让收尾轮 complete_goal 抛 TerminalGoalError）。
             if turn is not None:
-                goal = goals.goal_status(thread_id=turn_thread_id)
-                ctx = {
-                    "thread_id": turn_thread_id,
-                    "plan_mode": self.start_mode == "plan",
-                    "pending_interrupt": self._turn_incomplete_seen,
-                }
-                decision = goals.continuation_decision(goal, turn, ctx)
-                if decision.kind in ("continuation", "budget"):
-                    try:
-                        goals.goal_note_turn(thread_id=turn_thread_id)
-                    except goals.GoalError:
-                        pass
-                    self.app.call_from_thread(self.app._queue.push, turn_thread_id, decision.prompt)
-                if isinstance(self.user_input, str) and self.user_input.startswith("[目标预算耗尽 "):
-                    try:
-                        goals.goal_mark_budget_exhausted(thread_id=turn_thread_id)
-                    except goals.GoalError:
-                        pass
+                result = goals.after_turn(
+                    turn_thread_id,
+                    turn,
+                    self.user_input,
+                    plan_mode=self.start_mode == "plan",
+                    pending_interrupt=self._turn_incomplete_seen,
+                )
+                if result.prompt:
+                    self.app.call_from_thread(self.app._queue.push, turn_thread_id, result.prompt)
             self.app.call_from_thread(self.app._update_sub_title)
             # tui-ux7 #02: finally 恒执行 → 异常路径也释放本 thread 的回合门；
             # 若收尾期已排队，_release_turn_gate 经 UI 线程重投队首（FIFO）。

@@ -551,33 +551,23 @@ class GuiPresenter:
             finally:
                 self._turns.pop(tid, None)
                 b.refresh_sessions.emit()
-                # #goal 06: 自动续跑接线（与 TUI 票 05 同款）——turn 正常结束（turn 非
-                # None）时走 goals 纯函数判定：continuation/budget → goal_note_turn 记账
-                # + prompt 入 TurnGate FIFO（此刻 tid 仍在 _running → try_start 返回
-                # queued；紧随 finish_full 弹头重投，零新机制）；收尾交接轮跑完才后置
-                # budget_limited 终态（过早标记会让收尾轮 complete_goal 抛 TerminalGoalError）。
+                # #goal 06: 自动续跑收口（与 TUI 票 05 同款）——turn 正常结束（turn 非
+                # None）时走 goals.after_turn 单一收口序列：active=runtime 未关闭
+                # （closed 时不记账、不重投；预算终态标记无门，收口前行为不变）。
+                # prompt 出收口后留在本适配器：入 TurnGate FIFO（此刻 tid 仍在 _running
+                # → try_start 返回 queued；紧随 finish_full 弹头重投，零新机制）。
                 if turn is not None:
                     from src import goals as _goals
-                    goal = _goals.goal_status(thread_id=tid)
-                    ctx = {
-                        "thread_id": tid,
-                        "plan_mode": effective_mode(rt.permission_state, tid) == "plan",
-                        "pending_interrupt": False,
-                    }
-                    decision = _goals.continuation_decision(goal, turn, ctx)
-                    if decision.kind in ("continuation", "budget") and not getattr(
-                        rt, "closed", False
-                    ):
-                        try:
-                            _goals.goal_note_turn(thread_id=tid)
-                        except _goals.GoalError:
-                            pass
-                        self.gate.try_start(tid, decision.prompt)
-                    if isinstance(user_text, str) and user_text.startswith("[目标预算耗尽 "):
-                        try:
-                            _goals.goal_mark_budget_exhausted(thread_id=tid)
-                        except _goals.GoalError:
-                            pass
+
+                    result = _goals.after_turn(
+                        tid,
+                        turn,
+                        user_text,
+                        plan_mode=effective_mode(rt.permission_state, tid) == "plan",
+                        active=not getattr(rt, "closed", False),
+                    )
+                    if result.prompt:
+                        self.gate.try_start(tid, result.prompt)
                 # 首轮成功 → 后台 AI 命名（工单 05）
                 self._maybe_name(tid, ok)
                 # 非破坏性压缩基线（#compact 显示）：回合后消息数收缩 = 本轮压缩过，
