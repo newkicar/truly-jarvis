@@ -10,7 +10,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from src.agent import build_agent, build_main_prompt, JARVIS_HARNESS_SUFFIX
+from src.agent import JARVIS_HARNESS_SUFFIX, build_agent, build_main_prompt
 from src.skill_paths import USER_SKILLS_VPATH
 from src.subagents import build_knowledge_keeper
 from tests.conftest import make_fake_config
@@ -114,8 +114,9 @@ def test_build_agent_with_sqlite_checkpointer_assembles(tmp_path, monkeypatch):
 
 def test_build_agent_injects_mcp_tools(tmp_path, monkeypatch):
     """mcp_tools 应作为 tools= 注入 create_deep_agent（仅主代理）。"""
-    import src.agent as agent_mod
     from langchain_core.tools import StructuredTool
+
+    import src.agent as agent_mod
     from src.agent import create_deep_agent
 
     monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
@@ -170,8 +171,9 @@ def test_build_agent_no_mcp_tools_still_has_quick_search(tmp_path, monkeypatch):
 
 def test_build_agent_registers_skill_sources(tmp_path, monkeypatch):
     """ADR-0007：skills 不再经 skills= kwarg，改由主代理挂 JarvisSkillsMiddleware（sources 含用户全局层与项目层），子代理不挂。"""
-    import src.agent as agent_mod
     from dataclasses import replace
+
+    import src.agent as agent_mod
     from src.agent import create_deep_agent
     from src.jarvis_skills import JarvisSkillsMiddleware
 
@@ -308,8 +310,9 @@ def test_make_backend_supports_execute(tmp_path, monkeypatch):
 
 def test_build_agent_includes_todo_list_middleware(tmp_path, monkeypatch):
     """TodoListMiddleware 应注入主代理以启用 write_todos。"""
-    import src.agent as agent_mod
     from langchain.agents.middleware import TodoListMiddleware
+
+    import src.agent as agent_mod
     from src.agent import create_deep_agent
 
     monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
@@ -329,8 +332,9 @@ def test_build_agent_includes_todo_list_middleware(tmp_path, monkeypatch):
 
 def test_build_agent_registers_harness_profile(tmp_path, monkeypatch):
     """应为 model_id 注册 HarnessProfile（deepagents 标准扩展点）。"""
-    import src.agent as agent_mod
     from deepagents import HarnessProfile
+
+    import src.agent as agent_mod
 
     monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
     cfg = make_fake_config(tmp_path)

@@ -10,6 +10,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtGui import QShortcut
+
 from src.gui.events import UiBridge
 from src.gui.main_window import MainWindow
 from src.gui.runtime import GuiPresenter

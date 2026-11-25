@@ -7,18 +7,16 @@ task() fan-out，说明具备动态子代理能力。
 用法：python tests/_manual/fanout_probe.py
 （需真实网络 + go 套餐模型，非单测，手动运行。）
 """
-import json
 import sys
 import time
 
+from deepagents import create_deep_agent
 from langchain_quickjs import CodeInterpreterMiddleware
 
-from src.agent import _make_model, _make_backend
+from src.agent import _make_backend, _make_model
 from src.config import load_config
 from src.subagents import build_researcher
 from src.tools import make_deep_search_tool, make_quick_search_tool, make_search_tool
-
-from deepagents import create_deep_agent
 
 
 def main() -> int:

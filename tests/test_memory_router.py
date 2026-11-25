@@ -22,13 +22,12 @@ from src import memory_router as mr
 from src.memory_router import (
     AccessPolicy,
     MemoryPermissionError,
-    MemoryRouter,
     MemoryRouterError,
     classify_legacy_memory,
     migrate_legacy_memory,
 )
-from src.project_paths import ENV_JARVIS_HOME
 from src.profiles import db as pdb
+from src.project_paths import ENV_JARVIS_HOME
 
 _NUL = chr(0)
 _BSLASH = chr(92)

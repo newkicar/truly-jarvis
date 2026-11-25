@@ -8,12 +8,12 @@ import sys
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-from src import commands, scheduler, streaming, startup
+from src import commands, scheduler, startup, streaming
 from src.agent import build_agent
 from src.config import ensure_utf8_stdout, load_config
 from src.mcps import load_mcp_tools
 from src.permissions import build_permission_interrupts
-from src.project_init import run_init_cli, suggest_init_if_missing
+from src.project_init import run_init_cli
 
 ensure_utf8_stdout()
 
@@ -22,6 +22,7 @@ PROMPT = "JARVIS> "
 
 def _cli_tool_line(name, args, err, output, depth=0):
     from rich.text import Text
+
     from src.tui_format import format_tool_call
 
     line = format_tool_call(name, args, error=err, output=output, indent=depth)
@@ -30,7 +31,7 @@ def _cli_tool_line(name, args, err, output, depth=0):
     print(Text.from_markup(line).plain)
 
 
-def _run_session(agent, thread_id: str, sched=None, permission_state: dict | None = None, config=None):
+def _run_session(agent, thread_id: str, sched=None, permission_state: dict | None = None, config=None):  # noqa: C901
     """交互循环。agent 已装配，thread_id 即会话标识。sched 为定时调度器。"""
     print("JARVIS 就绪。输入 /help 查看命令，/exit 退出。")
     while True:
@@ -208,7 +209,7 @@ def _stream_turn(agent, thread_id: str, user_input: str, permission_state: dict 
     print("\n")
 
 
-def main(argv=None) -> int:
+def main(argv=None) -> int:  # noqa: C901
     raw_args = argv if argv is not None else sys.argv
     args = raw_args[1:]
 
@@ -237,8 +238,12 @@ def main(argv=None) -> int:
     except (KeyError, FileNotFoundError):
         # P2: 首次运行——自动生成项目配置 + skills/ + 全局目录
         # tui-ux27: 首启 .env 自动引导（TUI/CLI 侧兜底；GUI 侧为 gui-ux26 向导）
+        from src.env_bootstrap import (
+            bootstrap_missing_env,
+            guidance_text,
+            missing_env_report,
+        )
         from src.project_init import auto_init_project
-        from src.env_bootstrap import bootstrap_missing_env, guidance_text, missing_env_report
 
         auto_init_project()
         bootstrap_missing_env()
@@ -315,8 +320,8 @@ def main(argv=None) -> int:
 
         try:
             if use_tui:
-                from src.tui import JarvisApp
                 from src import ime_shim
+                from src.tui import JarvisApp
 
                 status = ime_shim.ensure()
                 if sys.platform == "win32" and status != "installed":

@@ -404,7 +404,7 @@ def deep_merge(base: Any, override: Any) -> Any:
     return override
 
 
-def check_security_narrowing(base_raw: dict, override_raw: dict) -> None:
+def check_security_narrowing(base_raw: dict, override_raw: dict) -> None:  # noqa: C901
     """Reject security loosening: high layer may only tighten, never loosen.
 
     - approval: optional -> required is tightening (allowed); required -> optional is loosening (rejected)
@@ -428,8 +428,8 @@ def check_security_narrowing(base_raw: dict, override_raw: dict) -> None:
     for key in ("execute", "external_network", "destructive_operations"):
         path = ("approvals", key)
         base_leaf, override_leaf = _leaf(
-            _as_dict((base_raw or {}).get("permissions"), f"base.permissions"),
-            _as_dict((override_raw or {}).get("permissions"), f"override.permissions"),
+            _as_dict((base_raw or {}).get("permissions"), "base.permissions"),
+            _as_dict((override_raw or {}).get("permissions"), "override.permissions"),
             path,
         )
         # Resolve effective base: if missing, use default

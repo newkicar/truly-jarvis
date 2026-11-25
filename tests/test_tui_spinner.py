@@ -1,11 +1,9 @@
 """#09 执行 spinner：帧轮播渲染 + 显示/隐藏生命周期 + 配置降级。"""
 import pytest
-
 from textual.widgets import Static
 
 from src import tui_format
 from src.tui import JarvisApp
-
 from tests.test_tui import FakeAgent, _type_and_enter
 
 
@@ -36,7 +34,7 @@ def test_spinner_line_blocks_style():
 @pytest.mark.asyncio
 async def test_spinner_hidden_by_default():
     app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
-    async with app.run_test() as pilot:
+    async with app.run_test():
         spinner = app.query_one("#status_spinner", Static)
         assert "-active" not in spinner.classes
 

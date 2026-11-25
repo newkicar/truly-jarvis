@@ -5,10 +5,10 @@ import shutil
 import uuid
 from types import SimpleNamespace
 
-from tests.gui_fakes import TEST_ROOT
 from src.gui.events import UiBridge
 from src.gui.project_registry import ProjectRegistry
 from src.gui.workspace_controller import WorkspaceController
+from tests.gui_fakes import TEST_ROOT
 
 
 def _home() -> "tuple":
@@ -56,7 +56,8 @@ def test_switch_builds_repoints_and_closes_old():
     d, clean = _home()
     try:
         a, b = d / "a", d / "b"
-        a.mkdir(); b.mkdir()
+        a.mkdir()
+        b.mkdir()
         reg, ctrl, made, _ = _ctrl(d, a)
         p1 = ctrl.switch_project(a)
         assert ctrl.presenter is p1 and ctrl.active_root() == a.resolve()
@@ -100,9 +101,11 @@ def test_new_dir_creates_scaffolds_registers():
 def test_sessions_for_inactive_reads_readonly():
     d, clean = _home()
     try:
-        a = d / "a"; a.mkdir()
+        a = d / "a"
+        a.mkdir()
         reg, ctrl, _m, _ = _ctrl(d, a)
-        b = d / "b"; b.mkdir()
+        b = d / "b"
+        b.mkdir()
         reg.add(b, now=2.0)
         got = ctrl.sessions_for(b)  # b 非活动 → 只读（无 checkpoint 库 → 空）
         assert got == []
@@ -113,7 +116,8 @@ def test_sessions_for_inactive_reads_readonly():
 def test_project_node_ops_delegate_to_registry():
     d, clean = _home()
     try:
-        a = d / "a"; a.mkdir()
+        a = d / "a"
+        a.mkdir()
         reg, ctrl, _m, _ = _ctrl(d, a)
         assert ctrl.project_name(a) == "a"
         ctrl.rename_project(a, "甲")
@@ -134,7 +138,8 @@ def test_remove_project_releases_runtime_and_reuses_open_one():
     d, clean = _home()
     try:
         a, b = d / "a", d / "b"
-        a.mkdir(); b.mkdir()
+        a.mkdir()
+        b.mkdir()
         (a / "jarvis.json").write_text("{}", encoding="utf-8")
         (b / "jarvis.json").write_text("{}", encoding="utf-8")
         reg, ctrl, made, _ = _ctrl(d, a)
@@ -178,7 +183,8 @@ def test_remove_active_project_without_next_returns_none():
     """移除活动项目且无其他项目 → None（UI 落空态）；runtime 资源全量释放。"""
     d, clean = _home()
     try:
-        a = d / "a"; a.mkdir()
+        a = d / "a"
+        a.mkdir()
         (a / "jarvis.json").write_text("{}", encoding="utf-8")
         reg, ctrl, _m, _ = _ctrl(d, a)
         pa = ctrl.switch_project(a)
@@ -205,7 +211,8 @@ def test_remove_inactive_project_keeps_active_and_returns_it():
     d, clean = _home()
     try:
         a, b = d / "a", d / "b"
-        a.mkdir(); b.mkdir()
+        a.mkdir()
+        b.mkdir()
         (b / "jarvis.json").write_text("{}", encoding="utf-8")
         reg, ctrl, _m, _ = _ctrl(d, a)      # a 只登记（无 runtime、无 jarvis.json = 陈旧项）
         reg.add(b, now=2.0)
@@ -228,7 +235,8 @@ def test_static_workspace_remove_project_noop_returns_root():
 
     d, clean = _home()
     try:
-        r = d / "solo"; r.mkdir()
+        r = d / "solo"
+        r.mkdir()
         pres = SimpleNamespace(
             runtime=SimpleNamespace(config=SimpleNamespace(project_root=str(r))),
             gate=SimpleNamespace(running_threads=lambda: []),
@@ -273,7 +281,8 @@ def test_yolo_survives_project_switch_rebuild():
     d, clean = _home()
     try:
         a, b = d / "a", d / "b"
-        a.mkdir(); b.mkdir()
+        a.mkdir()
+        b.mkdir()
         reg, ctrl, made, _ = _ctrl_yolo(d, a)
         ctrl.switch_project(a)
         _yolo_threads(ctrl, a).add("t1")
@@ -290,7 +299,8 @@ def test_yolo_off_is_synced_on_project_switch():
     d, clean = _home()
     try:
         a, b = d / "a", d / "b"
-        a.mkdir(); b.mkdir()
+        a.mkdir()
+        b.mkdir()
         reg, ctrl, _made, _ = _ctrl_yolo(d, a)
         ctrl.switch_project(a)
         _yolo_threads(ctrl, a).add("t1")
@@ -309,7 +319,8 @@ def test_remove_project_clears_yolo_ledger():
     d, clean = _home()
     try:
         a, b = d / "a", d / "b"
-        a.mkdir(); b.mkdir()
+        a.mkdir()
+        b.mkdir()
         reg, ctrl, _made, _ = _ctrl_yolo(d, a)
         ctrl.switch_project(a)
         _yolo_threads(ctrl, a).add("t1")
@@ -339,7 +350,8 @@ def test_switch_project_removed_dir_prunes_and_stays():
     d, clean = _home()
     try:
         a, b = d / "a", d / "b"
-        a.mkdir(); b.mkdir()
+        a.mkdir()
+        b.mkdir()
         (a / "jarvis.json").write_text("{}", encoding="utf-8")
         (b / "jarvis.json").write_text("{}", encoding="utf-8")
         reg, ctrl, _made, _ = _ctrl(d, a)
@@ -362,7 +374,8 @@ def test_switch_project_missing_json_in_existing_dir_rebuilds_skeleton():
     d, clean = _home()
     try:
         a, b = d / "a", d / "b"
-        a.mkdir(); b.mkdir()
+        a.mkdir()
+        b.mkdir()
         (a / "jarvis.json").write_text("{}", encoding="utf-8")
         (b / "jarvis.json").write_text("{}", encoding="utf-8")
         reg, ctrl, _made, _ = _ctrl(d, a)

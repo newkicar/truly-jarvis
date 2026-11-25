@@ -36,17 +36,16 @@ from __future__ import annotations
 import datetime
 import hashlib
 import json
-import os
 import shutil
 import sqlite3
 import threading
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from src.project_paths import user_home
 from src.profiles.db import connect, meta_db_path
+from src.project_paths import user_home
 
 # ---------------------------------------------------------------------------
 # Errors
@@ -219,7 +218,7 @@ class MemoryRouter:
 
     # -- recall ---------------------------------------------------------------
 
-    def recall(
+    def recall(  # noqa: C901
         self,
         query: str = "",
         scopes: Optional[tuple[str, ...]] = None,

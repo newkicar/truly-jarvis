@@ -9,11 +9,10 @@
 """
 from __future__ import annotations
 
-import sys
-
 # 原生崩溃（如 CPython 退出期 PySide6 析构 SIGSEGV）留栈：faulthandler 把 C 层崩溃
 # 打到 stderr（CI 同款容错：rc=139 且摘要全绿仍放行，但栈可查）。
 import faulthandler
+import sys
 
 faulthandler.enable()
 
@@ -59,7 +58,7 @@ def _run_wizard(app) -> "object | None":
     return None
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:  # noqa: C901
     from src.config import ensure_utf8_stdout, load_config
     from src.project_init import auto_init_project
     from src.project_paths import ensure_user_home

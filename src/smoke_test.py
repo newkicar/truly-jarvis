@@ -32,9 +32,9 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 
 from src import scheduler, startup
 from src.agent import build_agent
+from src.commands import thread_config
 from src.config import ensure_utf8_stdout, load_config
 from src.mcps import load_mcp_tools
-from src.commands import thread_config
 from src.permissions import build_permission_interrupts
 
 ensure_utf8_stdout()

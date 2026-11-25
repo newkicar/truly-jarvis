@@ -5,7 +5,7 @@ Seam: RagIndex / make_semantic_search_tool。用 fake embedding 替换 Ollama �
 """
 import pytest
 
-from src.rag import RagIndex, _content_hash, _chunk_note, make_semantic_search_tool
+from src.rag import RagIndex, _chunk_note, _content_hash, make_semantic_search_tool
 
 
 def _mk_vault(tmp_path):

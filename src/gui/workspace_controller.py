@@ -12,8 +12,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from src.gui.presenter_wiring import wire_presenter
+from src.gui.project_registry import ProjectRegistry
+from src.gui.runtime_registry import normalize_root_key
 from src.gui.workspace import (
     WorkspaceManager,
+    YoloLedger,
     init_project,
     jarvis_project_root_of,
     list_sessions_readonly,
@@ -21,12 +25,7 @@ from src.gui.workspace import (
     open_project,
     pick_start_session,
     resolve_open_root,
-    YoloLedger,
 )
-from src.gui.project_registry import ProjectRegistry
-from src.gui.runtime_registry import normalize_root_key
-
-from src.gui.presenter_wiring import wire_presenter
 
 
 class StaticWorkspace:

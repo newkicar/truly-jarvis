@@ -6,7 +6,6 @@
 """
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
 
 from PySide6.QtCore import QPoint, Qt, QTimer
@@ -15,8 +14,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QMainWindow,
     QPushButton,
     QSplitter,
@@ -27,23 +24,20 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src import commands
-from src import clipboard_image
+from src import clipboard_image, commands
 from src.gui.completion import CompletionPopup, accept_suggestion, resolve_for_input
 from src.gui.events import UiBridge
 from src.gui.image_strip import build_image_submit, save_clipboard_image_to_temp
 from src.gui.image_widgets import ImageStrip
 from src.gui.input_bar import InputBar
-from src.gui.pane import RENDER_BATCH_MS, ChatPane
-
-
-from src.gui.queue_strip import QueueStrip
-from src.gui.runtime import GuiPresenter
-from src.gui.status_view import StatusView
-from src.gui.workspace_controller import StaticWorkspace
 from src.gui.notify_channels import make_hooks
 from src.gui.notify_policy import TaskNotifier
+from src.gui.pane import RENDER_BATCH_MS, ChatPane
+from src.gui.queue_strip import QueueStrip
+from src.gui.runtime import GuiPresenter
 from src.gui.runtime_registry import normalize_root_key
+from src.gui.status_view import StatusView
+from src.gui.workspace_controller import StaticWorkspace
 
 _PROJ_ROLE = Qt.ItemDataRole.UserRole + 100
 _TID_ROLE = Qt.ItemDataRole.UserRole + 101
@@ -604,7 +598,7 @@ class MainWindow(QMainWindow):
         dlg = doctor.make_doctor_dialog(rows, self)
         dlg.exec()
 
-    def _execute_slash(self, raw: str, tid: str | None = None) -> None:
+    def _execute_slash(self, raw: str, tid: str | None = None) -> None:  # noqa: C901
         tid = tid or self.active_tid
         if not tid:
             return
@@ -1568,7 +1562,7 @@ class MainWindow(QMainWindow):
         self._refresh_queue_strip()
 
     # ---- slash 命令路由（工单 07）：输入框 /xxx 走本地命令，不再发给 AI
-    def _route_slash(self, payload: str, slot: str = "main") -> bool:
+    def _route_slash(self, payload: str, slot: str = "main") -> bool:  # noqa: C901
         stripped = payload.lstrip()
         if not stripped.startswith('/'):
             return False

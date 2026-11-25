@@ -92,7 +92,7 @@ def _title_variants(target: str) -> list[str]:
     return variants
 
 
-def resolve_link(vault_root: Path, target: str) -> Path | None:
+def resolve_link(vault_root: Path, target: str) -> Path | None:  # noqa: C901
     """把 wikilink 目标解析为 vault 内真实笔记路径。
 
     匹配优先级：文件名（stem，大小写不敏感）→ 目录内路径 → frontmatter aliases。

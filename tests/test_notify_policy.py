@@ -6,7 +6,6 @@ _powershell），不触网、不弹窗、不跑真 PowerShell；不用 tmp_path�
 from src.gui import notify_channels as nc
 from src.gui import notify_policy as npol
 
-
 # ---------- NotificationPolicy.from_config ----------
 
 

@@ -17,7 +17,7 @@ import hashlib
 import importlib.metadata
 from dataclasses import dataclass
 
-from src.profiles.schema import AgentProfile, profile_hash, namespace_segment
+from src.profiles.schema import AgentProfile, namespace_segment, profile_hash
 
 #: Appended to the system prompt whenever a profile is active. The note
 #: states the precedence contract: profile text wins over the base prompt

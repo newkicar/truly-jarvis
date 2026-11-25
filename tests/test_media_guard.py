@@ -57,7 +57,7 @@ def test_scrub_human_message_media_blocks_also_scrubbed():
         {"type": "text", "text": "看图"},
     ])
     out = scrub_unsupported_media_blocks([m])
-    assert out is not [m]
+    assert out != [m]
     assert out[0].content[0]["type"] == "text"
 
 

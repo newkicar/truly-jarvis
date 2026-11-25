@@ -329,8 +329,8 @@ def sync_install_env(cfg: LlmConfig, env_path: Path | str | None = None) -> Path
     tui-ux27：行级 upsert 内核上移 src.config.upsert_env_file（TUI 首启引导共用）；
     本函数退化为薄封装（键集/头注释/失败语义不变）。
     """
-    from src.project_paths import install_root
     from src.config import upsert_env_file
+    from src.project_paths import install_root
 
     target = Path(env_path) if env_path is not None else install_root() / ".env"
     values = {"BASE_URL": cfg.base_url, "API_KEY": cfg.api_key, "MODEL_ID": cfg.model_id}

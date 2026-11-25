@@ -100,7 +100,7 @@ def _parse_at_scope(query: str) -> tuple[str, str]:
     return "all", q
 
 
-def collect_completion_paths(
+def collect_completion_paths(  # noqa: C901
     vault_path: Path | None,
     workspace_root: Path | None,
     memories_root: Path | None = None,

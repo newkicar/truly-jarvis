@@ -6,18 +6,16 @@
 3. Command(resume) 续跑成功
 """
 import warnings
-
-import pytest
 from dataclasses import replace
 
 warnings.filterwarnings("ignore")
 
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage
-from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.language_models.chat_models import BaseChatModel  # noqa: E402
+from langchain_core.messages import AIMessage  # noqa: E402
+from langchain_core.outputs import ChatGeneration, ChatResult  # noqa: E402
 
-from tests.conftest import make_fake_config
-from src.agent import build_agent
+from src.agent import build_agent  # noqa: E402
+from tests.conftest import make_fake_config  # noqa: E402
 
 
 class ToolCallingFake(BaseChatModel):
@@ -57,7 +55,6 @@ class ToolCallingFake(BaseChatModel):
         return "tool-calling-fake"
 
 
-from tests.conftest import make_fake_config
 
 
 def _fake_config(tmp_path):

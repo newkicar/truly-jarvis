@@ -18,6 +18,7 @@ if sys.platform != "win32":
 import ctypes
 
 import textual.drivers.win32 as win32
+
 from src import input_probe
 
 

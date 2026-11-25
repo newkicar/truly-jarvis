@@ -13,7 +13,6 @@ from src.gui.llm_config import (
     save_llm_config,
 )
 
-
 # ---------------------------------------------------------------- 五档探测表
 
 
@@ -69,8 +68,6 @@ def test_probe_404_supported_gateway_manual_model():
 def tmp_home_dir():
     """自建目录纪律（本机 pytest tmp 中毒，禁用 tmp_path）：.scratch/gui-test-tmp/。"""
     import uuid
-
-    from pathlib import Path
 
     from tests.gui_fakes import TEST_ROOT
 
@@ -165,7 +162,6 @@ def test_make_key_store_wizard_and_startup_paths_consistent(tmp_home_dir, monkey
     secrets 目录——否则向导保存后 ensure_configured 判 dangling，向导反复弹出
     （2026-10-28 实机报障）。屏蔽 keyring 强制 DPAPI 分支。"""
     import importlib
-    from pathlib import Path
 
     from src.gui import llm_config
 
@@ -193,13 +189,13 @@ def test_llm_config_to_chat_model_method():
 
 # ---------------------------------------------------------------- 安装目录 .env 同步（gui-ux26）
 
-import shutil
-import uuid
-from pathlib import Path
+import shutil  # noqa: E402
+import uuid  # noqa: E402
+from pathlib import Path  # noqa: E402
 
-from src.config import parse_env_text
-from src.gui.llm_config import _env_line_key, sync_install_env
-from tests.gui_fakes import TEST_ROOT
+from src.config import parse_env_text  # noqa: E402
+from src.gui.llm_config import _env_line_key, sync_install_env  # noqa: E402
+from tests.gui_fakes import TEST_ROOT  # noqa: E402
 
 
 def _envsync_dir() -> Path:

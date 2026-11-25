@@ -6,7 +6,7 @@ set_items 每次整体重建；纯数据 list[str]，主线程驱动，无 agent
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QSize, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 

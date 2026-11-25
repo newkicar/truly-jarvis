@@ -8,14 +8,6 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_openai import ChatOpenAI
-from pydantic import SecretStr
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.store.memory import InMemoryStore
-from langgraph.store.base import BaseStore
-
 from deepagents import HarnessProfile, create_deep_agent, register_harness_profile
 from deepagents.backends import (
     CompositeBackend,
@@ -23,12 +15,21 @@ from deepagents.backends import (
     LocalShellBackend,
 )
 from langchain.agents.middleware import TodoListMiddleware
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.store.base import BaseStore
+from langgraph.store.memory import InMemoryStore
+from pydantic import SecretStr
+
 try:
     from langchain_quickjs import CodeInterpreterMiddleware
 except ImportError:  # 便携版剥离 JS 代码解释器（Nuitka 主动排除时 stub 抛 ImportError，非 ModuleNotFoundError）
     CodeInterpreterMiddleware = None
 
 from src.config import Config, load_config
+from src.config_agents import build_config_subagents
 from src.deprecated_paths import DeprecatedPathMiddleware
 from src.inbox_snapshot_middleware import InboxSnapshotMiddleware
 from src.media_guard import MediaGuardMiddleware
@@ -41,13 +42,12 @@ from src.permissions import (
     build_permission_interrupts_from_state,
     merge_permissions_deny_wins,
 )
-from src.config_agents import build_config_subagents
 from src.rag import make_semantic_search_tool
 from src.skill_discovery import manual_only_skill_names
 from src.skill_paths import skill_backend_routes, skill_virtual_sources
 from src.subagents import build_knowledge_keeper, build_researcher
-from src.vault_guard import VaultWriteGuardMiddleware
 from src.tools import make_deep_search_tool, make_quick_search_tool, make_search_tool
+from src.vault_guard import VaultWriteGuardMiddleware
 from src.wiki import make_wiki_tools
 
 _WEEKDAYS = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
@@ -304,7 +304,7 @@ def harness_capabilities(config: Config) -> dict[str, bool]:
     }
 
 
-def build_agent(
+def build_agent(  # noqa: C901
     config: Config,
     model: BaseChatModel | None = None,
     checkpointer: BaseCheckpointSaver | None = None,

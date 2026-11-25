@@ -74,7 +74,6 @@ def test_overrides_take_precedence_over_env_file():
 def test_no_env_file_at_all_still_loads_with_full_overrides():
     """全新项目（auto_init 只生成 jarvis.json，不生成 .env）+ 全量 overrides。"""
     import uuid
-    from pathlib import Path
 
     home = TEST_ROOT / f"noenv-{uuid.uuid4().hex[:10]}"
     home.mkdir(parents=True)

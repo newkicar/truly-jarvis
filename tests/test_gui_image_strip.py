@@ -6,7 +6,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from src.gui.image_strip import build_image_submit
 
-
 # 1x1 红点 PNG（预编码，避免测试生成图片的依赖）
 _TINY_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ"
@@ -90,12 +89,11 @@ def test_image_strip_add_remove_clear(qtbot):
 def test_window_paste_clipboard_image(qapp):
     """Ctrl+V 剪贴板图 → 附件条（MainWindow._try_image_paste）。"""
     from PySide6.QtGui import QImage
-    from PySide6.QtWidgets import QApplication
 
     from src.gui.events import UiBridge
     from src.gui.main_window import MainWindow
     from src.gui.runtime import GuiPresenter
-    from tests.gui_fakes import new_home, cleanup_home
+    from tests.gui_fakes import cleanup_home, new_home
     from tests.test_gui_presenter import _fake_runtime
 
     home = new_home()
@@ -120,7 +118,7 @@ def test_window_paste_image_path_text(qapp):
     from src.gui.events import UiBridge
     from src.gui.main_window import MainWindow
     from src.gui.runtime import GuiPresenter
-    from tests.gui_fakes import new_home, cleanup_home
+    from tests.gui_fakes import cleanup_home, new_home
     from tests.test_gui_presenter import _fake_runtime
 
     home = new_home()
@@ -142,7 +140,7 @@ def test_submit_with_image_builds_multimodal_payload(qapp, monkeypatch):
     from src.gui.events import UiBridge
     from src.gui.main_window import MainWindow
     from src.gui.runtime import GuiPresenter
-    from tests.gui_fakes import new_home, cleanup_home
+    from tests.gui_fakes import cleanup_home, new_home
     from tests.test_gui_presenter import _fake_runtime
 
     home = new_home()

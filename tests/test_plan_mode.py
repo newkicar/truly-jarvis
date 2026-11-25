@@ -1,7 +1,6 @@
 """#08 Plan/Act 模式：middleware 拦截 + system 注入 + TUI 切换。"""
 import pytest
-
-from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.messages import SystemMessage
 
 from src.plan_mode import (
     PLAN_TOOLS,
@@ -111,12 +110,11 @@ def test_act_mode_no_injection():
 
 # ---- TUI 切换 ----
 
-from tests.test_tui import FakeAgent
+from tests.test_tui import FakeAgent  # noqa: E402
 
 
 @pytest.mark.asyncio
 async def test_tab_toggles_mode_and_ui():
-    from textual.widgets import Static
 
     from src.tui import JarvisApp
 

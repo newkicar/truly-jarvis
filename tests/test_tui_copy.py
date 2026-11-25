@@ -2,17 +2,16 @@
 import sys
 from typing import Any
 
-import pytest
+from textual.app import App
+from textual.widgets import OptionList
 
 from src import commands
+from src.tui import CopyPickerModal, JarvisApp
 from src.tui_log import (
     copy_text_to_system_clipboard,
     copy_via_powershell,
     copy_via_win32,
 )
-from src.tui import CopyPickerModal, JarvisApp
-from textual.app import App
-from textual.widgets import OptionList
 
 F = '```'
 FENCE = F

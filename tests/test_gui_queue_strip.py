@@ -15,6 +15,7 @@ def test_empty_hides(qtbot):
 
 def test_set_items_rebuilds_chips(qtbot):
     from PySide6.QtWidgets import QLabel, QPushButton
+
     from src.gui.queue_strip import QueueStrip
 
     strip = QueueStrip()
@@ -23,7 +24,7 @@ def test_set_items_rebuilds_chips(qtbot):
     assert strip.isVisible() and strip.items() == ["a", "b", "c"]
     labels = strip.findChildren(QLabel)
     btns = strip.findChildren(QPushButton)
-    assert [l.text() for l in labels] == ["#1 a", "#2 b", "#3 c"]
+    assert [ln.text() for ln in labels] == ["#1 a", "#2 b", "#3 c"]
     # 每行 2 按钮（插队 + 撤出），行内序：插队在前
     assert [b.text() for b in btns] == ["插队", "撤出"] * 3
     # 重建：整体替换不留残行
@@ -35,6 +36,7 @@ def test_set_items_rebuilds_chips(qtbot):
 
 def test_flattened_label_but_pull_out_emits_original(qtbot):
     from PySide6.QtWidgets import QLabel, QPushButton
+
     from src.gui.queue_strip import QueueStrip
 
     strip = QueueStrip()

@@ -6,9 +6,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from src.vault_guard import VAULT_WRITE_TOOLS, is_writable_vault_path, normalize_vault_path
-
 from src.project_paths import resolve_checkpoint_db
+from src.vault_guard import (
+    VAULT_WRITE_TOOLS,
+    is_writable_vault_path,
+    normalize_vault_path,
+)
 
 DB_NAME = "inbox_snapshots.sqlite"
 

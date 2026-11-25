@@ -1,11 +1,7 @@
 """permission hooks 单元测试。"""
 from __future__ import annotations
 
-import json
 import sys
-from pathlib import Path
-
-import pytest
 
 from src.permission_hooks import (
     hook_matches,
@@ -14,7 +10,6 @@ from src.permission_hooks import (
     run_permission_hook,
 )
 from src.permissions import (
-    GATED_TOOLS,
     build_permission_deny_middleware,
     build_permission_interrupts,
 )

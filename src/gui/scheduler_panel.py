@@ -113,7 +113,7 @@ class SchedulerPanel(QDialog):
                 cron_txt = row["cron"]
         label = QLabel(f"{row['name']}（{row['file']}）  {cron_txt}" + ("  [坏文件]" if row.get("bad") else ""))
         h.addWidget(label, stretch=1)
-        self._row_widgets and None  # noqa（占位防未用告警）
+        self._row_widgets and None  # noqa: B018  # 占位防未用告警
         return w
 
     def _toggle(self, row: dict, on: bool) -> None:

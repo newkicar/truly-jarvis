@@ -4,13 +4,12 @@ import asyncio
 import threading
 import time
 import types
-
 from contextlib import contextmanager
 
 import pytest
-
 from textual.widgets import Button, Label, Static
 
+from src import commands
 from src.tui import (
     EditParamsModal,
     JarvisApp,
@@ -22,7 +21,6 @@ from src.tui import (
     SessionSidebar,
 )
 from src.tui_log import CopyableRichLog
-from src import commands
 
 
 class _FakeMsg:
@@ -133,7 +131,7 @@ async def test_slash_command_runs_in_background_worker():
         await asyncio.sleep(0.55)
         await pilot.pause()
         log = pilot.app.query_one(CopyableRichLog)
-        joined = "".join(l.text for l in log.lines)
+        joined = "".join(ln.text for ln in log.lines)
         assert "暂无历史" in joined
         assert "正在执行 /history" in joined
 
@@ -147,7 +145,7 @@ async def test_history_command_shows_result():
         await asyncio.sleep(0.15)
         await pilot.pause()
         log = pilot.app.query_one(CopyableRichLog)
-        joined = "".join(l.text for l in log.lines)
+        joined = "".join(ln.text for ln in log.lines)
         assert "暂无历史" in joined
 
 
@@ -160,7 +158,7 @@ async def test_unknown_command_routes_to_dispatch():
         await asyncio.sleep(0.15)
         await pilot.pause()
         log = pilot.app.query_one(CopyableRichLog)
-        joined = "".join(l.text for l in log.lines)
+        joined = "".join(ln.text for ln in log.lines)
         assert "未知命令" in joined
 
 
@@ -177,7 +175,7 @@ async def test_streaming_renders_markdown_not_typing_placeholder():
         await asyncio.sleep(0.35)
         await pilot.pause()
         log = pilot.app.query_one(CopyableRichLog)
-        joined = "".join(l.text for l in log.lines)
+        joined = "".join(ln.text for ln in log.lines)
         assert "正在思考" not in joined
         assert "JARVIS" in joined
         assert "正文" in joined
@@ -194,7 +192,7 @@ async def test_plain_text_streams_reply():
         await asyncio.sleep(0.3)
         await pilot.pause()
         log = pilot.app.query_one(CopyableRichLog)
-        joined = "".join(l.text for l in log.lines)
+        joined = "".join(ln.text for ln in log.lines)
         assert "你好" in joined
         assert "JARVIS" in joined
 
@@ -238,13 +236,13 @@ async def test_escape_cancels_streaming():
         await asyncio.sleep(0.1)
         await _wait_streaming_active(pilot, app)
         app.action_cancel()  # tui-ux15：Esc#1 prime 取消（仅提醒，不取消）
-        assert "已取消" not in "".join(l.text for l in pilot.app.query_one(CopyableRichLog).lines)
+        assert "已取消" not in "".join(ln.text for ln in pilot.app.query_one(CopyableRichLog).lines)
         app.action_cancel()  # Esc#2 实际取消（drain 收尾）
         await pilot.pause()
         await asyncio.sleep(0.4)
         await pilot.pause()
         log = pilot.app.query_one(CopyableRichLog)
-        joined = "".join(l.text for l in log.lines)
+        joined = "".join(ln.text for ln in log.lines)
         assert "已取消" in joined
 
 
@@ -294,7 +292,7 @@ async def test_escape_cancel_banner_replaces_spinner():
         spinner = pilot.app.query_one("#status_spinner", Static)
         assert not str(spinner.render())
         log = pilot.app.query_one(CopyableRichLog)
-        joined = "".join(l.text for l in log.lines)
+        joined = "".join(ln.text for ln in log.lines)
         assert joined.count("已取消") == 1
 
 
@@ -360,7 +358,7 @@ async def test_idle_double_esc_does_not_kill_active(monkeypatch):
     monkeypatch.setattr(_sb, "kill_active", _fake_kill)
 
     app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
-    async with app.run_test() as pilot:
+    async with app.run_test():
         app.action_cancel()  # 空闲 Esc#1：仅 prime
         app.action_cancel()  # 空闲 Esc#2：撤回（无目标即 no-op），均不调 kill_active
         assert len(calls) == 0
@@ -398,7 +396,7 @@ async def test_interrupt_pops_permission_modal_and_approves():
         await asyncio.sleep(0.2)
         await pilot.pause()
         log = pilot.app.query_one(CopyableRichLog)
-        assert "model" in "".join(l.text for l in log.lines)
+        assert "model" in "".join(ln.text for ln in log.lines)
 
 
 @pytest.mark.asyncio
@@ -420,7 +418,7 @@ async def test_interrupt_reject_shows_message():
         await asyncio.sleep(0.2)
         await pilot.pause()
         log = pilot.app.query_one(CopyableRichLog)
-        assert "已放弃" not in "".join(l.text for l in log.lines)
+        assert "已放弃" not in "".join(ln.text for ln in log.lines)
 
 
 @pytest.mark.asyncio
@@ -492,7 +490,7 @@ async def test_session_sidebar_lists_and_switches_thread():
         assert app.thread_id == "session-old"
         assert "session-old" in app.sub_title
         log = pilot.app.query_one(CopyableRichLog)
-        assert "已切换到会话 session-old" in "".join(l.text for l in log.lines)
+        assert "已切换到会话 session-old" in "".join(ln.text for ln in log.lines)
 
 
 @pytest.mark.asyncio
@@ -522,7 +520,7 @@ async def test_startup_prompt_auto_submits_message():
         await asyncio.sleep(0.35)
         await pilot.pause()
         log = pilot.app.query_one(CopyableRichLog)
-        joined = "".join(l.text for l in log.lines)
+        joined = "".join(ln.text for ln in log.lines)
         assert "自动冒烟问题" in joined
 
 
@@ -645,14 +643,14 @@ async def test_new_session_clears_old_display(monkeypatch):
         log = app.query_one("#messages")
         # 先写一些旧内容
         log.write("[b]旧会话的测试内容[/b]")
-        joined = "".join(l.text for l in log.lines)
+        joined = "".join(ln.text for ln in log.lines)
         assert "旧会话" in joined
         # monkeypatch finalize + uuid
         monkeypatch.setattr(commands, "finalize_turn", lambda agent, tid: None)
         with patch("uuid.uuid4", return_value=type("U", (), {"hex": "abc"})()):
             app.action_new_session()
         await pilot.pause()
-        joined2 = "".join(l.text for l in log.lines)
+        joined2 = "".join(ln.text for ln in log.lines)
         assert "旧会话" not in joined2, "旧内容应被清空"
         assert "新会话" in joined2 or "abc" in joined2
 
@@ -660,7 +658,6 @@ async def test_new_session_clears_old_display(monkeypatch):
 @pytest.mark.asyncio
 async def test_switch_session_loads_last_ai_reply(monkeypatch):
     """#13: 切换会话时显示栏加载该会话最后一条 AI 回复。"""
-    from unittest.mock import patch
 
     class _FakeState:
         values = {"messages": [
@@ -684,7 +681,7 @@ async def test_switch_session_loads_last_ai_reply(monkeypatch):
         monkeypatch.setattr(commands, "finalize_turn", lambda agent, tid: None)
         app._switch_session("target-thread")
         await pilot.pause()
-        joined = "".join(l.text for l in log.lines)
+        joined = "".join(ln.text for ln in log.lines)
         assert "对方之前的回复" in joined, f"应加载历史 AI 回复，实际: {joined[:100]}"
         assert "已切换" in joined
         assert app.thread_id == "target-thread"
@@ -748,7 +745,7 @@ async def _wait_for_text(pilot, text: str, steps: int = 100) -> str:
     log = pilot.app.query_one(CopyableRichLog)
     joined = ""
     for _ in range(steps):
-        joined = "".join(l.text for l in log.lines)
+        joined = "".join(ln.text for ln in log.lines)
         if text in joined:
             return joined
         await pilot.pause()
@@ -990,7 +987,7 @@ async def test_slash_use_manual_skill_streams_expanded_message(tmp_path, monkeyp
     app = JarvisApp(_UseTuiConfig(tmp_path), agent, {"default": "ask", "tools": {}})
     async with app.run_test() as pilot:
         await _type_and_enter(pilot, "/use manual-skill 请执行")
-        joined = await _wait_for_text(pilot, "技能已执行")
+        await _wait_for_text(pilot, "技能已执行")
         assert agent.inputs, "stream_events 应被调用（/use 走流式路径）"
         msg = agent.inputs[0]
         if isinstance(msg, dict):
@@ -1186,7 +1183,7 @@ async def test_permission_modal_enter_approves_directly():
         await asyncio.sleep(0.2)
         await pilot.pause()
         log = pilot.app.query_one(CopyableRichLog)
-        joined = "".join(l.text for l in log.lines)
+        joined = "".join(ln.text for ln in log.lines)
         assert "approved-echo" in joined, "审批后本轮未继续（decisions 未送达）"
 
 
@@ -1356,7 +1353,7 @@ async def test_yolo_command_full_tui_flow():
         await asyncio.sleep(0.55)
         await pilot.pause()
         log = pilot.app.query_one(CopyableRichLog)
-        joined = "".join(l.text for l in log.lines)
+        joined = "".join(ln.text for ln in log.lines)
         assert "YOLO 已开启" in joined
         assert "[YOLO]" in app.sub_title
         badge = pilot.app.query_one("#yolo_badge", Static)
@@ -1368,7 +1365,7 @@ async def test_yolo_command_full_tui_flow():
         await asyncio.sleep(0.55)
         await pilot.pause()
         log = pilot.app.query_one(CopyableRichLog)
-        joined = "".join(l.text for l in log.lines)
+        joined = "".join(ln.text for ln in log.lines)
         assert "YOLO 已关闭" in joined
         assert "[YOLO]" not in app.sub_title
         assert badge.content == ""
@@ -1389,7 +1386,7 @@ def test_yolo_notify_text():
 @pytest.mark.asyncio
 async def test_yolo_badge_reflects_state():
     """tui-ux14: YOLO 徽章——yolo_on 时显示红字 YOLO Mode（内容区不塌 0）；yolo_off 后隐藏。"""
-    from src.permissions import yolo_on, yolo_off
+    from src.permissions import yolo_off, yolo_on
 
     app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
     async with app.run_test() as pilot:
@@ -1436,7 +1433,7 @@ async def test_yolo_badge_compositor_strips():
     """tui-ux14: YOLO 徽章文字必须到达合成 strips 层（终端输出的最后一道门）。
     空红框症状 = widget 已更新但合成层无文本；此测试锁死 widget -> compositor 链路：
     yolo_on 激活时 strip 文本含 'YOLO Mode'，yolo_off 后不含。"""
-    from src.permissions import yolo_on, yolo_off
+    from src.permissions import yolo_off, yolo_on
 
     app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}})
     async with app.run_test(size=(100, 24)) as pilot:
@@ -1549,7 +1546,7 @@ async def test_single_esc_does_not_cancel_active_worker():
         await pilot.pause()
         w = app._turn_workers.get(app.thread_id)
         assert w is not None and not w.is_finished, "单 Esc 不得取消 worker"
-        joined = "".join(l.text for l in pilot.app.query_one(CopyableRichLog).lines)
+        joined = "".join(ln.text for ln in pilot.app.query_one(CopyableRichLog).lines)
         assert "已取消" not in joined
 
 
@@ -1672,7 +1669,7 @@ async def test_compact_gated_in_tui():
             await asyncio.sleep(0.05)
         assert app.thread_id not in app._turn_gate_threads, "门应在 /compact 完成后释放"
         assert agent.updated is not None, "compact 成功应写回状态"
-        joined = "".join(l.text for l in pilot.app.query_one(CopyableRichLog).lines)
+        joined = "".join(ln.text for ln in pilot.app.query_one(CopyableRichLog).lines)
         assert "已压缩上下文" in joined
 
 
@@ -1704,7 +1701,7 @@ async def test_doctor_command_opens_scrollable_report_modal(monkeypatch):
         content = app.screen.query_one("#report_content", Static)
         assert "line-042" in str(content.render())
         log = pilot.app.query_one(CopyableRichLog)
-        joined = "".join(l.text for l in log.lines)
+        joined = "".join(ln.text for ln in log.lines)
         assert "line-042" not in joined, "报告正文不应写入 #messages"
         assert "正在执行 /doctor" in joined
         # Esc 关模态，焦点回输入框
@@ -1731,7 +1728,7 @@ async def test_doctor_command_opens_scrollable_report_modal(monkeypatch):
 @pytest.mark.asyncio
 async def test_side_badge_reflects_state():
     """side-chat 工单02：side 线程输入框显示 SIDE 徽章 + [SIDE] 副标题；side_close 后隐藏。"""
-    from src.permissions import side_open, side_close
+    from src.permissions import side_close, side_open
 
     app = JarvisApp(None, FakeAgent(), {"default": "ask", "tools": {}}, thread_id="tside")
     async with app.run_test() as pilot:

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable
 
-from langchain.agents.middleware.types import AgentMiddleware, hook_config
+from langchain.agents.middleware.types import hook_config
 from langchain_core.messages import AIMessage, HumanMessage
 
 from src.guard import GuardMiddleware

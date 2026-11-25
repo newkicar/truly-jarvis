@@ -1,5 +1,4 @@
 """Inbox 快照与回退测试。"""
-from pathlib import Path
 
 from src import inbox_snapshots
 

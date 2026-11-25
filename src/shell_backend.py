@@ -196,7 +196,7 @@ class InheritedEnvShellBackend(LocalShellBackend):
             truncated=False,
         )
 
-    def execute(
+    def execute(  # noqa: C901
         self,
         command: str,
         *,

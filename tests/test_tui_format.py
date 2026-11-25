@@ -1,5 +1,4 @@
 """TUI 格式化纯函数测试。"""
-from pathlib import Path
 
 from src.commands import ToolInvocation
 from src.tui_format import (
@@ -145,7 +144,7 @@ def test_format_tool_call_markup_safe_with_unsafe_args():
     assert unsafe in plain, f"渲染后丢失原文: {plain!r}"
 
 
-from src.tui_format import (
+from src.tui_format import (  # noqa: E402
     REASONING_DISPLAY_CAP_LINES,
     TOOL_DETAIL_ARG_CAP,
     TOOL_DETAIL_OUT_CAP_LINES,
@@ -153,7 +152,6 @@ from src.tui_format import (
     tool_detail_block,
     tool_detail_worth_expanding,
 )
-
 
 # ---------------- tui-ux19: 工具详情展开 / 思考块 纯函数 ----------------
 

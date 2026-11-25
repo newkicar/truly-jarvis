@@ -7,8 +7,8 @@
 import asyncio
 
 import pytest
-from textual.events import Click
 from textual.containers import VerticalScroll
+from textual.events import Click
 
 from src.tui import JarvisApp, JarvisTextArea, MessageQueueRow
 from tests.test_tui import _type_and_enter

@@ -10,8 +10,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QPlainTextEdit
 
-from src.gui import cards, diff_view
 from src.commands import ToolInvocation
+from src.gui import cards, diff_view
 
 
 def _inv(name, args=None, path=None):
@@ -22,7 +22,7 @@ def _inv(name, args=None, path=None):
 def test_aligned_diff_identical_rows_1to1():
     rows = diff_view.aligned_diff("a\nb\n", "a\nb\n")
     assert [r[0] for r in rows] == [" ", " ", " "]
-    assert all(l == r for _, l, r in rows)
+    assert all(ln == r for _, ln, r in rows)
     assert rows[0][1] == "a" and rows[-1][1] == ""  # 尾随空行
 
 

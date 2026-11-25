@@ -31,12 +31,10 @@ class _StubSaver:
 
 # ---------------------------------------------------------------- 导出
 def test_session_markdown_structure(qapp):
-    from pathlib import Path
-    import json as _json
     from types import SimpleNamespace
 
-    from src.gui.session_export import session_markdown
     from src.gui.replay import Record, ToolRecord
+    from src.gui.session_export import session_markdown
 
     class _Agent:
         def get_state(self, config):
@@ -65,9 +63,9 @@ def test_session_markdown_structure(qapp):
 
 
 def test_session_markdown_empty_session(qapp):
-    import src.gui.replay as replay_mod
     import unittest.mock as mock
 
+    import src.gui.replay as replay_mod
     from src.gui.session_export import session_markdown
 
     class _Agent:
@@ -178,7 +176,6 @@ def test_share_copies_markdown_to_clipboard(qapp, monkeypatch):
     rt, p, win = _win(qapp)
     tid = p.new_session_id()
     p.session_registry.rename(tid, "分享我", ai_generated=False)
-    seen = {}
     monkeypatch.setattr(win, "_session_markdown_text", lambda t: "# 分享我\n\n（测试正文）")
     win._share_session_markdown(tid)
     from PySide6.QtWidgets import QApplication
@@ -203,7 +200,6 @@ def test_download_writes_markdown_file(qapp, monkeypatch):
 
 def _tmp_file():
     import uuid
-    from pathlib import Path
 
     from tests.gui_fakes import TEST_ROOT
 
@@ -236,9 +232,9 @@ def test_delete_active_session_confirms_and_switches(qapp, monkeypatch):
 def test_export_uses_full_history_not_truncated(qapp):
     """分享/下载 = 「全部」对话内容：thread_record 必须 max_messages=None（默认 500
     条截断会把长会话截短——spec 明确要求全部）。"""
-    import src.gui.replay as replay_mod
     import unittest.mock as mock
 
+    import src.gui.replay as replay_mod
     from src.gui.session_export import session_markdown
 
     class _Agent:
@@ -259,9 +255,9 @@ def test_export_uses_full_history_not_truncated(qapp):
 
 def test_export_fence_escaping(qapp):
     """工具参数里含 ``` 时用四反引号围栏（不死围栏）。"""
-    import src.gui.replay as replay_mod
     import unittest.mock as mock
 
+    import src.gui.replay as replay_mod
     from src.gui.replay import Record, ToolRecord
     from src.gui.session_export import session_markdown
 
@@ -297,9 +293,10 @@ def test_clone_failure_leaves_no_ghost_session(qapp, monkeypatch):
 
 # ---------------------------------------------------------------- 侧边会话（side-chat 工单 03）
 def test_menu_side_branch_and_delete_side(qapp, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
     import src.commands as commands_mod
     from src import permissions
-    from PySide6.QtWidgets import QMessageBox
 
     rt, p, win = _win(qapp)
     tid = p.new_session_id()

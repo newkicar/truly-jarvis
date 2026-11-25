@@ -3,9 +3,6 @@ from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
-import pytest
-
-from tests.conftest import make_fake_config
 from src.agent import build_main_prompt, session_date_line
 from src.project_paths import ensure_user_home, user_home
 from src.skill_paths import (
@@ -14,6 +11,7 @@ from src.skill_paths import (
     skill_backend_routes,
     skill_virtual_sources,
 )
+from tests.conftest import make_fake_config
 
 
 def test_user_home_default_uses_dot_javis(monkeypatch, tmp_path):

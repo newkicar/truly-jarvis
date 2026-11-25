@@ -187,7 +187,7 @@ def _merge_session_jsons(old_bytes: bytes, new_bytes: bytes) -> bytes | None:
     return json.dumps(merged, ensure_ascii=False, indent=2).encode("utf-8")
 
 
-def migrate_project_dotdir(config) -> list[str]:
+def migrate_project_dotdir(config) -> list[str]:  # noqa: C901
     """一次性把遗留的项目级状态文件迁移进 {project_root}/.jarvis/（幂等，绝不覆盖异构目标）。
 
     - 遗留 checkpoints/（整目录或逐文件）→ .jarvis/checkpoints/

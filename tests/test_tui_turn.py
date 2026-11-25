@@ -1,7 +1,6 @@
 """① TurnPresenter：per-turn 流式状态收拢（架构评审候选①第二步）。"""
 
 from src.tui_turn import TurnPresenter
-
 from tests.test_tui import FakeAgent
 
 

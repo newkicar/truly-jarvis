@@ -92,14 +92,14 @@ def _sanitize_node(value: Any) -> Any:
     return value
 
 
-def _halve_once(record: dict) -> int:
+def _halve_once(record: dict) -> int:  # noqa: C901
     """Halve every non-meta string value longer than 1 char (any depth).
 
     Returns the number of strings changed (0 = nothing left to shrink).
     """
     changed: list[int] = [0]
 
-    def walk(obj: Any, top_level: bool) -> None:
+    def walk(obj: Any, top_level: bool) -> None:  # noqa: C901
         if isinstance(obj, dict):
             for k in list(obj.keys()):
                 v = obj[k]

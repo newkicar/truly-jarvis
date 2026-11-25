@@ -1,27 +1,27 @@
 """Agent Profile multi-identity runtime package."""
+from src.profiles.registry import LoadedProfile, ProfileRegistry
 from src.profiles.schema import (
     AgentProfile,
+    Approvals,
+    Filesystem,
     Identity,
+    Instructions,
     Lifecycle,
     Memory,
     MemoryRecall,
     MemoryWrite,
     Permissions,
     ProfileError,
-    Approvals,
-    Filesystem,
-    Instructions,
     Runtime,
     Session,
     Skills,
     Tools,
+    check_security_narrowing,
+    deep_merge,
     parse_profile,
     profile_hash,
-    deep_merge,
-    check_security_narrowing,
     validate_unique_ids,
 )
-from src.profiles.registry import LoadedProfile, ProfileRegistry
 
 __all__ = [
     "AgentProfile",

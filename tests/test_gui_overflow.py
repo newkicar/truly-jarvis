@@ -8,11 +8,13 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QLabel, QFrame  # noqa: E402
+from PySide6.QtWidgets import QLabel  # noqa: E402
 
-from src.gui import md_render  # noqa: E402
-from src.gui.pane import _detail_html, ToolLineWidget, ChatPane  # noqa: E402
-from src.gui import theme  # noqa: E402
+from src.gui import (
+    md_render,  # noqa: E402
+    theme,  # noqa: E402
+)
+from src.gui.pane import ChatPane, ToolLineWidget, _detail_html  # noqa: E402
 
 
 def test_soft_break_chunks_long_tokens():
@@ -75,9 +77,9 @@ def test_chat_pane_user_subagent_wrap(qtbot):
     p.append_subagent("worker", "S" * 300)
     labels = [w for w in p.findChildren(QLabel) if w.objectName() in ("bub-user", "line-sub")]
     assert labels
-    for l in labels:
-        assert l.wordWrap() is True
-        assert l.minimumWidth() == 0
+    for ln in labels:
+        assert ln.wordWrap() is True
+        assert ln.minimumWidth() == 0
 
 
 def test_cards_import_soft_break_alias():

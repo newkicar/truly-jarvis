@@ -7,7 +7,7 @@ from typing import Literal
 
 from src.path_completion import PathSuggestion, at_query, collect_completion_paths
 from src.skill_discovery import SkillMeta, fuzzy_filter_skills
-from src.slash_completion import SlashCommand, filter_commands, slash_query
+from src.slash_completion import filter_commands, slash_query
 
 
 @dataclass(frozen=True)

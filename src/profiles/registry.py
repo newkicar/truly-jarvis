@@ -1,7 +1,6 @@
 """Agent Profile Registry: three-layer discovery, merge, legacy mapping."""
 from __future__ import annotations
 
-import dataclasses
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,7 +14,6 @@ from src.profiles.schema import (
     deep_merge,
     parse_profile,
     profile_hash,
-    validate_unique_ids,
 )
 
 log = logging.getLogger(__name__)
@@ -125,7 +123,7 @@ class ProfileRegistry:
     # Public API
     # ------------------------------------------------------------------
 
-    def list(self) -> list[str]:
+    def list(self) -> list[str]:  # noqa: C901
         """List all known profile ids (builtin + user + project + legacy), sorted."""
         ids: set[str] = set()
         # builtin

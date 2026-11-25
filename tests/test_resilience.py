@@ -5,7 +5,6 @@ import pytest
 
 from src import resilience, streaming
 
-
 # ---------------------------------------------------------------- classify_error
 
 def _exc(name: str, msg: str = "boom") -> Exception:
@@ -107,8 +106,8 @@ def test_with_retry_exhausts_attempts():
 
 # ---------------------------------------------------------------- 步数软着陆
 
-from langchain.agents.middleware.types import ModelRequest
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain.agents.middleware.types import ModelRequest  # noqa: E402
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage  # noqa: E402
 
 
 def _model_request(a_steps: int, system: str = "BASE-PROMPT") -> ModelRequest:

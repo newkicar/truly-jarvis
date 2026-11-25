@@ -45,7 +45,8 @@ def test_enter_submits_and_clears(qtbot):
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QKeyEvent
 
-    bar = InputBar(); qtbot.addWidget(bar)
+    bar = InputBar()
+    qtbot.addWidget(bar)
     submitted: list[str] = []
     bar.submit_requested.connect(submitted.append)
     bar.edit.setPlainText("多行\n消息")
@@ -58,11 +59,10 @@ def test_enter_submits_and_clears(qtbot):
 def test_shift_enter_consumed_and_inserts_newline(qtbot):
     """Shift+Enter：eventFilter 消费事件并显式插入 \n（不再依赖原生——确定性优先）。"""
     from PySide6.QtCore import Qt
-    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtGui import QKeyEvent, QTextCursor
 
-    from PySide6.QtGui import QTextCursor
-
-    bar = InputBar(); qtbot.addWidget(bar)
+    bar = InputBar()
+    qtbot.addWidget(bar)
     bar.edit.setPlainText("a")
     bar.edit.moveCursor(QTextCursor.MoveOperation.End)  # 模拟用户停在末尾（setPlainText 会重置光标到 0）
     ev = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key_Return, Qt.ShiftModifier)
@@ -73,11 +73,10 @@ def test_shift_enter_consumed_and_inserts_newline(qtbot):
 def test_alt_enter_consumed_and_inserts_newline(qtbot):
     """Alt+Enter 与 Shift+Enter 同义：消费事件并显式插入 \n，不提交。"""
     from PySide6.QtCore import Qt
-    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtGui import QKeyEvent, QTextCursor
 
-    from PySide6.QtGui import QTextCursor
-
-    bar = InputBar(); qtbot.addWidget(bar)
+    bar = InputBar()
+    qtbot.addWidget(bar)
     submitted: list[str] = []
     bar.submit_requested.connect(submitted.append)
     bar.edit.setPlainText("a")
@@ -121,7 +120,8 @@ def test_shift_enter_inserts_newline(qtbot):
     """行为级固化：Shift+Enter 在输入框真插入换行且不误提交。"""
     from PySide6.QtCore import Qt
 
-    bar = InputBar(); qtbot.addWidget(bar)
+    bar = InputBar()
+    qtbot.addWidget(bar)
     bar.show()
     submitted: list[str] = []
     bar.submit_requested.connect(submitted.append)
@@ -137,7 +137,8 @@ def test_alt_enter_inserts_newline(qtbot):
     """行为级：Alt+Enter 与 Shift+Enter 同义——真插入换行、不误提交（用户实测 GUI 无反应的红灯）。"""
     from PySide6.QtCore import Qt
 
-    bar = InputBar(); qtbot.addWidget(bar)
+    bar = InputBar()
+    qtbot.addWidget(bar)
     bar.show()
     submitted: list[str] = []
     bar.submit_requested.connect(submitted.append)

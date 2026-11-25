@@ -170,7 +170,6 @@ def test_install_root_frozen_uses_exe_dir(monkeypatch):
 
 def test_install_root_not_frozen_uses_source_tree(monkeypatch):
     """非 frozen（源码运行）：保持 __file__ 语义，exe 目录约定不生效。"""
-    import os
     import sys
 
     monkeypatch.setattr(sys, 'argv', ['.build/frozen-root-test/jarvis-gui.exe'])

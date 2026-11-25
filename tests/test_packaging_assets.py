@@ -36,8 +36,8 @@ def test_installer_writes_no_user_data():
     """Inno [Files] 仅写 {app}（Program Files 只读）；用户数据只可经 opt-in 清理任务删除。"""
     iss = _read("packaging/setup.iss")
     files_block = iss[iss.index("[Files]"): iss.index("[Icons]")]
-    for src in [l for l in files_block.splitlines() if l.startswith("Source:")]:
-        assert "DestDir: \"{app}\"" in src, f"[Files] 写入越界 {app}：{src}"
+    for src in [ln for ln in files_block.splitlines() if ln.startswith("Source:")]:
+        assert "DestDir: \"{app}\"" in src, f"[Files] 写入越界：{src}"
     assert "userappdata" not in files_block and "userprofile" not in files_block, (
         "安装阶段不得写 %APPDATA%/.jarvis（用户数据与安装目录分离）"
     )

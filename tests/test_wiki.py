@@ -2,14 +2,13 @@
 
 验证 wikilink 解析、标题/别名/大小写匹配、出链/反链工具。零外部依赖。
 """
-import pytest
 
 from src.wiki import (
+    _vault_backlinks,
+    _vault_links,
     extract_wikilinks,
     make_wiki_tools,
     resolve_link,
-    _vault_links,
-    _vault_backlinks,
 )
 
 
@@ -36,7 +35,7 @@ def _mk_vault(tmp_path):
 
 def test_extract_wikilinks_basic():
     links = extract_wikilinks("看 [[笔记A]] 和 [[笔记B|显示B]] 与 [[笔记C#小节]]")
-    targets = [l.target for l in links]
+    targets = [ln.target for ln in links]
     assert targets == ["笔记A", "笔记B", "笔记C"]
     assert links[1].display == "显示B"
     assert links[2].section == "小节"
@@ -44,7 +43,7 @@ def test_extract_wikilinks_basic():
 
 def test_extract_wikilinks_ignores_internal_anchor():
     links = extract_wikilinks("见 [[#内部]] 和 [[目标]]")
-    assert [l.target for l in links] == ["目标"]
+    assert [ln.target for ln in links] == ["目标"]
 
 
 def test_resolve_link_by_title_case_insensitive(tmp_path):

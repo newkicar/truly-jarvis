@@ -7,15 +7,15 @@ drain 窗口做得足够宽（8 × 0.15s ≈ 1.2s），取消发生在流启动�
 
 import asyncio
 import time
+from unittest.mock import patch
 
 import pytest
-from unittest.mock import patch
 
 from src import commands
 from src.permissions import yolo_on
 from src.tui import JarvisApp
 from src.tui_log import CopyableRichLog
-from tests.test_tui import _FakeMsg, _FakeStream, FakeAgent, _type_and_enter
+from tests.test_tui import FakeAgent, _FakeMsg, _FakeStream, _type_and_enter
 
 
 class ConcurrencyAgent(FakeAgent):
@@ -52,7 +52,7 @@ class ConcurrencyAgent(FakeAgent):
 
 
 def _joined(log) -> str:
-    return "".join(l.text for l in log.lines)
+    return "".join(ln.text for ln in log.lines)
 
 
 async def _poll(pilot, predicate, timeout: float = 10.0, msg: str = ""):

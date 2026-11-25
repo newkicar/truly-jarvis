@@ -1,12 +1,12 @@
 """前缀放行 / 只读启发式 单测（工单 03、05）。"""
 
+from src import commands
 from src.permissions import (
     _action_for_args,
     approve_prefix,
     extract_command_prefix,
     heuristic_safe,
 )
-from src import commands
 
 
 def _state(**kw):

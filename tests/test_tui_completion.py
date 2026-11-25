@@ -1,6 +1,12 @@
 """TUI 补全状态机测试。"""
 from src.skill_discovery import SkillMeta, fuzzy_filter_skills
-from src.tui_completion import apply_suggestion, apply_suggestion_on_line, line_projection, resolve_overlay_state, use_query
+from src.tui_completion import (
+    apply_suggestion,
+    apply_suggestion_on_line,
+    line_projection,
+    resolve_overlay_state,
+    use_query,
+)
 
 
 def test_resolve_slash_overlay(tmp_path):

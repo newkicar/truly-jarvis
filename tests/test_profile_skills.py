@@ -15,7 +15,6 @@ from src import profile_skills as ps
 from src.profiles import spec as spec_mod
 from src.profiles.schema import ProfileError, namespace_segment, parse_profile
 
-
 # ---------------------------------------------------------------------------
 # helpers (repo discipline: no pytest tmp_path; self-built dirs)
 # ---------------------------------------------------------------------------

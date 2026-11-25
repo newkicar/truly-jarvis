@@ -7,13 +7,12 @@ import time
 from io import StringIO
 
 from rich.console import Console
-from rich.text import Text
-from textual import events
-from textual.selection import Selection
 from rich.segment import Segment
 from rich.style import Style
-
+from rich.text import Text
+from textual import events
 from textual.geometry import Size
+from textual.selection import Selection
 from textual.strip import Strip
 from textual.widgets import Button, RichLog
 

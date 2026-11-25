@@ -61,7 +61,6 @@ def test_label_priority_short_name_over_summary():
             self._fb = fallback
 
     # label(agent, tid)：注册表短名优先，无则 commands.session_label（用 fake agent 触发）
-    import types
 
     from pathlib import Path
 
@@ -125,7 +124,7 @@ def test_presenter_maybe_names_first_turn(qapp, monkeypatch):
 
     from src.gui.events import UiBridge
     from src.gui.runtime import GuiPresenter
-    from tests.gui_fakes import new_home, cleanup_home
+    from tests.gui_fakes import cleanup_home, new_home
     from tests.test_gui_presenter import _fake_runtime, wait_until
 
     home = new_home()
@@ -160,7 +159,7 @@ def test_presenter_maybe_names_first_turn(qapp, monkeypatch):
 def test_presenter_maybe_name_skips_abandoned_and_named(qapp):
     from src.gui.events import UiBridge
     from src.gui.runtime import GuiPresenter
-    from tests.gui_fakes import new_home, cleanup_home
+    from tests.gui_fakes import cleanup_home, new_home
     from tests.test_gui_presenter import _fake_runtime
 
     home = new_home()

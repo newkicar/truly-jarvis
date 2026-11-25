@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from src.tui import JarvisApp, JarvisTextArea, PathCompletionOverlay
-from tests.test_tui import _FakeConfig, FakeAgent
+from tests.test_tui import FakeAgent, _FakeConfig
 
 TEST_ROOT = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),

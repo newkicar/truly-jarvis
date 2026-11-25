@@ -4,7 +4,11 @@ researcher / knowledge_keeper（SubAgent dict 形态）。
 researcher 定义见 .scratch/javis-implementation/issues/04-researcher-prompt.md Resolution。
 """
 from src.inbox_snapshot_middleware import InboxSnapshotMiddleware
-from src.resilience import NoProgressGuardMiddleware, StagnationGuardMiddleware, ToolErrorBoundaryMiddleware
+from src.resilience import (
+    NoProgressGuardMiddleware,
+    StagnationGuardMiddleware,
+    ToolErrorBoundaryMiddleware,
+)
 from src.sanitize_history import SanitizeHistoryMiddleware
 from src.vault_guard import VaultWriteGuardMiddleware
 

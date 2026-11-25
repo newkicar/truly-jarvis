@@ -17,16 +17,8 @@ from langchain_core.tools import tool
 
 from src import goals
 
-# 状态 → 中文展示（get_goal 输出用）
-_GOAL_STATUS_CN = {
-    goals.GOAL_ACTIVE: "进行中",
-    goals.GOAL_PAUSED: "已暂停",
-    goals.GOAL_BUDGET_LIMITED: "回合预算耗尽",
-    goals.GOAL_COMPLETE: "已完成",
-}
 
-
-def build_goal_tools(
+def build_goal_tools(  # noqa: C901
     permission_state: dict | None,
     goals_path=None,
     default_max_turns: int | None = None,
@@ -108,7 +100,7 @@ def build_goal_tools(
         goal = goals.goal_status(goals_path, tid)
         if goal is None:
             return "本会话无目标（可用 create_goal 创建）"
-        cn = _GOAL_STATUS_CN.get(goal.status, goal.status)
+        cn = goals.GOAL_STATUS_CN.get(goal.status, goal.status)
         lines = [
             "目标 #" + str(goal.goal_id) + "（" + goal.objective + "）",
             "状态：" + cn + "（" + goal.status + "）",

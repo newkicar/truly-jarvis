@@ -22,6 +22,7 @@ StreamCallbacks = dict[str, Callable[..., None]]
 class TurnOutcome:
     """#goal 01: 单轮对话的结构化返回。ok 等价旧 bool 语义；outcome ∈ complete|abandon|cancel|replay。
     tool_calls_count 覆盖本轮全部工具调用（顶层 + 子代理嵌套，经 on_tool_call 计数）；
+    被用户拒绝的 HITL 工具调用同计入（未实际执行、无 on_tool_call 事件，经 _count_rejected_actions 补计）。
     last_usage 预留 goal 审计（当前恒 None）。__bool__ 返回 ok——丢弃返回值的旧调用点不变。"""
 
     ok: bool
@@ -69,7 +70,7 @@ def format_agent_error(exc: BaseException) -> str:
 _SUBAGENT_ACTIVE = frozenset({"started", "running", "start"})
 _SUBAGENT_DONE = frozenset({"completed", "failed", "done", "error"})
 
-def extract_reasoning(item: Any) -> str:
+def extract_reasoning(item: Any) -> str:  # noqa: C901
     """Extract thinking (reasoning) content from a single message in stream_events (tui-ux19).
 
     Three sources (all getattr/try defensive, not crashing across langchain 1.3/1.4 versions):
@@ -207,7 +208,7 @@ def filter_pending_interrupts(interrupts, resolved_keys: set[str] | frozenset[st
     return filtered
 
 
-def collect_interrupt_decisions(
+def collect_interrupt_decisions(  # noqa: C901
     interrupts,
     ask_action: Callable[[commands.ToolInvocation], dict | None],
     *,
@@ -288,7 +289,7 @@ def collect_interrupt_decisions(
     return {"decisions": decisions}
 
 
-def cli_prompt_action(
+def cli_prompt_action(  # noqa: C901
     inv: commands.ToolInvocation,
     *,
     permission_state: dict | None,
@@ -351,7 +352,7 @@ def cli_prompt_action(
         print("    无效输入")
 
 
-def consume_stream_events(
+def consume_stream_events(  # noqa: C901
     stream,
     callbacks: StreamCallbacks,
     *,
@@ -476,7 +477,7 @@ def _looks_like_image_rejection(exc: BaseException) -> bool:
     return getattr(exc, "status_code", None) in (400, 415, 422)
 
 
-def run_agent_turn(
+def run_agent_turn(  # noqa: C901
     agent,
     thread_id: str,
     user_input: str | list | None = None,
@@ -503,6 +504,7 @@ def run_agent_turn(
     from langgraph.errors import GraphDrained, GraphRecursionError
     from langgraph.runtime import RunControl
     from langgraph.types import Command
+
     from src.permissions import sync_permission_context
 
     sync_permission_context(
@@ -527,6 +529,34 @@ def run_agent_turn(
             _outer_tool_call(*_args, **_kwargs)
 
     callbacks["on_tool_call"] = _counting_tool_call
+
+    _rejected_keys: set[str] = set()
+
+    def _count_rejected_actions(interrupts, resume_payload) -> None:
+        """#goal 05: 被用户拒绝的 HITL 工具调用同计入 tool_calls_count（未实际执行、
+        不发 on_tool_call 事件），让 continuation_decision 在全 reject 轮也能看见
+        「该轮有工具调用」从而自动续跑目标。
+        守卫：TUI 的 handle_interrupts 会先 filter_pending_interrupts（replay 轮
+        去掉已决 interrupt），此时 decisions 数 < 原始 action 数、位置不对齐 →
+        整体跳过计数（保守零误计）；approve/edit 实际执行会发 on_tool_call 事件，
+        只数 reject，避免双计；_rejected_keys 去重防 doom-loop 跨 resume 轮重放。"""
+        if not isinstance(resume_payload, dict):
+            return
+        original_actions = [
+            action
+            for intr in interrupts or []
+            for action in (getattr(intr, "value", None) or {}).get("action_requests", [])
+        ]
+        decisions = resume_payload.get("decisions") or []
+        if len(original_actions) != len(decisions):
+            return
+        for action, decision in zip(original_actions, decisions):
+            if not isinstance(decision, dict) or decision.get("type") != "reject":
+                continue
+            key = interrupt_action_key(action)
+            if key not in _rejected_keys:
+                _rejected_keys.add(key)
+                _tool_call_count["n"] += 1
 
     def _turn_outcome(ok: bool, why: str) -> TurnOutcome:
         return TurnOutcome(ok, why, _tool_call_count["n"], None)
@@ -722,6 +752,7 @@ def run_agent_turn(
             if resume is None:
                 outcome = "abandon"
                 return _turn_outcome(False, "abandon")
+            _count_rejected_actions(stream.interrupts, resume)
         outcome = "cancel"
         return _turn_outcome(False, "cancel")
     except GraphDrained:

@@ -10,8 +10,8 @@ from PySide6.QtWidgets import QFrame, QListWidget, QListWidgetItem
 
 _USER_ROLE = Qt.ItemDataRole.UserRole
 
-from src import tui_completion
-from src.tui_completion import OverlayState, SuggestionItem
+from src import tui_completion  # noqa: E402
+from src.tui_completion import OverlayState, SuggestionItem  # noqa: E402
 
 
 def rowcol_from_cursor(widget) -> tuple[int, int]:

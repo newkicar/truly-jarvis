@@ -10,12 +10,18 @@ from __future__ import annotations
 import json
 from time import time
 
-from textual.worker import get_current_worker
 from textual.widgets import RichLog
+from textual.worker import get_current_worker
 
 from src import commands, goals, streaming
 from src.plan_mode import effective_mode
-from src.tui_format import AiStreamThrottler, format_tool_call, reasoning_block_markup, tool_detail_block, tool_detail_worth_expanding
+from src.tui_format import (
+    AiStreamThrottler,
+    format_tool_call,
+    reasoning_block_markup,
+    tool_detail_block,
+    tool_detail_worth_expanding,
+)
 
 
 class TurnPresenter:

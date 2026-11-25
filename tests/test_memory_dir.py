@@ -1,7 +1,6 @@
 """dotdir: config sentinel 语义（缺省/哨兵 → 项目级 .jarvis/memory）+ 一次性 memory 迁移与 copy-seed 测试。"""
 
 import json
-import os
 import shutil
 import tempfile
 import uuid

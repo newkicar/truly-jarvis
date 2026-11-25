@@ -326,7 +326,7 @@ class TestBuildAgentWithSpec:
         home, ws = _new_home(), _new_workspace()
         cfg = _cfg(monkeypatch, home, ws)
         spec = bake_spec(cfg, _profile(model="prof-m2"), str(ws))
-        captured = _spy_build(monkeypatch)
+        _spy_build(monkeypatch)
         build_agent(cfg, model=ToolCapableFake(reply="ok"), profile_spec=spec)
         assert agent_mod.harness_profile_loaded("prof-m2")
         assert "prof-m2" in agent_mod._HARNESS_REGISTERED

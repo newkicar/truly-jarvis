@@ -8,7 +8,7 @@ from src.gui.main_window import MainWindow
 from src.gui.project_registry import ProjectRegistry
 from src.gui.runtime import GuiPresenter
 from src.gui.workspace_controller import WorkspaceController
-from tests.gui_fakes import TEST_ROOT, cleanup_home, new_home
+from tests.gui_fakes import TEST_ROOT
 from tests.test_gui_presenter import _fake_runtime
 
 

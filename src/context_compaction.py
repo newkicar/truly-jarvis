@@ -24,13 +24,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from langchain_core.messages import AnyMessage, get_buffer_string
-
 from deepagents.middleware.summarization import (
     DEEPAGENTS_DEFAULT_SUMMARY_PROMPT,
     SummarizationMiddleware,
     compute_summarization_defaults,
 )
+from langchain_core.messages import AnyMessage, get_buffer_string
 
 # 上游对空列表/trim 后为空的占位文案（与 langchain LC 侧行为一致，直接复用文案）
 _EMPTY_HISTORY_PLACEHOLDER = "No previous conversation history."

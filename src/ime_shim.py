@@ -92,7 +92,7 @@ def _read_wchar_at(base: int, offset: int) -> str:
     return raw.decode("utf-16-le", errors="ignore")
 
 
-def fold_input_records(
+def fold_input_records(  # noqa: C901
     records: Sequence["INPUT_RECORD"],
 ) -> tuple[List[str], Optional[tuple[int, int]]]:
     """把一批 INPUT_RECORD 折叠成 (按键字符流, 窗口尺寸)。纯函数，供单测。

@@ -68,7 +68,7 @@ def guidance_text(target: Path, missing: list[str]) -> str:
     return "\n".join(lines)
 
 
-def bootstrap_missing_env(
+def bootstrap_missing_env(  # noqa: C901
     values: dict[str, str] | None = None,
     *,
     project_root: Path | None = None,

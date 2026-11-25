@@ -3,7 +3,6 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from types import SimpleNamespace
 
 from src.gui import doctor
 from src.gui.events import UiBridge
@@ -12,6 +11,7 @@ from src.gui.main_window import MainWindow
 from src.gui.runtime import GuiPresenter, SchedulerGate
 from tests.gui_fakes import cleanup_home, new_home
 from tests.test_gui_presenter import _fake_runtime
+
 
 def _row(rows, block, item=None):
     cands = [r for r in rows if r.block == block and (item is None or r.item == item)]

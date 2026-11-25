@@ -3,7 +3,6 @@ from src.vault_guard import (
     VaultWriteGuardMiddleware,
     is_inbox_path,
     is_reports_path,
-    is_vault_path,
     is_writable_vault_path,
     vault_write_blocked,
 )

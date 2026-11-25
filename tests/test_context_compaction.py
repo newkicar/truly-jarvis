@@ -3,13 +3,15 @@
 """
 
 import asyncio
-
 from types import SimpleNamespace
 
-from langchain_core.messages import AIMessage, HumanMessage
 from langchain.agents.middleware.types import ModelRequest
+from langchain_core.messages import AIMessage, HumanMessage
 
-from src.context_compaction import KeepFirstCompactionMiddleware, build_compaction_middleware
+from src.context_compaction import (
+    KeepFirstCompactionMiddleware,
+    build_compaction_middleware,
+)
 
 
 class _FakeModel:

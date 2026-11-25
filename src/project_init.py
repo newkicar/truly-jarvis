@@ -8,11 +8,10 @@ from collections import OrderedDict
 from pathlib import Path
 
 from src.project_paths import (
-    JARVIS_JSON,
     CHECKPOINTS_DIR,
     INSTRUCTIONS_FILENAME,
+    JARVIS_JSON,
     LEGACY_INSTRUCTIONS_FILENAME,
-    discover_project_root,
     install_root,
 )
 

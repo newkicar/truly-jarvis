@@ -10,7 +10,7 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QSize, QTimer
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
     QFrame,
@@ -316,13 +316,13 @@ class ChatPane(QScrollArea):
     def append_user(self, text: str, image_paths: list[str] | None = None) -> None:
         self._close_thinking()
         self._hide_placeholder()
-        l = ReflowLabel(lambda e: md_render.soft_break(f"[你] {text}", e), 80)
-        l.setObjectName("bub-user")
-        l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
-        l.setWordWrap(True)
-        l.setTextFormat(Qt.TextFormat.PlainText)
-        l.render()
-        self._insert(l)
+        label = ReflowLabel(lambda e: md_render.soft_break(f"[你] {text}", e), 80)
+        label.setObjectName("bub-user")
+        label.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
+        label.setWordWrap(True)
+        label.setTextFormat(Qt.TextFormat.PlainText)
+        label.render()
+        self._insert(label)
         if image_paths:
             self._insert(self._image_row(image_paths))
         self._follow()
@@ -367,13 +367,13 @@ class ChatPane(QScrollArea):
             return
         self._close_thinking()
         self._hide_placeholder()
-        l = ReflowLabel(lambda e: md_render.md_to_qt_html(text, e), 80)
-        l.setObjectName("bub-ai")
-        l.setTextFormat(Qt.TextFormat.RichText)
-        l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
-        l.setWordWrap(True)
-        l.render()
-        self._insert(l)
+        label = ReflowLabel(lambda e: md_render.md_to_qt_html(text, e), 80)
+        label.setObjectName("bub-ai")
+        label.setTextFormat(Qt.TextFormat.RichText)
+        label.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
+        label.setWordWrap(True)
+        label.render()
+        self._insert(label)
         self._follow()
 
     def append_tool(self, name, args, err, output, depth=0) -> None:
@@ -386,12 +386,12 @@ class ChatPane(QScrollArea):
 
     def append_subagent(self, name, status, depth=0) -> None:
         self._hide_placeholder()
-        l = ReflowLabel(lambda e: md_render.soft_break(f"{'  ' * depth}[{name}] {status}", e), 80)
-        l.setObjectName("line-sub")
-        l.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
-        l.setWordWrap(True)
-        l.render()
-        self._insert(l)
+        label = ReflowLabel(lambda e: md_render.soft_break(f"{'  ' * depth}[{name}] {status}", e), 80)
+        label.setObjectName("line-sub")
+        label.setTextInteractionFlags(Qt.TextInteractionFlags.TextSelectableByMouse)
+        label.setWordWrap(True)
+        label.render()
+        self._insert(label)
         self._follow()
 
     # ---- 思考块（工单 06；小字淡色，回答上方，默认展开可折叠）

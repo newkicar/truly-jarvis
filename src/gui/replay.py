@@ -69,7 +69,7 @@ def compact_probe(agent: Any, thread_id: str, max_records: int = 400) -> tuple[l
     return records, pre_count
 
 
-def _records_from_messages(messages: list) -> list[Record]:
+def _records_from_messages(messages: list) -> list[Record]:  # noqa: C901
     """展示记录构建（user/AI 文本 + 工具行配对；悬挂 tool_call 出折叠行）。"""
     pending: dict[str, tuple[str, str]] = {}  # call_id → (name, args_text)
     records: list[Record] = []

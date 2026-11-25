@@ -17,14 +17,13 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.jobstores.base import JobLookupError
+from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from src.config import Config
-from src import inbox_snapshots
-from src import commands
+from src import commands, inbox_snapshots
 from src.commands import project_root
+from src.config import Config
 
 
 class ScheduleConfigError(ValueError):

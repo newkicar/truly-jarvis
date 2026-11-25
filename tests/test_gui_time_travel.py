@@ -11,7 +11,7 @@ from src import commands
 from src.gui.events import UiBridge
 from src.gui.main_window import MainWindow
 from src.gui.runtime import GuiPresenter
-from tests.gui_fakes import new_home, cleanup_home
+from tests.gui_fakes import cleanup_home, new_home
 from tests.test_gui_presenter import _fake_runtime, wait_until
 
 
@@ -55,7 +55,7 @@ def test_fork_dispatch_switches_session(qtbot, monkeypatch):
     try:
         rt = _fake_runtime()
         p = GuiPresenter(rt, UiBridge())
-        win = MainWindow(p, p.bridge)
+        MainWindow(p, p.bridge)
         switched: list[tuple[str, str]] = []
         p.bridge.switch_session.connect(lambda t, n: switched.append((t, n)))
         monkeypatch.setattr(commands, "fork", lambda agent, tid, cid: ("已分叉", "new-branch"))
@@ -96,7 +96,7 @@ def test_snapshot_and_compact_dispatch(qtbot, monkeypatch):
         monkeypatch.setattr(commands, "list_snapshots", lambda: "（快照列表）")
         win._switch_to("t-tt")
         win._on_snapshot()
-        win._on_time_travel_dialog  # noqa（存在性）
+        win._on_time_travel_dialog  # noqa: B018  # 存在性检查
         # 压缩走对话框：直接驱动 presenter 的 compact 分发
         p.run_command(lambda: commands.compact(rt.agent, "t-tt", "保留错误"), "t-tt")
         assert wait_until(lambda: calls["snap"] == ["t-tt"] and calls["compact"] == ["保留错误"], timeout=10.0)
@@ -109,7 +109,7 @@ def test_replay_starts_presenter_replay(qtbot, monkeypatch):
     try:
         rt = _fake_runtime()
         p = GuiPresenter(rt, UiBridge())
-        win = MainWindow(p, p.bridge)
+        MainWindow(p, p.bridge)
         replays: list[tuple[str, str]] = []
         monkeypatch.setattr(p, "start_replay", lambda tid, cid: replays.append((tid, cid)))
         monkeypatch.setattr(commands, "boundary_checkpoints", lambda agent, tid: _fake_boundary_states())

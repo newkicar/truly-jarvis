@@ -106,10 +106,10 @@ def test_gated_tools_include_execute():
 
 def _fake_req(tool: str, args: dict, tid: str = "t1"):
     """构造最小 ToolCallRequest（仅暴露 tool_call，middleware 只读该字段）。"""
+    from types import SimpleNamespace
     from typing import cast
 
     from langchain.agents.middleware.types import ToolCallRequest
-    from types import SimpleNamespace
 
     return cast(
         ToolCallRequest,
@@ -156,7 +156,10 @@ def test_deny_middleware_passes_allow_through():
     """非 deny 调用放行，正常执行 handler。"""
     from langchain_core.messages import ToolMessage
 
-    from src.permissions import build_permission_deny_middleware, build_permission_interrupts
+    from src.permissions import (
+        build_permission_deny_middleware,
+        build_permission_interrupts,
+    )
 
     _interrupt_on, state = build_permission_interrupts(
         {"execute": {"*": "allow", "rm *": "deny"}}
@@ -208,7 +211,10 @@ def test_deny_middleware_async_blocks(monkeypatch):
 
     from langchain_core.messages import ToolMessage
 
-    from src.permissions import build_permission_deny_middleware, build_permission_interrupts
+    from src.permissions import (
+        build_permission_deny_middleware,
+        build_permission_interrupts,
+    )
 
     _interrupt_on, state = build_permission_interrupts({"write_file": "deny"})
     mw = build_permission_deny_middleware(state)

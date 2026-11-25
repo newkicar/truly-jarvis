@@ -7,7 +7,8 @@ from src.gui.pane import ChatPane  # noqa: E402
 
 
 def test_stick_follows_when_at_bottom(qtbot):
-    p = ChatPane("t1"); qtbot.addWidget(p)
+    p = ChatPane("t1")
+    qtbot.addWidget(p)
     p.append_user("hello")
     p.snap_to_bottom()
     assert p.stick is True
@@ -48,8 +49,8 @@ def test_back_to_bottom_restores_stick_and_hides_pill(qtbot, qapp):
 
 
 def test_four_keys(qtbot, qapp):
-    from PySide6.QtGui import QKeyEvent
     from PySide6.QtCore import Qt
+    from PySide6.QtGui import QKeyEvent
 
     p = _pane_with_overflow(qtbot, qapp)
     sb = p.verticalScrollBar()
@@ -72,7 +73,8 @@ def test_four_keys(qtbot, qapp):
 
 
 def test_batch_render_accumulates_until_flush(qtbot):
-    p = ChatPane("t1"); qtbot.addWidget(p)
+    p = ChatPane("t1")
+    qtbot.addWidget(p)
     p.render_strategy = "batch"
     p.ai_delta("## 标题\n")
     p.ai_delta("正文部分")
@@ -84,7 +86,8 @@ def test_batch_render_accumulates_until_flush(qtbot):
 
 
 def test_instant_render_strategy(qtbot):
-    p = ChatPane("t1"); qtbot.addWidget(p)
+    p = ChatPane("t1")
+    qtbot.addWidget(p)
     p.render_strategy = "instant"
     p.ai_delta("即时")
     assert "即时" in p._ai_label.text()
@@ -93,7 +96,8 @@ def test_instant_render_strategy(qtbot):
 
 
 def test_ai_end_fallback_when_no_stream(qtbot):
-    p = ChatPane("t1"); qtbot.addWidget(p)
+    p = ChatPane("t1")
+    qtbot.addWidget(p)
     p.ai_end("无流兜底消息")
     # 无 _ai_label 时走 append_fallback（新增块）
     assert p._ai_label is None
@@ -138,7 +142,8 @@ def test_thinking_box_accumulates_and_toggles(qtbot):
 
 
 def test_pane_thinking_delta_creates_box_once(qtbot):
-    p = ChatPane("t1"); qtbot.addWidget(p)
+    p = ChatPane("t1")
+    qtbot.addWidget(p)
     p.thinking_delta("a")
     p.thinking_delta("b")
     assert p._thinking_box is not None
@@ -368,6 +373,7 @@ def test_rebuild_delete_laters_orphaned_content(qtbot, qapp):
 def test_rebuild_cards_gc_safe(qtbot, qapp):
     """P3：undo 触发的重建链路不得给 GC 留下任何可析构的孤立卡片。"""
     import gc
+
     import shiboken6
 
     p = ChatPane("t1")

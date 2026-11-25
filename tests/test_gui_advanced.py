@@ -7,7 +7,7 @@ from src import plan_mode
 from src.gui.events import UiBridge
 from src.gui.main_window import MainWindow
 from src.gui.runtime import GuiPresenter
-from tests.gui_fakes import new_home, cleanup_home
+from tests.gui_fakes import cleanup_home, new_home
 from tests.test_gui_presenter import _fake_runtime, wait_until
 
 
@@ -203,8 +203,9 @@ def test_set_auto_compaction_saves_and_reports(qapp, monkeypatch):
     """对话框确认后调 save_auto_compaction(v) 写**全局** jarvis.json，状态栏显示「已写入/全局配置」（gui15 G3 auto_compaction 写回，全局语义）"""
     win, p, rt, home = _win(qapp)
     try:
-        import src.config
         from PySide6.QtWidgets import QInputDialog
+
+        import src.config
 
         saves = []
         fake = _fake_qinput_get_int((12000, True))
@@ -230,8 +231,9 @@ def test_set_auto_compaction_cancel_no_save(qapp, monkeypatch):
     """对话框取消不落盘（gui15 G3 auto_compaction 写回）"""
     win, p, rt, home = _win(qapp)
     try:
-        import src.config
         from PySide6.QtWidgets import QInputDialog
+
+        import src.config
 
         saves = []
         fake = _fake_qinput_get_int((0, False))

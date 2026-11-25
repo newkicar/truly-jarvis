@@ -60,11 +60,10 @@ async def test_mouse_paste_right_and_middle():
     from unittest.mock import patch
 
     from rich.style import Style
-
     from textual import events
 
     app = _make_host()
-    async with app.run_test() as pilot:
+    async with app.run_test():
         inp = app.query_one("#input", JarvisTextArea)
         for button in (2, 3):
             event = events.MouseDown(

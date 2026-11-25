@@ -1,5 +1,4 @@
 """工单 06 — 记录重建 thread_record：tool_call_id 配对 / 错误态 / 多模态 content。"""
-from types import SimpleNamespace
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 

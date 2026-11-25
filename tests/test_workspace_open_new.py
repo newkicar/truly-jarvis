@@ -30,7 +30,13 @@ def _tree() -> "tuple":
 
 
 from src.gui.project_registry import ProjectRegistry  # noqa: E402
-from src.gui.workspace import OpenDecision, init_project, new_project, open_project, resolve_open_root  # noqa: E402
+from src.gui.workspace import (  # noqa: E402
+    OpenDecision,
+    init_project,
+    new_project,
+    open_project,
+    resolve_open_root,
+)
 
 
 def test_resolve_self_has_jarvis():

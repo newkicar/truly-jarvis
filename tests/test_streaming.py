@@ -294,6 +294,130 @@ def test_run_agent_turn_abandon_calls_finalize():
     assert agent.finalized is True
 
 
+def test_run_agent_turn_reject_counts_in_tool_calls():
+    """#goal 05: 全 reject 轮 _count_rejected_actions 补计 tool_calls_count（续跑门能看见）。"""
+    import src.commands as cmd
+
+    class _Intr:
+        value = {"action_requests": [{"name": "execute", "args": {"command": "echo hi"}}]}
+
+    class _StreamIntr:
+        interrupted = True
+        interrupts = [_Intr()]
+        output = None
+
+        def interleave(self, *kinds):
+            if False:
+                yield
+
+    class _StreamOk:
+        interrupted = False
+        interrupts = None
+        output = None
+
+        def interleave(self, *kinds):
+            if False:
+                yield
+
+    calls = {"n": 0}
+
+    class FakeAgent:
+        checkpointer = None
+
+        def stream_events(self, payload, *, version, config, control=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return _StreamIntr()
+            return _StreamOk()
+
+    agent = FakeAgent()
+    original = cmd.finalize_turn
+    cmd.finalize_turn = lambda *a, **kw: None
+    try:
+        ok = streaming.run_agent_turn(
+            agent,
+            "t",
+            "hi",
+            handle_interrupts=lambda intr: {"decisions": [{"type": "reject"}]},
+            callbacks={
+                "on_subagent": lambda *a: None,
+                "on_tool_call": lambda *a: None,
+                "on_message_delta": lambda d: None,
+            },
+        )
+    finally:
+        cmd.finalize_turn = original
+
+    assert ok.ok is True
+    assert ok.outcome == "complete"
+    assert ok.tool_calls_count == 1
+
+
+def test_run_agent_turn_filtered_decisions_skip_reject_count():
+    """#goal 05 守卫：decisions 数 ≠ action 数（TUI filter 后）→ 整体跳过，不误计。"""
+    import src.commands as cmd
+
+    class _Intr:
+        value = {
+            "action_requests": [
+                {"name": "execute", "args": {"command": "echo a"}},
+                {"name": "execute", "args": {"command": "echo b"}},
+            ]
+        }
+
+    class _StreamIntr:
+        interrupted = True
+        interrupts = [_Intr()]
+        output = None
+
+        def interleave(self, *kinds):
+            if False:
+                yield
+
+    class _StreamOk:
+        interrupted = False
+        interrupts = None
+        output = None
+
+        def interleave(self, *kinds):
+            if False:
+                yield
+
+    calls = {"n": 0}
+
+    class FakeAgent:
+        checkpointer = None
+
+        def stream_events(self, payload, *, version, config, control=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return _StreamIntr()
+            return _StreamOk()
+
+    agent = FakeAgent()
+    original = cmd.finalize_turn
+    cmd.finalize_turn = lambda *a, **kw: None
+    try:
+        # 2 actions vs 1 decision → 守卫触发，不计数
+        ok = streaming.run_agent_turn(
+            agent,
+            "t",
+            "hi",
+            handle_interrupts=lambda intr: {"decisions": [{"type": "reject"}]},
+            callbacks={
+                "on_subagent": lambda *a: None,
+                "on_tool_call": lambda *a: None,
+                "on_message_delta": lambda d: None,
+            },
+        )
+    finally:
+        cmd.finalize_turn = original
+
+    assert ok.ok is True
+    assert ok.outcome == "complete"
+    assert ok.tool_calls_count == 0
+
+
 # ---------------------------------------------------------------------------
 # tui-ux6 #03 — Esc 真切断：RunControl drain（ADR-0008）
 # ---------------------------------------------------------------------------
@@ -449,7 +573,9 @@ def test_run_agent_turn_drain_stops_after_single_slow_tool():
     """e2e（对标 scratch/probe_drain.py）：慢工具运行中取消 → drain 停图，
     第二次模型调用不发生，run_agent_turn 返回 False（cancel 而非异常上抛）。"""
     from deepagents import create_deep_agent
-    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+    from langchain_core.language_models.fake_chat_models import (
+        FakeMessagesListChatModel,
+    )
     from langchain_core.messages import AIMessage
     from langchain_core.tools import tool
 
@@ -507,14 +633,16 @@ def test_run_agent_turn_drain_stops_after_single_slow_tool():
     assert len(model_calls) <= 1
     assert wall < 3.5, f"drain 未真切断：wall={wall:.2f}s"
 
-def test_drain_watchdog_requests_before_tool_end_item_arrives():
+def test_drain_watchdog_requests_before_tool_end_item_arrives():  # noqa: C901
     """tui-ux10：慢工具运行中取消（无 item 到达窗口），看门狗立即 request_drain——
     不依赖 tool_end item 到达时机（CI langgraph 1.2.16 事件发射时序回归防御）。"""
     from unittest import mock
 
     import langgraph.runtime as _lg_runtime
     from deepagents import create_deep_agent
-    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+    from langchain_core.language_models.fake_chat_models import (
+        FakeMessagesListChatModel,
+    )
     from langchain_core.messages import AIMessage
     from langchain_core.tools import tool
 

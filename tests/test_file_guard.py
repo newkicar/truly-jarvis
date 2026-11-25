@@ -34,8 +34,8 @@ from src.permissions import (
     GATED_TOOLS,
     PermissionDenyMiddleware,
     build_permission_interrupts,
-    build_permission_interrupts_from_state,
     build_permission_interrupts_extended,
+    build_permission_interrupts_from_state,
     merge_permissions_deny_wins,
 )
 from src.tool_call import ToolCallView
@@ -239,7 +239,7 @@ class TestPermissionsExtension:
         assert msg is not None
         audit = scratch_home / "audit" / "permissions.jsonl"
         assert audit.is_file()
-        lines = [json.loads(l) for l in audit.read_text(encoding="utf-8").splitlines() if l.strip()]
+        lines = [json.loads(ln) for ln in audit.read_text(encoding="utf-8").splitlines() if ln.strip()]
         assert lines, "expected at least one audit line"
         rec = lines[-1]
         assert rec["tool"] == "execute"

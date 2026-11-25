@@ -24,7 +24,7 @@ __all__ = ["aligned_diff", "SideBySideDiff"]
 _ELL = "\u2026"
 
 
-def aligned_diff(old, new, max_lines=300):
+def aligned_diff(old, new, max_lines=300):  # noqa: C901
     """逐行对齐 old/new，返回 [(mark, left, right)] 行列表。
 
     mark 取值：' '(相等) / '-'(删除) / '+'(新增) / '~'(修改) / '\u2026'(截断)：

@@ -1,5 +1,4 @@
 """#goal 05: TUI 自动续跑接线（turn finally 续跑决策入队 + 预算后置终态 + create_goal notify + [GOAL] sub_title + 续跑输入 dim 行）。"""
-import json as _json
 import os
 import shutil
 import uuid
@@ -228,15 +227,15 @@ def test_ok_status_line_label_suffix(monkeypatch, goal_store):
     goals.goal_set(thread_id=tid, objective="o", max_turns=10)
     app = _StubApp(tid=tid)
     _run_turn(monkeypatch, app, "[目标续跑 4/10] 自动续跑目标「o」。", _turn())
-    last = [l for l in app.log.written if "▌ model" in l][-1]
+    last = [ln for ln in app.log.written if "▌ model" in ln][-1]
     assert "目标续跑 4/10" in last
     app2 = _StubApp(tid=tid)
     _run_turn(monkeypatch, app2, "[目标预算耗尽 4/10] 最后一续跑轮。", _turn())
-    last2 = [l for l in app2.log.written if "▌ model" in l][-1]
+    last2 = [ln for ln in app2.log.written if "▌ model" in ln][-1]
     assert "目标收尾 4/10" in last2
     app3 = _StubApp(tid=tid)
     _run_turn(monkeypatch, app3, "普通消息", _turn())
-    last3 = [l for l in app3.log.written if "▌ model" in l][-1]
+    last3 = [ln for ln in app3.log.written if "▌ model" in ln][-1]
     assert "目标" not in last3
 
 
@@ -252,13 +251,18 @@ async def test_real_app_sub_title_goal_badge(monkeypatch, goal_store):
     app = JarvisApp(None, FakeAgent(reply="好"), {"default": "ask", "tools": {}}, thread_id="default")
     async with app.run_test() as pilot:
         app._update_sub_title()
-        assert "[GOAL] 0/5 active" in app.sub_title
+        assert "[GOAL] 0/5 进行中" in app.sub_title
         goals.goal_note_turn(thread_id="default")
         app._update_sub_title()
-        assert "[GOAL] 1/5 active" in app.sub_title
+        assert "[GOAL] 1/5 进行中" in app.sub_title
+        goals.goal_pause(thread_id="default")
+        app._update_sub_title()
+        assert "[GOAL] 1/5 已暂停" in app.sub_title
+        goals.goal_resume(thread_id="default")
         goals.goal_complete(thread_id="default", audit_evidence="e")
         app._update_sub_title()
-        assert "[GOAL]" not in app.sub_title
+        assert "[GOAL] 1/5 已完成" in app.sub_title  # #goal 05: 终态也显示
+        assert goals.GOAL_STATUS_CN[goals.GOAL_BUDGET_LIMITED] == "回合预算耗尽"
         await pilot.pause()
 
 
@@ -278,7 +282,7 @@ async def test_real_app_goal_input_rendered_as_system_line(monkeypatch, goal_sto
         from textual.widgets import RichLog
 
         log = app.query_one("#messages", RichLog)
-        joined = "".join(l.text for l in log.lines)
+        joined = "".join(ln.text for ln in log.lines)
         assert "目标续跑 0/5…" in joined
         assert "[bold]你[/bold]" not in joined
         await pilot.pause()

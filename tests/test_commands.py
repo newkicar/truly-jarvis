@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+
 """commands.py 命令分发与会话管理测试。
 
 Seam: commands.boundary_checkpoints / resolve_checkpoint_id / list_history /
@@ -6,7 +7,7 @@ list_sessions / dispatch_command。用 fake agent 模拟 get_state_history 返�
 checkpoint，不触网、不碰真 checkpoints.sqlite。
 """
 
-from src import commands
+from src import commands  # noqa: E402
 
 
 def _make_fake_cp(conn):
@@ -1381,9 +1382,8 @@ def test_dispatch_compact_with_guide():
 
 
 # ---------------------------------------------------------------- #goal 03
-from contextlib import contextmanager as _goal_ctx
-from pathlib import Path as _GoalPath
-
+from contextlib import contextmanager as _goal_ctx  # noqa: E402
+from pathlib import Path as _GoalPath  # noqa: E402
 
 _GOAL_TEST_BASE = _GoalPath(__file__).resolve().parent.parent / ".scratch" / "goal-cmd-test-tmp"
 

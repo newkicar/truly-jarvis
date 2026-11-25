@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from pathlib import Path
 
 from src.gui.events import UiBridge
-from src.gui.main_window import _PROJ_ROLE, _TID_ROLE, MainWindow
+from src.gui.main_window import _TID_ROLE, MainWindow
 from src.gui.runtime import GuiPresenter
 from tests.test_gui_presenter import _fake_runtime
 

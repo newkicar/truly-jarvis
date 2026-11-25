@@ -52,7 +52,6 @@ def _fake_runtime():
 
 
 def wait_until(cond, timeout: float = 5.0) -> bool:
-    import sys
 
     from PySide6.QtWidgets import QApplication
 

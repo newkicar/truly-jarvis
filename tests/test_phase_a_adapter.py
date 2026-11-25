@@ -133,7 +133,6 @@ def test_factory_workspace_rooting_and_checkpointer_injection():
 
 def test_no_os_chdir_in_src_or_package():
     """纪律：Jarvis 文件后端与 shell 工具显式传 workspace，禁 os.chdir 全局切换。"""
-    import re
 
     offenders = []
     for root in ('src', 'jarvis'):

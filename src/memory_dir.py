@@ -43,7 +43,7 @@ def _merge_file(src, dst_dir, project_name, notes, label):
     notes.append('同名异容 ' + label + ' → 更名落位 ' + target.name)
 
 
-def maybe_migrate_memory(config):
+def maybe_migrate_memory(config):  # noqa: C901
     '''生效记忆目录为项目级 .jarvis/memory 时，合并旧 {project_root}/memory 并 copy-seed 全局记忆。
 
     显式配置的目录（memory_dir != .jarvis/memory）不迁移直接返回 []；

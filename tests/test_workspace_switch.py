@@ -10,9 +10,9 @@ import shutil
 import sqlite3
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 from tests.gui_fakes import TEST_ROOT
-from types import SimpleNamespace
 
 
 def _home() -> "tuple":
@@ -32,7 +32,11 @@ def _mk_checkpoint_db(path: Path, tids: list[str]) -> None:
 
 
 from src.gui.project_registry import ProjectRegistry  # noqa: E402
-from src.gui.workspace import WorkspaceManager, list_sessions_readonly, pick_start_session  # noqa: E402
+from src.gui.workspace import (  # noqa: E402
+    WorkspaceManager,
+    list_sessions_readonly,
+    pick_start_session,
+)
 
 
 def test_list_sessions_readonly_ids_and_titles():
@@ -93,7 +97,8 @@ def test_switch_closes_old_builds_new_sets_active():
     try:
         reg = ProjectRegistry(d / "projects.json")
         a, b = d / "a", d / "b"
-        a.mkdir(); b.mkdir()
+        a.mkdir()
+        b.mkdir()
         reg.add(a, now=1.0)
         factory_calls: list = []
 
@@ -118,7 +123,9 @@ def test_switch_keeps_busy_runtime_alive_and_reuses_entry():
     try:
         reg = ProjectRegistry(d / "projects.json")
         a, b, c = d / "a", d / "b", d / "c"
-        a.mkdir(); b.mkdir(); c.mkdir()
+        a.mkdir()
+        b.mkdir()
+        c.mkdir()
         reg.add(a, now=1.0)
         factory_calls: list = []
 

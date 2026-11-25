@@ -4,11 +4,10 @@
 """
 import os
 import shutil
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 
 from src.gui.runtime_registry import (
-    RegistryEntry,
     RuntimeRegistry,
     default_busy,
     normalize_root_key,
@@ -118,7 +117,7 @@ def test_close_idle_keeps_active_and_busy_closes_rest():
         assert eb.runtime.closed is False
         # b 加 busy 标记（scheduler gate enabled）再手动造 idle a'
         eb.runtime.gate = SimpleNamespace(enabled=True)
-        ea2 = reg.activate(a)         # a 重建（closed → rebuild），a 变活动
+        reg.activate(a)         # a 重建（closed → rebuild），a 变活动
         n2 = reg.close_idle()
         assert n2 == 0                # b busy + active 保留
         assert eb.runtime.closed is False

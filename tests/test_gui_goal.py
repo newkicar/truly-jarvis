@@ -7,9 +7,10 @@ import os
 import shutil
 import time
 import uuid
-import pytest
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -175,4 +176,4 @@ def test_gui_zero_tools_single_turn(bridge, qapp, monkeypatch, goal_store):
     assert g.turns_used == 0 and g.status == goals.GOAL_ACTIVE
 
 
-import pytest
+import pytest  # noqa: E402

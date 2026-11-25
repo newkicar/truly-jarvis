@@ -83,6 +83,7 @@ def doctor_input_channel_lines() -> list[str]:
         return ["输入通道: n/a（非 Windows）"]
     try:
         from ctypes import windll
+
         from src import ime_shim
 
         kernel32 = windll.kernel32
@@ -220,7 +221,7 @@ def _input_record_type():
     return INPUT_RECORD
 
 
-def run(out_path: Optional[str] = None, timeout: int = 30) -> int:
+def run(out_path: Optional[str] = None, timeout: int = 30) -> int:  # noqa: C901
     """运行探测：逐条 dump 记录到 stdout（可选 out_path），Esc 或超时退出。
 
     返回读到的记录总数（环境错误返回 0）。只读：优先 PeekConsoleInputW（非阻塞），

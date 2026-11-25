@@ -5,7 +5,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QPushButton
 
-from tests.gui_fakes import cleanup_home, new_home, ScriptedMockModel
+from tests.gui_fakes import ScriptedMockModel, cleanup_home, new_home
 from tests.test_gui_presenter import wait_until
 
 
@@ -75,7 +75,6 @@ def test_always_approve_non_execute_is_whole_tool(qtbot):
 
 
 def test_always_approve_execute_has_prefix_editor(qtbot):
-    from PySide6.QtWidgets import QLineEdit
 
     inv = _inv("execute", {"command": "git status"})
     out: list = []
@@ -84,7 +83,7 @@ def test_always_approve_execute_has_prefix_editor(qtbot):
     card.btn_always.click()
     assert card._prefix_edit.text() == "git"  # 默认前缀（extract_command_prefix）
     card._prefix_edit.setText("git log")
-    ok = card.findChild(QPushButton)
+    card.findChild(QPushButton)
     # 「确认永久放行」按钮
     for b in card.findChildren(QPushButton):
         if "确认" in b.text():
@@ -235,7 +234,7 @@ def test_cancel_parked_card_unsticks_queue(qapp):
         tid = presenter.new_session_id()
         win._switch_to(tid)
         win._on_input_submit("trigger execute")
-        card = _wait_card(win, tid, "execute")  # worker blocked on CardSession.wait
+        _wait_card(win, tid, "execute")  # worker blocked on CardSession.wait
 
         presenter.cancel(tid)  # stop: must wake the parked card (otherwise the gate stays running forever)
         th = presenter._turns.get(tid)
@@ -245,7 +244,7 @@ def test_cancel_parked_card_unsticks_queue(qapp):
 
         assert presenter.start_turn(tid, "next line") == "started"  # run directly, no queueing
         # second round also stops on the execute card (mock script) -> stop can still wake it (idempotency regression)
-        card2 = _wait_card(win, tid, "execute")
+        _wait_card(win, tid, "execute")
         presenter.cancel(tid)
         th2 = presenter._turns.get(tid)
         if th2 is not None:

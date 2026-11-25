@@ -3,15 +3,15 @@ from dataclasses import replace
 
 import pytest
 
-from tests.conftest import make_fake_config
 from src.config_agents import build_config_subagents
-from src.resilience import ToolErrorBoundaryMiddleware
-from src.sanitize_history import SanitizeHistoryMiddleware
 from src.permissions import (
     PermissionDenyMiddleware,
     build_permission_deny_middleware,
     build_permission_interrupts,
 )
+from src.resilience import ToolErrorBoundaryMiddleware
+from src.sanitize_history import SanitizeHistoryMiddleware
+from tests.conftest import make_fake_config
 from tests.test_agent import ToolCapableFake
 
 

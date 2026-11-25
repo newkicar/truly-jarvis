@@ -36,6 +36,15 @@ GOAL_PAUSED = "paused"
 GOAL_BUDGET_LIMITED = "budget_limited"
 GOAL_COMPLETE = "complete"
 TERMINAL_STATUSES = frozenset({GOAL_BUDGET_LIMITED, GOAL_COMPLETE})
+
+# #goal 05: 状态中文标签（CLI/TUI/GUI 共用；TUI 徽章与命令文案同源，
+# 原 commands._GOAL_STATUS_CN 私有 dict 上收至此）
+GOAL_STATUS_CN = {
+    GOAL_ACTIVE: "进行中",
+    GOAL_PAUSED: "已暂停",
+    GOAL_COMPLETE: "已完成",
+    GOAL_BUDGET_LIMITED: "回合预算耗尽",
+}
 DEFAULT_GOAL_MAX_TURNS = 5
 
 

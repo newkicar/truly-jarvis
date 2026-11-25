@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.guard import GuardMiddleware
-from src.tool_call import ToolCallView, arg_value, command, tool_call_view
+from src.tool_call import ToolCallView, arg_value, command
 
 # 需要审批的工具（deepagents 默认 gated tools）；read/glob/grep 只读工具不审批。
 GATED_TOOLS = ("execute", "write_file", "edit_file", "delete")

@@ -1395,10 +1395,13 @@ class JarvisApp(App):
                 pass
         if yolo_active(self.permission_state, self.thread_id):
             parts.append("[YOLO]")
-        # #goal 05: 在途目标徽章（非终态才显示；终态/无记录不占位）
+        # #goal 05: 目标徽章（四态全显示；中文标签与命令文案同源 goals.GOAL_STATUS_CN；
+        # 终态也显示，/goal 完成后徽章可查）
         g = goals.goal_status(thread_id=self.thread_id)
-        if g is not None and g.status in (goals.GOAL_ACTIVE, goals.GOAL_PAUSED):
-            parts.append(f"[GOAL] {g.turns_used}/{g.max_turns} {g.status}")
+        if g is not None:
+            parts.append(
+                f"[GOAL] {g.turns_used}/{g.max_turns} {goals.GOAL_STATUS_CN.get(g.status, g.status)}"
+            )
         # tui-ux22 01：pane 寻址纯 helper 路由（显示零变化：条件 ⇔ side_active(thread_id)）
         layout = resolve_panes(self.permission_state, self.thread_id)
         if layout.on_side:
@@ -1804,7 +1807,7 @@ class JarvisApp(App):
         if prompt:
             self._handle_user_message(prompt)
 
-    def _handle_user_message(self, raw: str) -> None:
+    def _handle_user_message(self, raw: str) -> None:  # noqa: C901
         text = raw.strip()
         if not text:
             return
@@ -1940,6 +1943,11 @@ class JarvisApp(App):
         self.call_from_thread(
             self._apply_command_result, result, new_thread, self._yolo_notify_text(text)
         )
+        # #goal 05: /goal 族命令（create/status/pause/resume/clear）刷新 sub_title 目标徽章
+        # （call_from_thread FIFO 保序：徽章晚于日志行；/goal 不返回 new_thread，
+        # 与 _adopt_thread 自带刷新无竞态）
+        if text.startswith("/goal ") or text == "/goal":
+            self.call_from_thread(self._update_sub_title)
 
     def _gate_command_worker(self, text: str) -> None:
         """tui-ux15: /compact、/dream 门控 worker（模型调用可阻塞，完成后释放回合门）。"""

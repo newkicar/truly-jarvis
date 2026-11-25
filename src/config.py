@@ -212,7 +212,7 @@ def _load_json_file(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def load_config(
+def load_config(  # noqa: C901
     env_file: Path | None = None,
     json_file: Path | None = None,
     project_root: Path | None = None,

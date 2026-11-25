@@ -16,8 +16,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from src.project_paths import JARVIS_JSON
 from src.gui.runtime_registry import RuntimeRegistry, normalize_root_key
+from src.project_paths import JARVIS_JSON
 
 # ---------------------------------------------------------------- YOLO 台账（跨项目重建保持）
 

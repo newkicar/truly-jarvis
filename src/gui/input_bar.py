@@ -5,6 +5,8 @@ Ctrl+C/V/X/A 走 Qt 原生（选中文本即复制，事件过滤焦点归还，
 """
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeyEvent, QTextCursor
 from PySide6.QtWidgets import (
@@ -82,7 +84,6 @@ class InputBar(QWidget):
     #      故不再依赖原生；选区在则替换选区，与原生按键语义一致）。
     #      Ctrl+C/V/X/A 等修饰组合不拦截，走 Qt 原生（选区复制保留）。
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
-        from PySide6.QtGui import QKeyEvent
 
         if obj is self.edit and isinstance(event, QKeyEvent) and event.type() == event.Type.KeyPress:
             key = event.key()

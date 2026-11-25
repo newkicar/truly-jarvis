@@ -6,7 +6,7 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from tests.gui_fakes import cleanup_home, new_home, ScriptedMockModel
+from tests.gui_fakes import ScriptedMockModel, cleanup_home, new_home
 
 
 def _build(home, model=None, **kw):

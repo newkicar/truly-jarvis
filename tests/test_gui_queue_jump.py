@@ -10,12 +10,13 @@ from collections import deque
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from src.jump_in_queue import JumpInRegistry
-from tests.gui_fakes import new_home, cleanup_home
+from tests.gui_fakes import cleanup_home, new_home
 from tests.test_gui_presenter import _fake_runtime
 
 
 def test_strip_rows_carry_jump_and_pull_out_buttons(qtbot):
     from PySide6.QtWidgets import QPushButton
+
     from src.gui.queue_strip import QueueStrip
 
     strip = QueueStrip()

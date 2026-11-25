@@ -4,7 +4,6 @@ from pathlib import Path
 from src import commands
 from src.shell_backend import InheritedEnvShellBackend
 from src.tui_completion import resolve_overlay_state
-
 from tests.conftest import make_fake_config
 
 
@@ -51,8 +50,8 @@ def test_path_anchor_lines_dedup_and_cap():
 def test_path_anchor_lines_longer_prefix_first():
     mapping = {"/workspace/": "D:/x", "/memories/": "D:/m"}
     lines = commands.path_anchor_lines("读 /memories/note.md 和 /workspace/a.py", mapping)
-    assert any("→ " + str(Path("D:/m") / "note.md") in l for l in lines)
-    assert any("→ " + str(Path("D:/x") / "a.py") in l for l in lines)
+    assert any("→ " + str(Path("D:/m") / "note.md") in ln for ln in lines)
+    assert any("→ " + str(Path("D:/x") / "a.py") in ln for ln in lines)
 
 
 def test_shell_guard_error_includes_real_dir(tmp_path):

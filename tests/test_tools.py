@@ -92,7 +92,11 @@ def test_search_handles_failure(monkeypatch):
 
 
 def test_make_tools_are_callable():
-    from src.tools import make_deep_search_tool, make_quick_search_tool, make_search_tool
+    from src.tools import (
+        make_deep_search_tool,
+        make_quick_search_tool,
+        make_search_tool,
+    )
 
     for maker in (make_quick_search_tool, make_search_tool, make_deep_search_tool):
         t = maker("tvly-x")

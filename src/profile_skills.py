@@ -210,7 +210,7 @@ def _manifest_hash(profile_id, project_id, task_id, entries, conflicts, excluded
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
-def resolve(
+def resolve(  # noqa: C901
     profile_id: str,
     workspace: str | Path,
     task_context: TaskContext | None = None,

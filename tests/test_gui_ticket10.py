@@ -10,7 +10,7 @@ from src import commands
 from src.gui.events import UiBridge
 from src.gui.main_window import MainWindow
 from src.gui.runtime import GuiPresenter
-from tests.gui_fakes import new_home, cleanup_home
+from tests.gui_fakes import cleanup_home, new_home
 from tests.test_gui_presenter import _fake_runtime, wait_until
 
 
@@ -40,7 +40,7 @@ def test_execute_slash_dispatches_and_notifies(qapp, monkeypatch):
 
 def test_filter_commands_semantics():
     """命令菜单的「筛选」逻辑 = slash_completion.filter_commands 纯函数（菜单只是枚举展示）。"""
-    from src.slash_completion import filter_commands, SLASH_COMMANDS
+    from src.slash_completion import SLASH_COMMANDS, filter_commands
 
     assert [c.name for c in filter_commands(SLASH_COMMANDS, "comp")] == ["/compact"]
     assert len(filter_commands(SLASH_COMMANDS, "")) >= 15
@@ -50,7 +50,6 @@ def test_filter_commands_semantics():
 # ---------------------------------------------------------------- 补全
 def test_resolve_slash_and_use_and_at(qapp):
     from src.gui.completion import resolve_for_input
-    from src.gui.input_bar import InputBar
     from src.skill_discovery import SkillMeta
 
     home = new_home()
@@ -92,7 +91,6 @@ def test_resolve_slash_and_use_and_at(qapp):
 
 def test_accept_suggestion_only_touches_cursor_line(qapp):
     from src.gui.completion import accept_suggestion, resolve_for_input
-    from src.gui.input_bar import InputBar
 
     home = new_home()
     try:
@@ -181,7 +179,6 @@ def test_scheduler_panel_toggle_writes_back(qapp):
     assert [r["enabled"] for r in rows if r["name"] == "daily"] == [True]
 
     # 面板勾选态映射
-    home2 = home
     rt = _fake_runtime()
     rt.config.schedules_dir = sched
     p = GuiPresenter(rt, UiBridge())
@@ -301,7 +298,6 @@ def test_popup_does_not_grab_keyboard(qapp):
 def test_typing_continues_while_popup_open(qapp):
     """弹层开着时输入框仍收键：连续敲 /ses → 弹层内容随字过滤，文本持续增长
     （旧 Popup 抢键盘：敲完 /s 后第 2 个字符进不了输入框）。"""
-    import time
 
     rt = _fake_runtime()
     p = GuiPresenter(rt, UiBridge())

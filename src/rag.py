@@ -150,7 +150,7 @@ class RagIndex:
 
     def _embed_and_upsert(self, items: list[tuple[str, list[str]]]) -> None:
         """分批 embedding 并 upsert 到 chromadb（id = 文件路径 + 块索引）。"""
-        all_ids, all_embs, all_docs, all_metas = [], [], [], []
+        all_ids, _all_embs, all_docs, all_metas = [], [], [], []
         for key, chunks in items:
             for i, chunk in enumerate(chunks):
                 all_ids.append(f"{key}#{i}")
