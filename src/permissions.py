@@ -266,6 +266,20 @@ def side_parent(state: dict, thread_id: str) -> str | None:
     return None
 
 
+def _current_turn_tid(state: dict) -> str:
+    """工单 #4：当前回合真实 thread_id（门判定双真源收敛）。
+
+    门读点（YOLO/proxy/side）优先取 thread-local——streaming.run_agent_turn
+    在 worker 线程入口 set_current_thread_id（finally 成对清理）；thread-local
+    按 OS 线程天然隔离，免疫并发 side/sched 回合对共享键 state["thread_id"]
+    的覆写（覆写会让门落到错误 tid，而 TUI 徽标按显示线程判 → 门/徽标分歧）。
+    无 thread-local（GUI 未走 run_agent_turn、测试直调）→ 回落共享键 = 旧行为，
+    不回归。jump_in_queue 不 import permissions，函数内惰性 import 无循环依赖。
+    """
+    from src.jump_in_queue import get_current_thread_id
+    return str(get_current_thread_id() or state.get("thread_id") or "")
+
+
 def _action_for_args(state: dict, tool: str, args: dict) -> str:
     """按 state 当前规则 + 一次工具调用的 args 解析动作（allow/ask/deny）。
 
@@ -276,7 +290,7 @@ def _action_for_args(state: dict, tool: str, args: dict) -> str:
 
     Hook 优先于 javis.json permissions（Codex: Hooks → rules → User）。
     """
-    if yolo_active(state, str(state.get("thread_id") or "")):
+    if yolo_active(state, _current_turn_tid(state)):
         return "allow"
     hook_rules = state.get("hooks") or []
     if hook_rules and tool in GATED_TOOLS:
@@ -286,7 +300,7 @@ def _action_for_args(state: dict, tool: str, args: dict) -> str:
             hook_rules,
             tool,
             args if isinstance(args, dict) else {},
-            thread_id=str(state.get("thread_id") or ""),
+            thread_id=_current_turn_tid(state),
             project_root=state.get("project_root"),
         )
         if hook is not None:
@@ -317,7 +331,7 @@ def _action_for_args(state: dict, tool: str, args: dict) -> str:
     # deny 已在规则解析阶段定案、绝不被覆盖；yolo 短路（函数顶）优先于本块。
     if (
         action == "ask"
-        and proxy_active(state, str(state.get("thread_id") or ""))
+        and proxy_active(state, _current_turn_tid(state))
         and proxy_auto_allow(tool, args if isinstance(args, dict) else {}, state)
     ):
         return "allow"
@@ -550,7 +564,7 @@ class PermissionDenyMiddleware(GuardMiddleware):
                 "prefix": extract_command_prefix(value) if tool == "execute" else "",
                 "value_hash": hashlib.sha1(value.encode("utf-8", "replace")).hexdigest()[:12],
                 "value_len": len(value),
-                "thread_id": str(self.state.get("thread_id") or ""),
+                "thread_id": _current_turn_tid(self.state),
             }
             from src.project_paths import user_home
 
@@ -585,7 +599,7 @@ class PermissionDenyMiddleware(GuardMiddleware):
                 hook_rules,
                 tool,
                 view.args if isinstance(view.args, dict) else {},
-                thread_id=str(self.state.get("thread_id") or ""),
+                thread_id=_current_turn_tid(self.state),
                 project_root=self.state.get("project_root"),
             )
             if hook and hook[0] == "deny" and hook[1]:
@@ -603,8 +617,9 @@ class SideTaskGuardMiddleware(GuardMiddleware):
 
     挂在主代理 wrap_tool_call / awrap_tool_call（工具执行前），state 与
     interrupt_on 共享同一引用 —— side_open/side_close 即时生效，无需重建 agent。
-    已知并发边界（与 yolo 同记录不解决）：state["thread_id"] 为共享键，
-    并发 sched-turn 可覆写。
+    门读点（工单 #4）改读 thread-local（streaming.run_agent_turn 每回合
+    入口 set、finally 清），免疫并发 side/sched 回合对共享键 state["thread_id"]
+    的覆写；未走 run_agent_turn 的路径回落共享键（旧行为），不回归。
     """
 
     def __init__(self, state: dict):
@@ -618,7 +633,7 @@ class SideTaskGuardMiddleware(GuardMiddleware):
     def block(self, view: ToolCallView) -> str | None:
         if view.name not in ("task", "execute"):
             return None
-        if not side_active(self.state, str(self.state.get("thread_id") or "")):
+        if not side_active(self.state, _current_turn_tid(self.state)):
             return None
         if view.name == "task":
             return ("Error: side 会话中不可用 sub-agents（task 工具）。"

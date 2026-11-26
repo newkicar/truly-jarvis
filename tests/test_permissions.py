@@ -5,10 +5,12 @@ Seam: build_permission_interrupts / resolve_tool_action / apply_permission_overr
 的运行时可变引用 + 持久化。
 """
 import json
+from contextlib import contextmanager
 
 from src.permissions import (
     GATED_TOOLS,
     _action_for_args,
+    _current_turn_tid,
     apply_permission_override,
     build_permission_interrupts,
     build_permission_interrupts_from_state,
@@ -18,6 +20,8 @@ from src.permissions import (
     proxy_off,
     proxy_on,
     resolve_tool_action,
+    side_active,
+    side_open,
     yolo_active,
     yolo_off,
     yolo_on,
@@ -624,3 +628,114 @@ def test_proxy_never_overrides_deny_rule():
     state["thread_id"] = "td"
     proxy_on(state, "td")
     assert _action_for_args(state, "execute", {"command": "git status"}) == "deny"
+# ---------------------------------------------------------------------------
+# 工单 #4：门判定双真源收敛——门读点优先当轮 thread-local，无 thread-local
+# 回落共享键 state["thread_id"]（GUI 未走 run_agent_turn / 测试直调 = 旧行为）
+# ---------------------------------------------------------------------------
+
+
+@contextmanager
+def _thread_local_tid(tid):
+    """把 jump_in_queue 当轮 thread-local 临时置为 tid，退出恢复原值（None = 清除）。
+
+    streaming.run_agent_turn 在 worker 线程入口 set / finally 清 thread-local，
+    此处纯内存模拟同一机制（不派生线程、无 IO）。
+    """
+    from src import jump_in_queue as jq
+
+    prev = jq.get_current_thread_id()
+    jq.set_current_thread_id(tid)
+    try:
+        yield
+    finally:
+        jq.set_current_thread_id(prev)
+
+
+def test_gate_prefers_thread_local_when_shared_key_clobbered():
+    """YOLO 门：共享键被并发 sched 回合 clobber 成别的 tid，判定跟 thread-local 主线 tid。"""
+    _io, state = build_permission_interrupts({"execute": "ask"})
+    state["thread_id"] = "sched-7"  # 被并发 sched 回合覆写
+    yolo_on(state, "main-1")        # YOLO 登记在主线
+
+    with _thread_local_tid("main-1"):
+        assert _action_for_args(state, "execute", {"command": "x"}) == "allow"
+        assert _current_turn_tid(state) == "main-1"
+
+
+def test_gate_falls_back_to_shared_key_without_thread_local():
+    """无 thread-local（GUI/测试直调）时门跟共享键——旧行为不回归。"""
+    _io, state = build_permission_interrupts({"execute": "ask"})
+    yolo_on(state, "t-a")
+
+    with _thread_local_tid(None):  # 显式清除 thread-local
+        state["thread_id"] = "t-a"
+        assert _action_for_args(state, "execute", {"command": "x"}) == "allow"
+        state["thread_id"] = "t-b"
+        assert _action_for_args(state, "execute", {"command": "x"}) == "ask"
+
+
+def test_proxy_gate_prefers_thread_local_when_shared_key_clobbered():
+    """proxy 门：共享键被 clobber 成 side tid 时，安全动作仍按 thread-local 主线 tid 放行。"""
+    _io, state = build_permission_interrupts({})
+    proxy_on(state, "main-1")
+    state["thread_id"] = "side-9"  # 被并发 side 回合覆写
+
+    with _thread_local_tid("main-1"):
+        # 安全 execute 放行（与 test_proxy_short_circuit_in_action_for_args 同形）
+        assert _action_for_args(state, "execute", {"command": "git status"}) == "allow"
+        # 危险动作仍 ask；side-9 未登记 proxy
+        assert _action_for_args(state, "execute", {"command": "rm -rf /"}) == "ask"
+
+    with _thread_local_tid(None):
+        # 无 thread-local → 跟被 clobber 的共享键：side-9 无 proxy → ask
+        assert _action_for_args(state, "execute", {"command": "git status"}) == "ask"
+
+
+def test_side_guard_prefers_thread_local_when_shared_key_clobbered():
+    """side 守卫：共享键被 clobber 成主线 tid 时，仍按 thread-local side tid 拦 task/execute。"""
+    from src.permissions import SideTaskGuardMiddleware
+    from src.tool_call import ToolCallView
+
+    state = {"thread_id": "t-main"}
+    side_open(state, "t-side", "t-main")
+    assert side_active(state, "t-side")
+    mw = SideTaskGuardMiddleware(state)
+
+    with _thread_local_tid("t-side"):
+        out_task = mw.block(ToolCallView(name="task", id="c1"))
+        assert out_task is not None and "sub-agents" in out_task
+        out_exec = mw.block(ToolCallView(name="execute", id="c2"))
+        assert out_exec is not None and "execute 被禁用" in out_exec
+        # 读/搜工具放行
+        assert mw.block(ToolCallView(name="read_file", id="c3")) is None
+
+    with _thread_local_tid(None):
+        # 共享键 = t-main（非 side 会话）→ 全放行（回落 = 旧行为）
+        assert mw.block(ToolCallView(name="task", id="c1")) is None
+        assert mw.block(ToolCallView(name="execute", id="c2")) is None
+
+
+def test_hook_thread_id_follows_thread_local(monkeypatch):
+    """hook 的 thread_id 关键字也随 thread-local，不被共享键 clobber 带偏。"""
+    from src import permission_hooks
+
+    _io, state = build_permission_interrupts(
+        {"execute": "ask"},
+        hooks={"permission": [{"match": "execute", "command": ["echo", "x"]}]},
+    )
+    seen = []
+
+    def fake_resolve(rules, tool, args, *, thread_id="", project_root=None):
+        seen.append(thread_id)
+        return "deny", "hook deny"
+
+    monkeypatch.setattr(permission_hooks, "resolve_permission_hook", fake_resolve)
+    state["thread_id"] = "clobbered"
+
+    with _thread_local_tid("main-1"):
+        assert _action_for_args(state, "execute", {"command": "echo x"}) == "deny"
+    assert seen == ["main-1"]
+
+    with _thread_local_tid(None):
+        assert _action_for_args(state, "execute", {"command": "echo x"}) == "deny"
+    assert seen == ["main-1", "clobbered"]
