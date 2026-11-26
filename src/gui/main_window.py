@@ -664,9 +664,9 @@ class MainWindow(QMainWindow):
                     self.presenter.session_registry.set_compacted(tid, True)
                 except Exception:  # noqa: BLE001 — 基线写失败不影响压缩结果
                     pass
-            # /yolo、/proxy、/approve-for-me 改的是共享 permission_state：worker 完成后回主线程重同步
+            # /yolo、/proxy 改的是共享 permission_state：worker 完成后回主线程重同步
             # 菜单勾选 / [YOLO][PROXY] 徽标（_refresh_mode_badges 单一同步点；状态栏由 notify 承载）
-            if first in ("/yolo", "/proxy", "/approve-for-me"):
+            if first in ("/yolo", "/proxy"):
                 b.sync_modes.emit()
             # diagnosing-bugs /goal 修复：/goal 族 → 状态行常驻目标行（status 信号按槽路由，
             # 非瞬态 notify）+ 徽标刷新（[GOAL]）+ 链重启（create/resume kick 经 start_turn）

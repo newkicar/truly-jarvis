@@ -2006,7 +2006,7 @@ class JarvisApp(App):
         self.push_screen(ReportModal(result), after_close)
 
     def _yolo_notify_text(self, text: str) -> str | None:
-        """tui-ux12: /yolo、/proxy、/approve-for-me on/off 执行后短 banner（幂等同文案）；裸查询/非法参数不弹。"""
+        """tui-ux12: /yolo、/proxy on/off 执行后短 banner（幂等同文案）；裸查询/非法参数不弹。"""
         parts = text.split()
         if len(parts) < 2:
             return None
@@ -2018,7 +2018,7 @@ class JarvisApp(App):
             if arg == "off":
                 return "YOLO 已关闭：恢复原 permissions 规则"
             return None
-        if cmd in ("/proxy", "/approve-for-me"):
+        if cmd == "/proxy":
             if arg == "on":
                 return "替我审批已开启：本会话放行安全审批、拦住危险审批"
             if arg == "off":

@@ -43,8 +43,7 @@ _HELP_COMMANDS = """\
   /skills       列出可用 skills（manual 需 /use 手动触发）
   /use <skill> [说明]  手动调用 manual-only skill（注入完整指令）
   /yolo on | off  YOLO 模式开关：本会话所有动作免审批（仅当前会话、重启即关）
-  /approve-for-me on | off  替我审批：安全审批自动放行、危险审批仍拦截（仅当前会话、重启即关）
-  /proxy on | off  替我审批别名（等价 /approve-for-me，向后兼容保留）
+  /proxy on | off  替我审批开关：安全审批自动放行、危险审批仍拦截（仅当前会话、重启即关）
   /goal <objective>|status|pause|resume|clear  持久目标：创建/查询/暂停/恢复/清除（回合预算内自动续跑、跨重启持久）
   /side | /side close  开/关侧边会话（继承历史，只读，禁 sub-agents 与 execute；关=删除会话）
   /compact [提示]  压缩当前会话历史为一条延续性摘要写回（可选文字提示压缩倾向）
@@ -1743,7 +1742,7 @@ def dispatch_command(  # noqa: C901
         return dream.run_dream(agent, load_config()), None, None
     if cmd == "/yolo":
         return yolo_command_text(permission_state, thread_id, command), None, None
-    if cmd in ("/approve-for-me", "/proxy"):
+    if cmd == "/proxy":
         return proxy_command_text(permission_state, thread_id, command), None, None
     if cmd == "/goal":
         return goal_command_text(thread_id, command), None, None
