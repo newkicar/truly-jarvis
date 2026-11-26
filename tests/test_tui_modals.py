@@ -325,3 +325,43 @@ async def test_report_modal_markup_safe_with_unsafe_report() -> None:
 
     await _mount_and_check(ReportModal(UNSAFE_CMD + chr(10) + _long_doctor_report()), check)
 
+
+# ---------------------------------------------------------------------------
+# issue-10：审批弹窗异常销毁兜底（Textual 丢弃 result callback）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_permission_modal_on_lost_fires_when_destroyed_without_dismiss() -> None:
+    """issue-10 红灯测试：异常销毁（pop 只丢弃 result callback 从不触发）时，
+    on_unmount 兜底恰好触发一次 on_lost。
+
+    Textual 8.2.8：Screen.dismiss() 同步触发回调，但 App.pop_screen() 经
+    _pop_result_callback() 只丢弃回调不触发 → 等待方 _wait_modal_dismiss
+    的 done.wait() 永久挂起。on_unmount 是异常销毁路径上仍会收到的事件。
+    """
+    fired: list[object] = []
+    host = _ModalHost()
+    async with host.run_test() as pilot:
+        host.push_screen(PermissionModal(_inv(), on_lost=lambda: fired.append(None)))
+        await pilot.pause()
+        assert isinstance(host.screen, PermissionModal)
+        host.pop_screen()
+        await pilot.pause()
+        await pilot.pause()
+    assert fired == [None]
+
+
+@pytest.mark.asyncio
+async def test_permission_modal_on_lost_not_fired_on_normal_dismiss() -> None:
+    """issue-10：正常 dismiss 先置 _settled → 卸载时 on_unmount 兜底不二次触发（exactly-once）。"""
+    fired: list[object] = []
+    host = _ModalHost()
+    async with host.run_test() as pilot:
+        host.push_screen(PermissionModal(_inv(), on_lost=lambda: fired.append(None)))
+        await pilot.pause()
+        assert isinstance(host.screen, PermissionModal)
+        host.screen.dismiss({"decision": "approve"})
+        await pilot.pause()
+        await pilot.pause()
+    assert fired == []
