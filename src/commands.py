@@ -1469,7 +1469,7 @@ def yolo_command_text(permission_state: dict | None, thread_id: str, raw_command
     幂等：重复 on/off 各回对应短文案；裸 /yolo 只查询不改状态。
     permission_state 为 None 时报错不崩。
     """
-    from src.permissions import yolo_active, yolo_off, yolo_on
+    from src.permissions import proxy_active, yolo_active, yolo_off, yolo_on
 
     if permission_state is None:
         return "YOLO 开关不可用（权限层未初始化）"
@@ -1477,10 +1477,12 @@ def yolo_command_text(permission_state: dict | None, thread_id: str, raw_command
     arg = parts[1].lower() if len(parts) > 1 else ""
     active = yolo_active(permission_state, thread_id)
     if arg == "on":
+        was_proxy = proxy_active(permission_state, thread_id)  # Issue #9：互斥，开 YOLO 自动关 proxy
         yolo_on(permission_state, thread_id)
         if active:
             return "YOLO 已开启（本会话免审批；vault 写保护、步数预算与熔断仍生效）"
-        return "YOLO 已开启：本会话所有动作免审批（vault 写保护与步数/熔断仍生效，/yolo off 关闭）"
+        base = "YOLO 已开启：本会话所有动作免审批（vault 写保护与步数/熔断仍生效，/yolo off 关闭）"
+        return base + "，替我审批已随之关闭" if was_proxy else base
     if arg == "off":
         yolo_off(permission_state, thread_id)
         if active:
@@ -1500,7 +1502,7 @@ def proxy_command_text(permission_state: dict | None, thread_id: str, raw_comman
     幂等：重复 on/off 各回对应短文案；裸 /proxy 只查询不改状态。
     permission_state 为 None 时报错不崩。
     """
-    from src.permissions import proxy_active, proxy_off, proxy_on
+    from src.permissions import proxy_active, proxy_off, proxy_on, yolo_active
 
     if permission_state is None:
         return "替我审批开关不可用（权限层未初始化）"
@@ -1508,10 +1510,12 @@ def proxy_command_text(permission_state: dict | None, thread_id: str, raw_comman
     arg = parts[1].lower() if len(parts) > 1 else ""
     active = proxy_active(permission_state, thread_id)
     if arg == "on":
+        was_yolo = yolo_active(permission_state, thread_id)  # Issue #9：互斥，开 proxy 自动关 YOLO
         proxy_on(permission_state, thread_id)
         if active:
             return "替我审批已开启（安全审批自动放行；危险审批仍拦截；/proxy off 关闭）"
-        return "替我审批已开启：放行安全审批（只读命令/项目内写编辑）、拦住危险审批（仅当前会话，重启即关）"
+        base = "替我审批已开启：放行安全审批（只读命令/项目内写编辑）、拦住危险审批（仅当前会话，重启即关）"
+        return base + "，YOLO 已随之关闭" if was_yolo else base
     if arg == "off":
         proxy_off(permission_state, thread_id)
         if active:

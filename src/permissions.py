@@ -134,11 +134,15 @@ def heuristic_safe(cmd: str) -> bool:
 
 
 def yolo_on(state: dict, thread_id: str) -> bool:
-    """为指定 thread 开启 YOLO（幂等）。空 id 为 no-op，返回 False。"""
+    """为指定 thread 开启 YOLO（幂等）。空 id 为 no-op，返回 False。
+
+    Issue #9 互斥：YOLO 与 替我审批(proxy) 后开者为准——开 YOLO 自动关同 thread 的 proxy。
+    """
     tid = str(thread_id or "")
     if not tid:
         return False
     state.setdefault(YOLO_THREADS_KEY, set()).add(tid)
+    proxy_off(state, tid)  # Issue #9：互斥，开一个自动关另一个（同 thread）
     return True
 
 
@@ -164,11 +168,15 @@ def yolo_active(state: dict, thread_id: str) -> bool:
     return bool(threads is not None and tid in threads)
 
 def proxy_on(state: dict, thread_id: str) -> bool:
-    """为指定 thread 开启替我审批（幂等）。空 id 为 no-op，返回 False。"""
+    """为指定 thread 开启替我审批（幂等）。空 id 为 no-op，返回 False。
+
+    Issue #9 互斥：YOLO 与 替我审批(proxy) 后开者为准——开 proxy 自动关同 thread 的 YOLO。
+    """
     tid = str(thread_id or "")
     if not tid:
         return False
     state.setdefault(PROXY_THREADS_KEY, set()).add(tid)
+    yolo_off(state, tid)  # Issue #9：互斥，开一个自动关另一个（同 thread）
     return True
 
 

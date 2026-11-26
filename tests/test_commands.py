@@ -1213,6 +1213,21 @@ def test_dispatch_yolo_without_permission_state_does_not_crash():
     assert nt is None and rc is None
 
 
+def test_dispatch_yolo_on_auto_offs_proxy_text():
+    """Issue #9 互斥：/yolo on 自动关已开的替我审批，回复注明「随之关闭」。"""
+    from src.permissions import build_permission_interrupts, proxy_active, yolo_active
+
+    _io, state = build_permission_interrupts({})
+    text, _, _ = commands.dispatch_command(FakeDispatchAgent(), "tm", "/proxy on", permission_state=state)
+    assert proxy_active(state, "tm")
+    text, nt, rc = commands.dispatch_command(FakeDispatchAgent(), "tm", "/yolo on", permission_state=state)
+    assert "YOLO 已开启：本会话所有动作免审批" in text
+    assert "替我审批已随之关闭" in text  # 互斥标注
+    assert nt is None and rc is None
+    assert yolo_active(state, "tm")
+    assert not proxy_active(state, "tm")
+
+
 def test_help_includes_yolo():
     assert "/yolo" in commands.CLI_HELP
     assert "/yolo" in commands.TUI_HELP
@@ -1567,6 +1582,21 @@ def test_dispatch_proxy_full_cycle():
     text, _, _ = commands.dispatch_command(agent, "tp", "/proxy off", permission_state=state)
     assert text == "替我审批已关闭（本会话）"
     assert not proxy_active(state, "tp")
+
+
+def test_dispatch_proxy_on_auto_offs_yolo_text():
+    """Issue #9 互斥：/proxy on 自动关已开的 YOLO，回复注明「随之关闭」。"""
+    from src.permissions import build_permission_interrupts, proxy_active, yolo_active
+
+    _io, state = build_permission_interrupts({})
+    text, _, _ = commands.dispatch_command(FakeDispatchAgent(), "tm", "/yolo on", permission_state=state)
+    assert yolo_active(state, "tm")
+    text, nt, rc = commands.dispatch_command(FakeDispatchAgent(), "tm", "/proxy on", permission_state=state)
+    assert "替我审批已开启" in text
+    assert "YOLO 已随之关闭" in text  # 互斥标注
+    assert nt is None and rc is None
+    assert proxy_active(state, "tm")
+    assert not yolo_active(state, "tm")
 
 
 def test_dispatch_proxy_bad_arg():
