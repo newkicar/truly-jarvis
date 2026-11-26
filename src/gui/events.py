@@ -32,8 +32,8 @@ class UiBridge(QObject):
     create_card = Signal(str, object, str)
     # 会话列表需要刷新（新增/删除 thread）
     refresh_sessions = Signal()
-    # 轻提示（状态行一次性文案）
-    notify = Signal(str)
+    # 轻提示（状态行一次性文案）：(text, tid) 按槽路由主/侧状态行（#7）；tid 空 = 主槽
+    notify = Signal(str, str)
     # 审批决策完成 → 焦点回输入框（工单 04；G7 携带 tid 撤待审批卡）
     focus_input = Signal(str)
     # undo 等消息层操作后 → 主线程重建该 thread 的 pane 记录（工单 08）

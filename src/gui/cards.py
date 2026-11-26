@@ -350,7 +350,7 @@ class CardAsk:
         cs = CardSession()
         card_id = uuid.uuid4().hex
         self._cards[card_id] = cs
-        self._bridge.notify.emit(f"等待审批 {inv.name}…")
+        self._bridge.notify.emit(f"等待审批 {inv.name}…", tid)
 
         def on_decision(result: dict) -> None:
             cs.result = result

@@ -71,7 +71,7 @@ def test_fork_failure_notifies(qtbot, monkeypatch):
         rt = _fake_runtime()
         p = GuiPresenter(rt, UiBridge())
         notes: list[str] = []
-        p.bridge.notify.connect(notes.append)
+        p.bridge.notify.connect(lambda s, t="": notes.append(s))
         monkeypatch.setattr(commands, "fork", lambda agent, tid, cid: ("分叉失败: 无", None))
         p.run_fork("t-tt", "zzz")
         assert wait_until(lambda: any("分叉失败" in n for n in notes), timeout=10.0)

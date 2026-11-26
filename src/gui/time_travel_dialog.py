@@ -95,7 +95,7 @@ class TimeTravelDialog(QDialog):
     def _replay(self) -> None:
         cid = self._selected_cid()
         if not cid:
-            self.presenter.bridge.notify.emit("请先选择一个回放点。")
+            self.presenter.bridge.notify.emit("请先选择一个回放点。", self.tid)
             return
         self.presenter.start_replay(self.tid, cid)
         self.close()
@@ -103,7 +103,7 @@ class TimeTravelDialog(QDialog):
     def _fork(self) -> None:
         cid = self._selected_cid()
         if not cid:
-            self.presenter.bridge.notify.emit("请先选择一个回放点。")
+            self.presenter.bridge.notify.emit("请先选择一个回放点。", self.tid)
             return
         self.presenter.run_fork(self.tid, cid)
         self.close()

@@ -29,7 +29,7 @@ def test_execute_slash_dispatches_and_notifies(qapp, monkeypatch):
             ),
         )
         notes: list[str] = []
-        p.bridge.notify.connect(notes.append)
+        p.bridge.notify.connect(lambda s, t="": notes.append(s))
         win._switch_to("t-cmd")
         win._execute_slash("/sessions")
         assert wait_until(lambda: calls["raw"] == ["/sessions"], timeout=10.0)

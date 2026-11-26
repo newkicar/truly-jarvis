@@ -402,7 +402,8 @@ class GuiPresenter:
 
     def _default_ask(self, inv: Any, tid: str) -> dict | None:
         self.bridge.notify.emit(
-            f"工具 {inv.name} 需审批：GUI 审批卡片尚未启用（工单 04），本轮已拒绝执行。"
+            f"工具 {inv.name} 需审批：GUI 审批卡片尚未启用（工单 04），本轮已拒绝执行。",
+            tid,
         )
         return {"decision": "reject"}
 
@@ -436,7 +437,7 @@ class GuiPresenter:
         verdict = self.gate.try_start(tid, user_text, images=images)
         if verdict == "queued":
             n = self.gate.queued_count(tid)
-            self.bridge.notify.emit(f"该会话回合进行中，消息已排队（当前第 {n} 条）。")
+            self.bridge.notify.emit(f"该会话回合进行中，消息已排队（当前第 {n} 条）。", tid)
             return verdict
         self._launch(tid, user_text, user_input, user_input_fallback)
         return verdict
@@ -539,7 +540,8 @@ class GuiPresenter:
                         lambda inv: (self._ask_action or self._default_ask)(inv, tid),
                         permission_state=rt.permission_state,
                         on_always_approve=lambda n: b.notify.emit(
-                            f"已永久放行 {n}（写入 jarvis.json，以后自动放行）"
+                            f"已永久放行 {n}（写入 jarvis.json，以后自动放行）",
+                            tid,
                         ),
                     ),
                     callbacks=self._turn_callbacks(b, tid),
@@ -552,11 +554,12 @@ class GuiPresenter:
                     user_input_fallback=user_input_fallback,
                 )
                 ok = turn.ok
+                # #7 验收 b：成功路径先 notify（一次性层顶出）后 turn_done（回落常驻层）
+                self.bridge.notify.emit(f"回合{'完成' if ok else '放弃/取消'}（{time.monotonic() - t0:.1f}s）", tid)
                 self.bridge.turn_done.emit(tid, bool(ok))
-                self.bridge.notify.emit(f"回合{'完成' if ok else '放弃/取消'}（{time.monotonic() - t0:.1f}s）")
             except Exception as exc:  # noqa: BLE001 — worker 边界兜底，错误回主线程展示
                 b.turn_done.emit(tid, False)
-                b.notify.emit(streaming.format_agent_error(exc))
+                b.notify.emit(streaming.format_agent_error(exc), tid)
             finally:
                 self._turns.pop(tid, None)
                 b.refresh_sessions.emit()
@@ -639,7 +642,7 @@ class GuiPresenter:
                     max_steps=rt.config.execution_max_steps,
                 )
             except Exception as exc:  # noqa: BLE001
-                b.notify.emit(streaming.format_agent_error(exc))
+                b.notify.emit(streaming.format_agent_error(exc), tid)
             finally:
                 b.refresh_sessions.emit()
 
@@ -660,9 +663,9 @@ class GuiPresenter:
                 if new_tid:
                     b.switch_session.emit(new_tid, note)
                 else:
-                    b.notify.emit(note or "分叉失败")
+                    b.notify.emit(note or "分叉失败", tid)
             except Exception as exc:  # noqa: BLE001
-                b.notify.emit(f"分叉失败: {exc}")
+                b.notify.emit(f"分叉失败: {exc}", tid)
             finally:
                 b.refresh_sessions.emit()
 
@@ -676,9 +679,11 @@ class GuiPresenter:
         with self._get_lock(tid):
             try:
                 result = fn()
-                b.notify.emit(result)
+                # #7：空结果零 notify；非空按 tid 路由主/侧槽
+                if result:
+                    b.notify.emit(result, tid)
             except Exception as exc:  # noqa: BLE001
-                b.notify.emit(f"命令失败: {exc}")
+                b.notify.emit(f"命令失败: {exc}", tid)
             finally:
                 b.refresh_sessions.emit()
 

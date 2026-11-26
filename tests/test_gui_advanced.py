@@ -78,7 +78,7 @@ def test_undo_dispatches_command_and_rebuilds(qapp, monkeypatch):
         win._switch_to("sess-u")
         # 真实 worker 线程跑 run_command：等 notify + rebuild_pane 落地
         notified = {"n": 0}
-        win.bridge.notify.connect(lambda s: notified.__setitem__("n", notified["n"] + 1))
+        win.bridge.notify.connect(lambda s, t="": notified.__setitem__("n", notified["n"] + 1))
         win._on_undo()
         assert wait_until(lambda: calls["undo"] == ["sess-u"], timeout=10.0)
         assert wait_until(lambda: notified["n"] >= 1, timeout=10.0)
@@ -128,7 +128,7 @@ def test_yolo_slash_off_resyncs_ui_surfaces(qapp, monkeypatch):
         calls = []
         # 同步化 run_command（内联执行 worker fn，queued 信号同线程直连即时生效）
         monkeypatch.setattr(
-            p, "run_command", lambda fn, tid: calls.append(tid) or fn()
+            p, "run_command", lambda fn, tid: calls.append(tid) or p._command_worker(fn, tid)
         )
         win._execute_slash("/yolo off")
         assert calls == ["sess-a"]
@@ -150,7 +150,7 @@ def test_yolo_slash_on_resyncs_ui_surfaces(qapp, monkeypatch):
         win._switch_to("sess-a")
         assert not win.yolo_action.isChecked()
         monkeypatch.setattr(
-            p, "run_command", lambda fn, tid: fn()
+            p, "run_command", lambda fn, tid: p._command_worker(fn, tid)
         )
         win._execute_slash("/yolo on")
         assert permissions.yolo_active(state, "sess-a")
