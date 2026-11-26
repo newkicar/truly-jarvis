@@ -815,3 +815,28 @@ def test_hook_thread_id_follows_thread_local(monkeypatch):
     with _thread_local_tid(None):
         assert _action_for_args(state, "execute", {"command": "echo x"}) == "deny"
     assert seen == ["main-1", "clobbered"]
+
+
+def test_proxy_when_predicate_gate_issue8():
+    """Issue #8 门控层回归：proxy on 安全审批放行、危险仍中断；off 恢复原规则。"""
+    from pathlib import Path
+
+    interrupt_on, state = build_permission_interrupts({})
+    state["thread_id"] = "tp8"
+    proxy_on(state, "tp8")
+
+    when_exec = interrupt_on["execute"]["when"]
+    when_write = interrupt_on["write_file"]["when"]
+    when_delete = interrupt_on["delete"]["when"]
+
+    outside = str(Path(__file__).resolve().parent.parent.parent / "outside.md")
+    assert when_exec(_fake_req("execute", {"command": "Get-Date"}, "a")) is False
+    assert when_exec(_fake_req("execute", {"command": "git status"}, "b")) is False
+    assert when_exec(_fake_req("execute", {"command": "rm -rf /"}, "c")) is True
+    assert when_write(_fake_req("write_file", {"file_path": "notes.md"}, "d")) is False
+    assert when_write(_fake_req("write_file", {"file_path": outside}, "e")) is True
+    assert when_delete(_fake_req("delete", {"file_path": "x.md"}, "f")) is True
+
+    proxy_off(state, "tp8")
+    assert when_exec(_fake_req("execute", {"command": "git status"}, "g")) is True
+    assert when_write(_fake_req("write_file", {"file_path": "notes.md"}, "h")) is True

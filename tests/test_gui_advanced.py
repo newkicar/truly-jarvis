@@ -418,3 +418,25 @@ def test_advanced_menu_contains_proxy_action(qapp):
         assert "替我审批（自动放行安全审批，拦住危险）" in texts
     finally:
         cleanup_home(home)
+
+
+def test_proxy_slash_in_side_slot_registers_main_thread(qapp, monkeypatch):
+    """Issue #8：侧槽 /proxy 注册到徽标/门控用的主线线程，而非侧线程。"""
+    from src import permissions
+
+    win, p, rt, home = _win(qapp)
+    try:
+        state = rt.permission_state
+        win._switch_to("main-sess")
+        win._side_slot_tid = "side-sess"
+        win.active_tid = "side-sess"
+        permissions.side_open(state, "side-sess", "main-sess")
+        monkeypatch.setattr(p, "run_command", lambda fn, tid: fn())
+        assert win._route_slash("/proxy on", "side")
+        assert permissions.proxy_active(state, "main-sess")
+        assert not permissions.proxy_active(state, "side-sess")
+        assert win.proxy_action.isChecked()
+        assert "[PROXY]" in win.mode_badge.text()
+    finally:
+        cleanup_home(home)
+
