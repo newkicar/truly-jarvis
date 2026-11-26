@@ -147,7 +147,7 @@ def test_default_ask_rejects_and_notifies(bridge, qapp, monkeypatch):
     p = GuiPresenter(_fake_runtime(), bridge)
     inv = SimpleNamespace(name="execute", args={"command": "x"}, path=None)
     notes: list[str] = []
-    bridge.notify.connect(notes.append)
+    bridge.notify.connect(lambda s, t="": notes.append(s))
     result = p._default_ask(inv, "t9")
     assert result == {"decision": "reject"}
     qapp.processEvents()

@@ -120,11 +120,12 @@ class SchedulerPanel(QDialog):
         try:
             set_task_enabled(row["path"], on)
             self.presenter.bridge.notify.emit(
-                f"定时任务 {row['name']} {'已启用' if on else '已停用'}（写回 {row['file']}）"
+                f"定时任务 {row['name']} {'已启用' if on else '已停用'}（写回 {row['file']}）",
+                ""
             )
         except Exception as exc:  # noqa: BLE001
-            self.presenter.bridge.notify.emit(f"写回失败: {exc}")
+            self.presenter.bridge.notify.emit(f"写回失败: {exc}", "")
 
     def _reload(self) -> None:
         text = self.presenter.runtime.gate.reload()
-        self.presenter.bridge.notify.emit(text)
+        self.presenter.bridge.notify.emit(text, "")

@@ -298,6 +298,9 @@ class MainWindow(QMainWindow):
         self._main_slot_tid: str | None = None
         self._side_slot_tid: str | None = None
 
+        # #7 双层状态行：常驻层（goal 行/会话行/就绪）+ 一次性层（notify 顶出，最高显示优先级）
+        self._slot_persistent: dict[str, str] = {"main": "就绪", "side": "就绪"}
+        self._slot_oneshot: dict[str, str] = {"main": "", "side": ""}
         self.setCentralWidget(central)
         self.resize(1060, 700)
 
@@ -389,7 +392,7 @@ class MainWindow(QMainWindow):
     def _on_new_session_clicked(self) -> None:
         """新会话按钮：空态（无关联项目）时只提示，不崩。"""
         if self.presenter is None:
-            self.status_label.setText("还没有关联项目，请先「打开项目 / 新建项目」")
+            self._slot_set_persistent("main", "还没有关联项目，请先「打开项目 / 新建项目」")
             return
         self._switch_to(self.presenter.new_session_id())
 
@@ -414,13 +417,13 @@ class MainWindow(QMainWindow):
         if on:
             was_proxy = permissions.proxy_active(state, tid)  # Issue #9：开 YOLO 自动关同 thread 的 proxy
             permissions.yolo_on(state, tid)
-            self.status_label.setText(
+            self._slot_set_persistent("main",
                 f"YOLO 已开启（{tid} 免审批；其他会话不受影响）"
                 + ("；替我审批已随之关闭" if was_proxy else "")
             )
         else:
             permissions.yolo_off(state, tid)
-            self.status_label.setText("YOLO 已关闭")
+            self._slot_set_persistent("main", "YOLO 已关闭")
         self._refresh_mode_badges()
 
     def _on_proxy_toggled(self, on: bool) -> None:
@@ -435,7 +438,7 @@ class MainWindow(QMainWindow):
             permissions.proxy_on(state, tid)
         else:
             permissions.proxy_off(state, tid)
-        self.status_label.setText(
+        self._slot_set_persistent("main",
             f"替我审批已开启（{tid} 自动放行安全审批、拦住危险审批；其他会话不受影响）" if on else "替我审批已关闭"
         )
         self._refresh_mode_badges()
@@ -480,7 +483,7 @@ class MainWindow(QMainWindow):
     def _on_set_auto_compaction(self) -> None:
         """高级菜单: auto_compaction 上下文自动压缩阈值（写**全局** jarvis.json，agent 重建后生效）"""
         if self.presenter is None:
-            self.status_label.setText(
+            self._slot_set_persistent("main",
                 "当前没有活动项目，请先「打开项目 / 新建项目」后再设置自动压缩阈值。"
             )
             return
@@ -505,9 +508,9 @@ class MainWindow(QMainWindow):
         try:
             written = save_auto_compaction(value)
         except OSError as exc:
-            self.status_label.setText("自动压缩阈值写入失败: " + str(exc))
+            self._slot_set_persistent("main", "自动压缩阈值写入失败: " + str(exc))
             return
-        self.status_label.setText(
+        self._slot_set_persistent("main",
             "自动压缩阈值 = " + str(value)
             + "（全局配置，对所有项目生效）已写入 " + str(written)
             + "（重启应用后生效；若项目级 jarvis.json 显式配置了 auto_compaction，该项目将覆盖全局值）"
@@ -604,7 +607,7 @@ class MainWindow(QMainWindow):
 
     def _on_doctor(self) -> None:
         if self.presenter is None:
-            self.status_label.setText("还没有关联项目，请先「打开项目 / 新建项目」")
+            self._slot_set_persistent("main", "还没有关联项目，请先「打开项目 / 新建项目」")
             return
         from src.gui import doctor
 
@@ -653,8 +656,7 @@ class MainWindow(QMainWindow):
                 self.presenter.start_replay(new_tid or tid, replay_cid)
             elif new_tid:
                 b.switch_session.emit(new_tid, f"已切换到会话 {new_tid}")
-            if text:
-                b.notify.emit(text)
+
             # ADR-0014: /compact 成功 → 压缩前记录追加进基线文件 + 标记 🗜
             if first == "/compact" and text and text.startswith("已压缩上下文"):
                 from src.gui import compact_baseline
@@ -685,7 +687,7 @@ class MainWindow(QMainWindow):
 
     def _on_scheduler_panel(self) -> None:
         if self.presenter is None:
-            self.status_label.setText("\u8fd8\u6ca1\u6709\u5173\u8054\u9879\u76ee\uff0c\u65e0\u6cd5\u6253\u5f00\u5b9a\u65f6\u4efb\u52a1\u9762\u677f")
+            self._slot_set_persistent("main", "\u8fd8\u6ca1\u6709\u5173\u8054\u9879\u76ee\uff0c\u65e0\u6cd5\u6253\u5f00\u5b9a\u65f6\u4efb\u52a1\u9762\u677f")
             return
         from src.gui.scheduler_panel import SchedulerPanel
 
@@ -828,7 +830,7 @@ class MainWindow(QMainWindow):
         if _goals.goal_status(thread_id=new_tid) is not None:
             from src import commands as _commands
             text += "\n" + _commands.goal_text(new_tid)
-        self.status_label.setText(text)
+        self._slot_set_persistent(self._slot_of_tid(new_tid), text)
 
     def _show_text(self, title: str, text: str) -> None:
         make_text_dialog(title, text, self)
@@ -935,6 +937,18 @@ class MainWindow(QMainWindow):
             return "side"
         return "main"
 
+    def _slot_set_persistent(self, slot: str, text: str) -> None:
+        """Issue #7：常驻层写入（同时清空该槽一次性层）；__new__ 空态测试面无双层
+        dict 时直写回落（status_label）。"""
+        pers = getattr(self, "_slot_persistent", None)
+        oneshot = getattr(self, "_slot_oneshot", None)
+        if pers is None or oneshot is None:
+            self.status_label.setText(text)
+            return
+        pers[slot] = text
+        oneshot[slot] = ""
+        self._slot_status(slot).setText(text)
+
     def _stack_for(self, tid: str) -> QStackedWidget:
         """会话归属的 pane 栈（ChatPane re-parent 目标）。"""
         return self.side_stack if self._slot_of_tid(tid) == "side" else self.stack
@@ -996,7 +1010,7 @@ class MainWindow(QMainWindow):
 
     def _esc_slot_banner(self, slot: str, text: str) -> None:
         """逐槽 Esc 状态行 banner（主槽落 status_label，逐字文案见 _on_esc_pressed）。"""
-        self._slot_status(slot).setText(text)
+        self._slot_set_persistent(slot, text)
 
     def _reset_side_esc_state(self) -> None:
         """gui-ux22 工单 03：侧槽折叠/切项目时复位两级 primed 与 timer（状态不跨会话带）。"""
@@ -1088,7 +1102,7 @@ class MainWindow(QMainWindow):
                 self._sess_done.pop(k, None)
             self._proj_done.pop(rn, None)
         proj = self._active_project_name()
-        self._slot_status(self._slot_of_tid(tid)).setText(f"{proj} · 会话 {tid}{note}" if proj else f"会话 {tid}{note}")
+        self._slot_set_persistent(self._slot_of_tid(tid), f"{proj} · 会话 {tid}{note}" if proj else f"会话 {tid}{note}")
         self._refresh_mode_badges()
         self._refresh_running_badge()
         # #1: 恢复目标会话的未提交草稿（无记录 = 清空输入区与图片条）；
@@ -1471,7 +1485,7 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QApplication
 
         QApplication.clipboard().setText(self._session_markdown_text(tid))
-        self.status_label.setText(f"已复制「{self.presenter.session_label(tid)}」Markdown 全文到剪贴板")
+        self._slot_set_persistent("main", f"已复制「{self.presenter.session_label(tid)}」Markdown 全文到剪贴板")
 
     def _download_session_markdown(self, tid: str) -> None:
         from PySide6.QtWidgets import QFileDialog
@@ -1483,11 +1497,11 @@ class MainWindow(QMainWindow):
         if not path:
             return
         Path(path).write_text(self._session_markdown_text(tid), encoding="utf-8")
-        self.status_label.setText(f"已导出 {path}")
+        self._slot_set_persistent("main", f"已导出 {path}")
 
     def _clone_session(self, tid: str) -> None:
         note, _new_tid = self.presenter.clone_session(tid)
-        self.status_label.setText(note)
+        self._slot_set_persistent("main", note)
 
     def _archive_session(self, tid: str, on: bool) -> None:
         self.presenter.archive_session(tid, on)  # presenter 已发 refresh_sessions 信号
@@ -1506,14 +1520,14 @@ class MainWindow(QMainWindow):
             return
         was_active = tid == self.active_tid
         note = self.presenter.delete_session(tid)
-        self.status_label.setText(note)
+        self._slot_set_persistent("main", note)
         if was_active:
             self._switch_to(self.presenter.new_session_id())
 
     # ---- 侧边会话（side-chat 工单 03）
     def _open_side_session(self, tid: str) -> None:
         note, new_tid = self.presenter.open_side(tid)
-        self.status_label.setText(note)
+        self._slot_set_persistent("side", note)
         if new_tid:
             self._switch_to(new_tid)
             self._expand_side_slot()  # gui-ux22 工单 02：右槽展开
@@ -1528,7 +1542,7 @@ class MainWindow(QMainWindow):
         if ans != QMessageBox.StandardButton.Yes:
             return
         note, parent = self.presenter.close_side(tid)
-        self.status_label.setText(note)
+        self._slot_set_persistent("side", note)
         if parent:
             # side 工单 03：先切换再折叠，折叠置后覆盖 _switch_to 重推可能复活的 stale side_child
             self._switch_to(parent)
@@ -1550,13 +1564,13 @@ class MainWindow(QMainWindow):
             return
         note, parent = self.presenter.close_side(tid)
         if parent:
-            self.status_label.setText(note)
+            self._slot_set_persistent("side", note)
             # side 工单 03：先切换再折叠，折叠置后覆盖 _switch_to 重推可能复活的 stale side_child
             self._switch_to(parent)
             self._collapse_side_slot()
         else:
             # 内核拒绝：不折叠真实开着的右槽，仅提示
-            self.status_label.setText(note)
+            self._slot_set_persistent("side", note)
             self.input_bar.edit.setFocus()
 
     def _refresh_side_pill(self) -> None:
@@ -1586,28 +1600,26 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QApplication
 
         imgs = self._slot_input_widgets(slot)[1]
-        st = self._slot_status(slot)
         cb = QApplication.clipboard()
         img = cb.image()
         if img is not None and not img.isNull():
             path = save_clipboard_image_to_temp(img)
             if path:
                 imgs.add_image(path)
-                st.setText("已添加图片附件（发送前可 ✕ 移除）")
+                self._slot_set_persistent(slot, "已添加图片附件（发送前可 ✕ 移除）")
                 return True
         p = clipboard_image.looks_like_image_path(cb.text() or "")
         if p:
             imgs.add_image(p)
-            st.setText("已添加图片附件")
+            self._slot_set_persistent(slot, "已添加图片附件")
             return True
         return False  # 普通文本走原生粘贴
 
     # ---- 发送 / 回合
     def _submit(self, slot: str = "main") -> None:
-        st = self._slot_status(slot)
         bar, imgs = self._slot_input_widgets(slot)
         if self.presenter is None:
-            st.setText("还没有关联项目，请先「打开项目 / 新建项目」")
+            self._slot_set_persistent(slot, "还没有关联项目，请先「打开项目 / 新建项目」")
             return
         # InputBar 已清空编辑框并 emit 原始多行文本（含换行，走 build_submission）
         raw = self._last_side_input_text if slot == "side" else self._last_input_text
@@ -1615,7 +1627,7 @@ class MainWindow(QMainWindow):
             raw, tuple(commands.virtual_path_mappings(self.presenter.runtime.config))
         )
         if note:
-            st.setText(note)
+            self._slot_set_persistent(slot, note)
             return
         if payload is None:
             return
@@ -1626,7 +1638,7 @@ class MainWindow(QMainWindow):
         tid = self._slot_tid(slot)
         if slot == "side" and (tid is None or not self.presenter.is_side(tid)):
             # 双槽路由修复：侧槽无（合法）side 会话时拒收——不回落到主线对话
-            st.setText("还没有侧边会话，先在主对话 /side 开一个")
+            self._slot_set_persistent(slot, "还没有侧边会话，先在主对话 /side 开一个")
             return
         verdict = self.presenter.start_turn(
             tid, payload,
@@ -1637,10 +1649,10 @@ class MainWindow(QMainWindow):
         if verdict == "started":
             p = self._ensure_pane(tid)
             p.append_user(payload, images or None)
-            st.setText("已发送，执行中…")
+            self._slot_set_persistent(slot, "已发送，执行中…")
         else:
             # 排队：用户气泡等回合真正开跑（queued_flush）才进窗，期间固定在队列条
-            st.setText("已排队，回合结束后自动续发")
+            self._slot_set_persistent(slot, "已排队，回合结束后自动续发")
         # #2 根因修复：提交后无条件清空图片条——排队载荷的图已存进队列 tuple（清空无损）；
         # 旧图片条残留到「切会话再提交」是图片发到错误对话的泄漏路径
         imgs.clear()
@@ -1653,9 +1665,8 @@ class MainWindow(QMainWindow):
             return False
         # 空态守卫（同 _submit）：未关联项目时 /xxx 不进 dispatch（守卫最先 + 写 status_label：__new__ 空态测试面）
         if self.presenter is None:
-            self.status_label.setText("还没有关联项目，请先「打开项目 / 新建项目」")
+            self._slot_set_persistent("main", "还没有关联项目，请先「打开项目 / 新建项目」")
             return True
-        st = self._slot_status(slot)
         cfg = self.presenter.runtime.config
         # 虚拟路径引用（/workspace/、/skills/ 等）仍发模型，不走命令
         if commands.is_virtual_path_reference(payload, commands.virtual_path_mappings(cfg)):
@@ -1668,23 +1679,23 @@ class MainWindow(QMainWindow):
             return True
         if first == '/exit':
             # 关窗退出；gui_main.main 的 finally 里 controller.shutdown() 兜底清理（checkpointer DB + 调度器）
-            self.status_label.setText("正在退出…")
+            self._slot_set_persistent("main", "正在退出…")
             self.close()
             return True
         if first == '/use':
             msg, err = commands.expand_use_command(cfg, payload)
             if err:
-                st.setText(err)
+                self._slot_set_persistent(slot, err)
                 return True
             if tid is None:
                 # 双槽路由修复：侧槽无（合法）side 会话时拒收，不建 None pane
-                st.setText("还没有侧边会话，先在主对话 /side 开一个")
+                self._slot_set_persistent(slot, "还没有侧边会话，先在主对话 /side 开一个")
                 return True
             p = self._ensure_pane(tid)
             p.append_user(payload, None)
             verdict = self.presenter.start_turn(tid, msg)
             self._slot_input_widgets(slot)[0].set_cancel_enabled(verdict == 'started')
-            st.setText('使用 skill…')
+            self._slot_set_persistent(slot, '使用 skill…')
             return True
         if first == '/doctor':
             # 自检走对话框（可滚动/可选中），不塞状态栏（多行文本会顶爆布局、把输入框挤出屏）
@@ -1694,8 +1705,8 @@ class MainWindow(QMainWindow):
             # gui-ux16：输入框/菜单 /undo 与 Esc 级联统一走 _on_undo——检查点撤回 + pane
             # 重建 + 输入框回填一体；不再落入 _execute_slash（该路径只 notify 不重建 pane）
             if len(stripped.split(None, 1)) > 1:
-                st.setText(
-                    "用法: /undo（无参）；/undo 只撤回最近 1 条，多轮请反复调用"
+                self._slot_set_persistent(
+                    slot, "用法: /undo（无参）；/undo 只撤回最近 1 条，多轮请反复调用"
                 )
                 return True
             self._on_undo_for(tid)  # gui-ux22 工单 03：按槽 tid（侧槽 /undo 作用于 side tid）
@@ -1706,16 +1717,16 @@ class MainWindow(QMainWindow):
             # pane 重定位同帧完成，消除 slot 归属错位（pill 标错对话）
             parts = stripped.split(None, 1)
             if len(parts) > 1 and parts[1].lower() != 'close':
-                st.setText('用法: /side 或 /side close')
+                self._slot_set_persistent(slot, '用法: /side 或 /side close')
                 return True
             if len(parts) > 1:
                 # /side close：右槽折叠清 stale tid；仅内核成功（parent 非空）才折叠
                 stid = self._slot_tid('side')
                 if stid is None:
-                    st.setText('还没有侧边会话，无需关闭')
+                    self._slot_set_persistent(slot, '还没有侧边会话，无需关闭')
                     return True
                 note, parent = self.presenter.close_side(stid)
-                st.setText(note)
+                self._slot_set_persistent(slot, note)
                 if parent:
                     # side 工单 03：先切换再折叠，折叠置后覆盖 _switch_to 重推可能复活的 stale side_child
                     self._switch_to(parent)
@@ -1727,7 +1738,7 @@ class MainWindow(QMainWindow):
             # /side：从主槽 tid 开侧边会话
             mtid = self._slot_tid('main') or tid
             note, new_sid = self.presenter.open_side(mtid)
-            st.setText(note)
+            self._slot_set_persistent(slot, note)
             if new_sid:
                 self._switch_to(new_sid)
                 self._expand_side_slot()
@@ -1933,8 +1944,9 @@ class MainWindow(QMainWindow):
         p = self.panes.get(tid)
         if p is not None and text.startswith("已停止"):
             p.stopped = True
-        if tid == self.active_tid:
-            self._slot_status(self._slot_of_tid(tid)).setText(text)
+        # #7：常驻层写入按槽路由（主/侧槽 tid 均命中，不再只看 active_tid）
+        if tid in (self._main_slot_tid, self._side_slot_tid, self.active_tid):
+            self._slot_set_persistent(self._slot_of_tid(tid), text)
             self._refresh_running_badge()
 
     def _on_turn_started(self, tid: str) -> None:
@@ -1962,15 +1974,33 @@ class MainWindow(QMainWindow):
         self.refresh_sessions()
         self._refresh_queue_strip()
         self._refresh_running_badge()
-        # #goal 06: 有 goal 记录的会话回合结束 → 槽状态行显示目标进度
+        # #goal 06 + #7：回合结束 → 一次性通知失效，回落常驻层（有 goal = 目标行）
         from src import goals as _goals
+        slot = self._slot_of_tid(tid)
         if _goals.goal_status(thread_id=tid) is not None:
             from src import commands as _commands
-            self._slot_status(self._slot_of_tid(tid)).setText(_commands.goal_text(tid))
+            self._slot_set_persistent(slot, _commands.goal_text(tid))
+        else:
+            # 无 goal：一次性层清空，直接回落常驻层（会话行 / 就绪）
+            pers = getattr(self, "_slot_persistent", None)
+            oneshot = getattr(self, "_slot_oneshot", None)
+            if pers is not None and oneshot is not None:
+                oneshot[slot] = ""
+                self._slot_status(slot).setText(pers[slot])
 
-    def _on_notify(self, text: str) -> None:
+    def _on_notify(self, text: str, tid: str = "") -> None:
         # 状态栏保留换行：StatusView 自动换行 + 限高内滚 + 可复制，不再压平多行长文本
-        self.status_label.setText(text.replace("\r\n", "\n"))
+        flat = text.replace("\r\n", "\n")
+        slot = self._slot_of_tid(tid or None)
+        pers = getattr(self, "_slot_persistent", None)
+        oneshot = getattr(self, "_slot_oneshot", None)
+        if pers is None or oneshot is None:
+            # __new__ 空态测试面：无双层 dict，直写回落（主槽 status_label）
+            self.status_label.setText(flat)
+            return
+        # #7：一次性层顶出（最高显示优先级）；回落 = 下一常驻写入 / 回合结束
+        oneshot[slot] = flat
+        self._slot_status(slot).setText(flat or pers[slot])
 
     def _on_sync_modes(self) -> None:
         # 命令 worker 完成后的模式面重同步（/yolo 等改 permission_state 的命令）：
@@ -2026,7 +2056,7 @@ class MainWindow(QMainWindow):
             # 撤出队列等价于立即重投
             self.presenter.start_turn(tid, raw, images=images or None)
             self._ensure_pane(tid).append_user(raw, images or None)
-            self._slot_status("side" if side else "main").setText("已发送，执行中…")
+            self._slot_set_persistent("side" if side else "main", "已发送，执行中…")
         else:
             payload = raw
             if images:
@@ -2034,7 +2064,7 @@ class MainWindow(QMainWindow):
                 payload = fallback or raw
             self.presenter.runtime.registry.push(tid, payload)
             self._ensure_pane(tid).append_user(raw, images or None)
-            self._slot_status("side" if side else "main").setText("已插队：注入当前回合的下一步（图片以路径引用）" if images else "已插队：注入当前回合的下一步")
+            self._slot_set_persistent("side" if side else "main", "已插队：注入当前回合的下一步（图片以路径引用）" if images else "已插队：注入当前回合的下一步")
         self._refresh_queue_strip()
 
     def _on_queue_pull_out(self, text: str, side: bool = False) -> None:
@@ -2052,5 +2082,5 @@ class MainWindow(QMainWindow):
             for _img in res[1]:
                 imgs.add_image(_img)
             bar.edit.setFocus()
-            self._slot_status("side" if side else "main").setText("已撤出队列，返回输入框")
+            self._slot_set_persistent("side" if side else "main", "已撤出队列，返回输入框")
         self._refresh_queue_strip()
