@@ -47,13 +47,14 @@ def discover_skill_layers(config: Config) -> tuple[SkillLayer, ...]:
     → 全局 USER（~/.jarvis/skills）→ 项目 PROJECT（.jarvis/skills 等）。同名 skill 时后层覆盖前层。
 
     issue-12：共享层最低优先级；仅目录存在时挂载（只读语义，绝不 mkdir）；
-    config.share_agent_skills=False 时不挂共享层。
+    getattr(config, "share_agent_skills", True) 为 False 时不挂共享层。
     """
     layers: list[SkillLayer] = []
 
     # issue-12: 共享 agent skill 层（最低优先级，只读挂载：仅目录存在时挂，绝不 mkdir；
-    # share_agent_skills=False 时不挂）
-    if config.share_agent_skills:
+    # share_agent_skills=False 时不挂。getattr 带特性默认 True：duck-typed 最小 config
+    # （TUI 测试 / 部分装配路径不经过 load_config）无该属性时不炸、按默认挂共享层）
+    if getattr(config, "share_agent_skills", True):
         shared = agents_home() / "skills"
         if shared.is_dir():
             layers.append(SkillLayer(SHARED_SKILLS_VPATH, shared.resolve()))
