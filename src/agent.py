@@ -1,6 +1,6 @@
 """主代理组装。
 
-model + CompositeBackend（default=InheritedEnvShellBackend 无限制；/workspace(虚拟) /vault /memories /skills 路由）
+model + CompositeBackend（default=InheritedEnvShellBackend 无限制；/workspace(虚拟) /vault /memories /skills /shared-skills 路由）
 + subagents + memory + checkpointer(SqliteSaver) + store。见设计文档 §5.2/§6。
 """
 import logging
@@ -62,7 +62,7 @@ JARVIS_HARNESS_SUFFIX = """\
 - 当你说「接下来我会运行/创建/检查 X」时，必须真的调用工具完成 X，再进入下一句——只说不做等于没做。
 - **报错原文里写着根因**：工具失败后，先引用报错原文的关键行，再决定动作。路径被空格劈断、文件不存在、权限拒绝、语法错误，各有不同解法。没读报错就重试 = 瞎撞。
 - **同一方案失败 2 次 = 方案错误**。第 3 次必须换**方法类别**（换工具 / 换路径形态 / 换入口 / 换数据源）——只微调参数、引号、斜杠方向不算换方案。
-- **路径约定**：文件工具（ls/read/write/edit/glob/grep）接受任意磁盘路径——绝对路径直接用，相对路径以项目根为基准；/workspace/（=项目根）、/vault/、/memories/、/skills/ 等前缀仍是快捷方式（自动映射对应目录）。写操作走审批。execute 的 shell 工作目录就是项目根本身——shell 命令里用真实/相对路径，**禁止**带 /workspace/ 等虚拟前缀（shell 不认识，cmd 会把它当开关静默忽略）。
+- **路径约定**：文件工具（ls/read/write/edit/glob/grep）接受任意磁盘路径——绝对路径直接用，相对路径以项目根为基准；/workspace/（=项目根）、/vault/、/memories/、/skills/、/shared-skills/（共享 agent skills，只读挂载）等前缀仍是快捷方式（自动映射对应目录）。写操作走审批。execute 的 shell 工作目录就是项目根本身——shell 命令里用真实/相对路径，**禁止**带 /workspace/ 等虚拟前缀（shell 不认识，cmd 会把它当开关静默忽略）。
 - 可验证的事实：先工具、后结论。不凭训练记忆硬答，不在能自行获取时先反问用户，不问「是否需要我查询」——直接查。
 - **认识论纪律**：凡答案依赖本机/实时状态（时间、位置、版本、文件状态），唯一合法来源是 execute/工具实测。工具成功但结果不可用 → 换查询词/升档/换数据源/换工具类别；「我没拿到」不等于「不存在」。报告失败必须引用实际报错原文；无证据的归因 = 编造。
 - **唯一停下条件**：同一目标已用 ≥3 种**不同方法类别**尝试仍失败——向用户报告「已尝试清单 + 报错原文 + 卡点 + 建议」。被 harness 熔断的工具调用不许再发
@@ -131,7 +131,7 @@ MAIN_SYSTEM_PROMPT = """你是 JARVIS，个人 AI 助手，专注扩展用户的
 - **可验证任务**：能跑则跑（测试、命令输出），声称完成前附上验证输出；无法验证时说明建议的检查步骤，不谎称已完成。
 
 ## 约束
-- 文件路径：任意磁盘路径均可（绝对路径直接用；相对路径以项目根为基准）；`/workspace/`（项目）、`/vault/`（Obsidian）、`/memories/`（用户记忆）、`/skills/`（用户全局 skill）前缀仍可用作快捷方式。
+- 文件路径：任意磁盘路径均可（绝对路径直接用；相对路径以项目根为基准）；`/workspace/`（项目）、`/vault/`（Obsidian）、`/memories/`（用户记忆）、`/skills/`（用户全局 skill）、`/shared-skills/`（共享 agent skill，只读挂载）前缀仍可用作快捷方式。
 - 值得长期保留或用户要求记住 → task(knowledge_keeper, …)。
 - 委派时传递用户原意，不扩写成「全面调研 / 行业动态报告」。
 - 多角度并行**研究**可用 CodeInterpreter + `task()` fan-out 多个 researcher，再合并。

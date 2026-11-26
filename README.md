@@ -219,12 +219,12 @@ src/
   inbox_snapshots.py  Inbox 快照与 rollback 还原
   rag.py / wiki.py / tools.py  知识检索与搜索
   agent.py           主代理组装（含 session 日期注入）
-skill_paths.py     skill 两层发现（用户全局 ~/.jarvis / 项目）
+skill_paths.py     skill 三层发现（共享 ~/.agents / 用户全局 ~/.jarvis / 项目；share_agent_skills 开关）
 project_paths.py   项目根 + 用户全局 ~/.jarvis
 tests/             pytest
 memory/            长期记忆（*.md，注入 system prompt；不含固定所在地）
 schedules/         定时任务（每任务一 JSON）
-skills/            内置 skill（首次运行 seed 到 ~/.jarvis/skills/，用户 skill 同放此处）
+skills/            内置 skill（首次运行 seed 到 ~/.jarvis/skills/，用户 skill 同放此处；共享层 ~/.agents/skills 最低只读挂载）
 docs/specs/        权威设计文档
 docs/adr/          架构决策记录
 ```
