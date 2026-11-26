@@ -434,3 +434,30 @@ class TestDbV2:
         conn2.close()
         assert "memory_type" in cols and "confidence" in cols
         assert versions == {1, 2}
+
+
+class TestDbWriteLock:
+    """Process-local per-DB write lock semantics (CI flake guard)."""
+
+    def test_same_path_same_lock(self, home):
+        p = pdb.meta_db_path(home)
+        assert pdb.db_write_lock(p) is pdb.db_write_lock(str(p))
+
+    def test_distinct_paths_distinct_locks(self, home):
+        other = home / "other-home"
+        other.mkdir()
+        assert pdb.db_write_lock(pdb.meta_db_path(home)) is not pdb.db_write_lock(
+            pdb.meta_db_path(other)
+        )
+
+    def test_release_does_not_disturb_racing_holder(self, home):
+        p = pdb.meta_db_path(home)
+        lock = pdb.db_write_lock(p)
+        lock.acquire()
+        try:
+            pdb.release_db_write_lock(p)  # not the owner: entry must stay
+            assert str(p.resolve()) in pdb._write_locks
+        finally:
+            lock.release()
+            pdb.release_db_write_lock(p)
+        assert str(p.resolve()) not in pdb._write_locks

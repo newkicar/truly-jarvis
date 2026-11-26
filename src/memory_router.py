@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from src.profiles.db import connect, meta_db_path
+from src.profiles.db import connect, db_write_lock, meta_db_path, release_db_write_lock
 from src.project_paths import user_home
 
 # ---------------------------------------------------------------------------
@@ -374,6 +374,8 @@ class MemoryRouter:
             status="pending_review",
         )
         conn = self._connect()
+        lock = db_write_lock(meta_db_path(self.user_home))
+        lock.acquire()
         try:
             conn.execute("BEGIN IMMEDIATE")
             conn.execute(
@@ -397,6 +399,8 @@ class MemoryRouter:
                 pass
             raise
         finally:
+            lock.release()
+            release_db_write_lock(meta_db_path(self.user_home))
             conn.close()
         self._append_jsonl_mirror(record)
         self._emit_ops(
@@ -443,6 +447,8 @@ class MemoryRouter:
         if decision not in _CANDIDATE_DECISIONS:
             raise MemoryRouterError(f"invalid decision {decision!r}; use one of {_CANDIDATE_DECISIONS}")
         conn = self._connect()
+        lock = db_write_lock(meta_db_path(self.user_home))
+        lock.acquire()
         try:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
@@ -509,6 +515,8 @@ class MemoryRouter:
                 pass
             raise
         finally:
+            lock.release()
+            release_db_write_lock(meta_db_path(self.user_home))
             conn.close()
 
     # -- db -----------------------------------------------------------------------------
@@ -522,7 +530,11 @@ class MemoryRouter:
             isolation_level=None,
             timeout=30.0,
         )
-        conn.execute("PRAGMA journal_mode=WAL")
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+        except sqlite3.Error:
+            conn.close()  # never leak a half-configured connection
+            raise
         return conn
 
 

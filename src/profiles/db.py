@@ -7,11 +7,54 @@ from __future__ import annotations
 
 import datetime
 import sqlite3
+import threading
 from pathlib import Path
 
 from src.profiles.schema import AgentProfile
 
 META_DB_NAME = "agent-meta.sqlite"
+
+# In-process write-lock registry: one threading.Lock per resolved database
+# path.  SQLite's busy_timeout still covers cross-process contention; this
+# makes in-process threads sharing one agent-meta.sqlite wait on a Python
+# lock instead of the 30s busy timeout (throttled CI runners could exceed
+# it and flake with OperationalError('database is locked')).  Entries are
+# dropped when no longer held, so the registry stays bounded.
+_write_locks: dict[str, threading.Lock] = {}
+_write_locks_guard = threading.Lock()
+
+
+def db_write_lock(db_path) -> threading.Lock:
+    """Process-local lock guarding writes to one database file.
+
+    Keyed by the resolved path so alias spellings of the same file share
+    one lock.  Cross-process safety remains SQLite's busy_timeout; this
+    only removes in-process contention (CI flake, run 45779817244).
+    """
+    key = str(Path(db_path).resolve())
+    with _write_locks_guard:
+        lock = _write_locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _write_locks[key] = lock
+        return lock
+
+
+def release_db_write_lock(db_path) -> None:
+    """Release and forget db_path's lock (call once per acquire).
+
+    The registry entry is dropped only when this call still owns the lock
+    (verified with a non-blocking acquire), so a racing holder is never
+    disturbed; the registry stays bounded across throwaway test homes.
+    """
+    key = str(Path(db_path).resolve())
+    with _write_locks_guard:
+        lock = _write_locks.get(key)
+        if lock is None:
+            return
+        if lock.acquire(blocking=False):
+            lock.release()
+            _write_locks.pop(key, None)
 
 
 def _utc_now() -> str:
@@ -140,10 +183,16 @@ def connect(user_home: Path) -> sqlite3.Connection:
     """Open (or create) agent-meta.sqlite and run migrations."""
     user_home.mkdir(parents=True, exist_ok=True)
     db_path = meta_db_path(user_home)
-    conn = sqlite3.connect(str(db_path), timeout=30.0)
-    conn.execute("PRAGMA busy_timeout=30000")
-    conn.execute("PRAGMA journal_mode=WAL")
-    _migrate(conn)
+    lock = db_write_lock(db_path)
+    lock.acquire()
+    try:
+        conn = sqlite3.connect(str(db_path), timeout=30.0)
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute("PRAGMA journal_mode=WAL")
+        _migrate(conn)
+    finally:
+        lock.release()
+        release_db_write_lock(db_path)
     return conn
 
 
@@ -154,7 +203,9 @@ def upsert_profile(
     source_path: str = "",
 ) -> None:
     """Insert or update a profile row in agent_profiles."""
+    lock = db_write_lock(meta_db_path(user_home))
     conn = connect(user_home)
+    lock.acquire()
     try:
         now = _utc_now()
         conn.execute(
@@ -181,6 +232,8 @@ def upsert_profile(
         )
         conn.commit()
     finally:
+        lock.release()
+        release_db_write_lock(meta_db_path(user_home))
         conn.close()
 
 
@@ -221,7 +274,9 @@ def insert_agent_run(
     status: str = "created",
 ) -> None:
     """Insert an agent_runs row (idempotent: re-create refreshes in place)."""
+    lock = db_write_lock(meta_db_path(user_home))
     conn = connect(user_home)
+    lock.acquire()
     try:
         conn.execute(
             """INSERT INTO agent_runs
@@ -255,6 +310,8 @@ def insert_agent_run(
         )
         conn.commit()
     finally:
+        lock.release()
+        release_db_write_lock(meta_db_path(user_home))
         conn.close()
 
 
@@ -266,7 +323,9 @@ def update_agent_run_status(
     finished: bool = False,
 ) -> bool:
     """Update status (+ finished_at when finished=True). True if a row was hit."""
+    lock = db_write_lock(meta_db_path(user_home))
     conn = connect(user_home)
+    lock.acquire()
     try:
         if finished:
             cur = conn.execute(
@@ -281,6 +340,8 @@ def update_agent_run_status(
         conn.commit()
         return cur.rowcount > 0
     finally:
+        lock.release()
+        release_db_write_lock(meta_db_path(user_home))
         conn.close()
 
 
