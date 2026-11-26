@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from time import monotonic
-from typing import ClassVar
+from typing import Callable, ClassVar
 
 from rich.text import Text
 from textual import events
@@ -392,12 +392,41 @@ class PermissionModal(ModalScreen):
     }
     """
 
-    def __init__(self, inv: commands.ToolInvocation, *, vault_path: Path | None = None, workspace_root: Path | None = None):
+    def __init__(
+        self,
+        inv: commands.ToolInvocation,
+        *,
+        vault_path: Path | None = None,
+        workspace_root: Path | None = None,
+        on_lost: Callable[[], None] | None = None,
+    ):
         super().__init__()
         self.inv = inv
         self.vault_path = vault_path
         self.workspace_root = workspace_root
         self.path_label = "Command:" if inv.name == "execute" else "Path:"
+        # issue-10：弹窗经异常路径销毁（Textual 丢弃 result callback）时的兜底回调
+        self._on_lost = on_lost
+        self._settled = False
+
+    def dismiss(self, result: object | None = None):
+        """任何正常 dismiss 先置 _settled；on_unmount 兜底凭此恰好触发一次。"""
+        self._settled = True
+        return super().dismiss(result)
+
+    def on_unmount(self, event: events.Unmount) -> None:
+        """issue-10：弹窗销毁兜底。
+
+        Textual 8.2.8 中 Screen.dismiss() 同步触发 result callback，但
+        App.pop_screen()/switch_screen()/Widget.remove() 等异常路径只丢弃
+        回调、从不触发 → 等待方 _wait_modal_dismiss 的 done.wait() 永久挂起。
+        卸载时若本次会话从未正常 dismiss（_settled=False），恰好触发一次
+        on_lost（等待方以 None 认领，回合安全放弃）；正常路径 _settled 已置位，
+        不二次触发。
+        """
+        if not self._settled and self._on_lost is not None:
+            self._settled = True
+            self._on_lost()
 
     def compose(self) -> ComposeResult:
         # 崩溃.txt 根因：工具参数/diff 是不可信文本，Label/Static 默认 markup=True
@@ -2419,13 +2448,21 @@ class JarvisApp(App):
         ).run()
 
     async def _wait_modal_dismiss(self, inv: commands.ToolInvocation):
-        """push PermissionModal 并等待 dismiss 结果（在 UI 线程执行）。"""
+        """push PermissionModal 并等待 dismiss 结果（在 UI 线程执行）。
+
+        issue-10：exactly-once resolver——正常 dismiss 与异常销毁兜底
+        （on_lost）谁先到谁认领，后到忽略。弹窗丢失时等待方以 None 认领
+        （collect_interrupt_decisions 返回 None，回合安全放弃），不再永久挂起。
+        """
         gen = self._hitl_generation
-        result_holder: dict[str, object] = {}
+        holder: dict[str, object] = {"fired": False}
         done = asyncio.Event()
 
-        def on_dismiss(result) -> None:
-            result_holder["value"] = result
+        def resolve(value: object) -> None:
+            if holder["fired"]:
+                return
+            holder["fired"] = True
+            holder["value"] = value
             done.set()
 
         self._maybe_warn_ime_drift()
@@ -2434,13 +2471,14 @@ class JarvisApp(App):
                 inv,
                 vault_path=self._vault_path(),
                 workspace_root=self._workspace_root(),
+                on_lost=partial(resolve, None),
             ),
-            on_dismiss,
+            resolve,
         )
         await done.wait()
         if gen != self._hitl_generation:
             return None
-        value = result_holder.get("value")
+        value = holder.get("value")
         return value if isinstance(value, dict) else None
 
     def _on_turn_incomplete(self, thread_id: str) -> None:

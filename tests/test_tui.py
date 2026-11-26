@@ -1788,3 +1788,43 @@ async def test_side_badge_session_switch_linkage():
         app._switch_session("default")
         await pilot.pause()
         assert not badge.has_class("-active")
+
+
+# ---------------------------------------------------------------------------
+# issue-10：审批弹窗异常销毁时 HITL 等待兜底（回合不再永久挂起）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_permission_modal_loss_rescues_hang():
+    """issue-10 红灯测试：审批弹窗被异常销毁（Textual 丢弃 result callback）时，
+    _wait_modal_dismiss 在 3s 内以 None 解决（等待方认领，回合安全放弃）。
+
+    修复前：App.pop_screen() 只丢弃回调从不触发 → done.wait() 永不置位，
+    wait_for 超时（红灯）；回合 worker 卡在 HITL resume、turn gate 持续占用。
+    """
+    intr = _FakeInterrupt("execute", {"command": "whoami"})
+    app = JarvisApp(
+        None,
+        FakeAgent(reply="approved-echo", interrupted=True, interrupts=[intr]),
+        {"default": "ask", "tools": {}},
+    )
+    async with app.run_test() as pilot:
+        await _type_and_enter(pilot, "跑命令")
+        await pilot.pause()
+        await asyncio.sleep(0.2)
+        await pilot.pause()
+        assert isinstance(app.screen, PermissionModal), "首个审批弹窗未打开"
+
+        # 第二个 _wait_modal_dismiss（带 on_lost 兜底的新接线）。
+        # 正常流程由 streaming.collect_interrupt_decisions 用 from_action 构造
+        # ToolInvocation 传给 _wait_modal_dismiss；这里复刻同一入口契约。
+        inv = commands.ToolInvocation.from_action(intr.value["action_requests"][0])
+        task = asyncio.create_task(app._wait_modal_dismiss(inv))
+        await pilot.pause()
+        assert isinstance(app.screen, PermissionModal), "第二个弹窗未打开"
+
+        # 异常销毁：pop 丢弃 result callback 不触发 → on_unmount 兜底认领 None
+        app.pop_screen()
+        result = await asyncio.wait_for(task, timeout=3)
+        assert result is None, "异常销毁后等待方未在 3s 内解决（回合将永久挂起）"
