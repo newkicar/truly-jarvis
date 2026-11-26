@@ -4,12 +4,20 @@
 state 一律纯 dict + permissions.side_open/side_close 造态。
 """
 import dataclasses
+import time
+from pathlib import Path
 
 import pytest
 from textual.containers import Vertical
 
 from src.permissions import side_close, side_open
-from src.tui import JarvisApp, JarvisTextArea, PaneLayout, resolve_panes
+from src.tui import (
+    JarvisApp,
+    JarvisSubmitted,
+    JarvisTextArea,
+    PaneLayout,
+    resolve_panes,
+)
 from src.tui_log import CopyableRichLog
 from tests.test_tui import FakeAgent
 
@@ -229,3 +237,124 @@ async def test_open_close_focus_routing():
         await pilot.pause()
         assert "-active" not in pane.classes
         assert app.focused is app.query_one("#input", JarvisTextArea)
+
+
+# ---- 01: 侧框提交路由（side-bugfixes 01，离屏 run_test，纯内存，禁 tmp_path）----
+
+
+class _RecordingAgent(FakeAgent):
+    """stream_events config 录制器：断言提交路由归属 thread（configurable.thread_id）。"""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.stream_configs: list[dict] = []
+
+    def stream_events(self, *args, **kwargs):
+        self.stream_configs.append(kwargs.get("config"))
+        return super().stream_events(*args, **kwargs)
+
+
+class _VpmConfig:
+    """virtual_path_mappings/_update_sub_title 最小 config 面：仅 project_root。
+
+    取 Path 而非 str——_update_sub_title 直接读 self.config.project_root.name
+    （tui.py L1392 非 getattr 访问面，str 会 AttributeError 炸 mount）。
+    """
+
+    project_root = Path("C:/proj")
+
+
+def _split_app_rec(st: dict, side: bool = False, config=None) -> tuple[JarvisApp, _RecordingAgent]:
+    """_split_app 同构但 agent 换成 _RecordingAgent；返回 (app, rec)。"""
+    rec = _RecordingAgent()
+    app = JarvisApp(config, rec, st, thread_id="main-1")
+    if side:
+        side_open(st, "side-a", "main-1")
+    return app, rec
+
+
+async def _submit_to_box(pilot, app, box_id: str, text: str) -> None:
+    """指定输入框内打字 + 裸 Enter（走 JarvisTextArea.on_event 提交路径，带 source）。"""
+    box = app.query_one(f"#{box_id}", JarvisTextArea)
+    box.focus()
+    box.text = text
+    await pilot.pause()
+    await pilot.press("enter")
+
+
+async def _wait_worker_finished(pilot, app, tid: str, timeout: float = 5.0) -> None:
+    """等待指定 thread 的回合 worker 结束（提交后断言前防时序漂移，_wait_streaming_active 反向版）。"""
+    deadline = time.monotonic() + timeout
+    while True:
+        worker = app._turn_workers.get(tid)
+        if worker is not None and worker.is_finished:
+            return
+        if time.monotonic() >= deadline:
+            pytest.fail(f"worker {tid} 未在超时内结束")
+        await pilot.pause()
+
+
+@pytest.mark.asyncio
+async def test_side_submit_routes_to_side_thread():
+    """侧框提交路由到活跃 side 会话：流 config thread_id=side-a；侧框被清。"""
+    st = _state()
+    app, rec = _split_app_rec(st, side=True)
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        await _submit_to_box(pilot, app, "side_input", "侧框提问")
+        await _wait_worker_finished(pilot, app, "side-a")
+        assert len(rec.stream_configs) == 1
+        assert rec.stream_configs[0]["configurable"]["thread_id"] == "side-a"
+        assert app.query_one("#side_input", JarvisTextArea).text == ""
+
+
+@pytest.mark.asyncio
+async def test_mainline_submit_unchanged_with_side():
+    """有 side 会话时主线框提交不变：仍路由 app.thread_id（main-1），主框被清。"""
+    st = _state()
+    app, rec = _split_app_rec(st, side=True)
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        await _submit_to_box(pilot, app, "input", "主线提问")
+        await _wait_worker_finished(pilot, app, "main-1")
+        assert len(rec.stream_configs) == 1
+        assert rec.stream_configs[0]["configurable"]["thread_id"] == "main-1"
+        assert app.query_one("#input", JarvisTextArea).text == ""
+
+
+@pytest.mark.asyncio
+async def test_side_slash_rejected_no_stream_box_kept():
+    """侧框 slash 命令拒收：不起流、不清侧框（内容保留，用户可改回主线发送）。"""
+    st = _state()
+    app, rec = _split_app_rec(st, side=True)
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        await _submit_to_box(pilot, app, "side_input", "/history")
+        await pilot.pause()
+        assert rec.stream_configs == []
+        assert app.query_one("#side_input", JarvisTextArea).text == "/history"
+
+
+@pytest.mark.asyncio
+async def test_side_virtual_path_reference_allowed():
+    """/workspace/ 等虚拟路径引用在侧框放行（须 config 提供 project_root 映射）。"""
+    st = _state()
+    app, rec = _split_app_rec(st, side=True, config=_VpmConfig())
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        await _submit_to_box(pilot, app, "side_input", "/workspace/x 看看这里")
+        await _wait_worker_finished(pilot, app, "side-a")
+        assert len(rec.stream_configs) == 1
+        assert rec.stream_configs[0]["configurable"]["thread_id"] == "side-a"
+
+
+@pytest.mark.asyncio
+async def test_side_submit_without_side_session_no_stream():
+    """无 side 会话时侧框提交：提示先 /side，不起流。"""
+    st = _state()
+    app, rec = _split_app_rec(st, side=False)
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        app.post_message(JarvisSubmitted("hello", source="side_input"))
+        await pilot.pause()
+        assert rec.stream_configs == []

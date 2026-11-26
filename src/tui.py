@@ -193,10 +193,14 @@ def read_os_clipboard() -> str:
 
 
 class JarvisSubmitted(Message):
-    """tui-ux13：主输入框提交消息（裸 Enter，多行）。text = 框内全文。"""
+    """tui-ux13：主输入框提交消息（裸 Enter，多行）。text = 框内全文。
 
-    def __init__(self, text: str) -> None:
+    source = 提交框 id（主线 "input" / 侧框 "side_input"），side-bugfixes 01 按来源路由。
+    """
+
+    def __init__(self, text: str, source: str = "input") -> None:
         self.text = text
+        self.source = source
         super().__init__()
 
 
@@ -327,7 +331,7 @@ class JarvisTextArea(PasteTextArea):
             # 裸 Enter 提交（shift/alt 版 key 名不同，不在此拦截，放行给绑定链）
             event.stop()
             event.prevent_default()
-            self.post_message(JarvisSubmitted(self.text))
+            self.post_message(JarvisSubmitted(self.text, source=self.id or "input"))
             return
         await super().on_event(event)
 
@@ -1811,7 +1815,8 @@ class JarvisApp(App):
         if prompt:
             self._handle_user_message(prompt)
 
-    def _handle_user_message(self, raw: str) -> None:  # noqa: C901
+    def _handle_user_message(self, raw: str, *, thread_id: str | None = None) -> None:  # noqa: C901
+        tid = thread_id if thread_id is not None else self.thread_id
         text = raw.strip()
         if not text:
             return
@@ -1824,14 +1829,15 @@ class JarvisApp(App):
             (not is_slash_cmd)
             or text.split()[0] in ("/replay", "/undo", "/use", "/compact", "/dream")
         )
-        if turn_message and self.thread_id in self._turn_gate_threads:
-            n = self._queue.push(self.thread_id, text)
+        if turn_message and tid in self._turn_gate_threads:
+            n = self._queue.push(tid, text)
             self.notify(
                 f"任务执行中，已放入消息缓存 {n} 条，当前步骤完成后自动发送；左键点击可撤回编辑",
                 timeout=2,
             )
             return
-        input_widget = self.query_one("#input", JarvisTextArea)
+        # side-bugfixes 01: 按提交端清对应输入框（主线 #input / 侧框 #side_input）
+        input_widget = self.query_one("#input" if thread_id is None else "#side_input", JarvisTextArea)
         input_widget.clear()
         log = self.query_one("#messages", RichLog)
         # #goal 05: 自动续跑输入渲染为 dim 系统行（非用户消息行）；stream_input 仍为原文本，
@@ -1925,14 +1931,16 @@ class JarvisApp(App):
                 image_fallback = image_fallback_text(text, self._image_attachments)
             self._clear_image_attachments()
         self._show_spinner()
-        self._turn_gate_threads.add(self.thread_id)
+        self._turn_gate_threads.add(tid)
         self._spawn_turn_worker(
             partial(
                 self._stream_agent,
                 user_input=stream_input,
                 image_input=self._image_input_mode(),
                 image_fallback=image_fallback,
-            )
+                thread_id=tid,
+            ),
+            tid=tid,
         )
 
     def _run_command_worker(self, text: str) -> None:
@@ -2058,19 +2066,20 @@ class JarvisApp(App):
         self._spawn_turn_worker(partial(self._undo_worker, 1))
         return True
 
-    def _spawn_turn_worker(self, worker_func) -> None:
+    def _spawn_turn_worker(self, worker_func, *, tid: str | None = None) -> None:
         """tui-ux14 #03: 为当前 thread 启动回合 worker（UI 线程专用）。
 
         每 thread 一个回合 worker（thread_id 键控）：开新回合先 cancel + discard
         该 thread 未 finished 的旧 worker 防叠加；同时清理其他 thread 已 finished
         的 worker（YOLO 后台回合保留运行）。
+        side-bugfixes 01：tid=None 回落 app 主线 tid（既有调用方零变化）。
         """
-        tid = self.thread_id
-        old = self._turn_workers.pop(tid, None)
+        t = tid if tid is not None else self.thread_id
+        old = self._turn_workers.pop(t, None)
         if old is not None and not old.is_finished:
             old.cancel()
-        self._turn_workers = {t: w for t, w in self._turn_workers.items() if not w.is_finished}
-        self._turn_workers[tid] = self.run_worker(worker_func, thread=True)
+        self._turn_workers = {k: w for k, w in self._turn_workers.items() if not w.is_finished}
+        self._turn_workers[t] = self.run_worker(worker_func, thread=True)
 
     def _cancel_stream_worker(self) -> None:
         worker = self._turn_workers.pop(self.thread_id, None)
@@ -2329,7 +2338,11 @@ class JarvisApp(App):
             event.stop()
 
     def on_jarvis_submitted(self, event: JarvisSubmitted) -> None:
-        """tui-ux13：主输入框提交（框内多行；尾空白/尾空行由 build_submission 裁掉）。"""
+        """tui-ux13：主输入框提交（框内多行；尾空白/尾空行由 build_submission 裁掉）。
+
+        side-bugfixes 01：侧框提交（event.source == "side_input"）走 _submit_side_message 路由到活跃 side 会话；
+        主线框行为不变。
+        """
         overlay = self._path_completion_overlay()
         overlay.hide()
         self._completion_active = False
@@ -2341,8 +2354,27 @@ class JarvisApp(App):
             return
         if payload is None:
             return
+        if event.source == "side_input":
+            self._submit_side_message(payload, vpm)
+            return
         self.query_one("#input", JarvisTextArea).clear()
         self._handle_user_message(payload)
+
+    def _submit_side_message(self, payload: str, vpm: dict[str, str]) -> None:
+        """side-bugfixes 01：侧框提交——路由到活跃 side 会话；slash 命令拒收。
+
+        侧框只收对话内容（/workspace/ 等虚拟路径引用放行）；slash 命令请回主输入框。
+        side 会话 tid 实时取自 resolve_panes（无 side → 提示先 /side 开一个）。
+        """
+        layout = resolve_panes(self.permission_state, self.thread_id)
+        side_tid = layout.side_tid
+        if side_tid is None:
+            self.notify("还没有侧边会话，先在主对话 /side 开一个", timeout=4)
+            return
+        if payload.startswith("/") and not commands.is_virtual_path_reference(payload, vpm):
+            self.notify("侧边输入框仅支持对话，slash 命令请回主输入框", timeout=4)
+            return
+        self._handle_user_message(payload, thread_id=side_tid)
 
     def _maybe_warn_ime_drift(self) -> None:
         """tui-ux13 L1：低频复检 IME shim 状态；非 installed 且未提示过 → 一次性 notify。"""
@@ -2363,14 +2395,18 @@ class JarvisApp(App):
         checkpoint_id: str | None = None,
         image_input: str | None = None,
         image_fallback: str | None = None,
+        thread_id: str | None = None,
     ) -> None:
-        """后台线程入口：组装 TurnPresenter 并驱动本轮（编排细节见 tui_turn.py）。"""
+        """后台线程入口：组装 TurnPresenter 并驱动本轮（编排细节见 tui_turn.py）。
+
+        side-bugfixes 01：thread_id=None 回落 app 主线 tid（既有调用方不变）。"""
         TurnPresenter(
             self,
             user_input,
             checkpoint_id,
             image_input=image_input,
             image_fallback=image_fallback,
+            thread_id=thread_id,
         ).run()
 
     async def _wait_modal_dismiss(self, inv: commands.ToolInvocation):
