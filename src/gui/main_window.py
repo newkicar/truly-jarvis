@@ -409,12 +409,15 @@ class MainWindow(QMainWindow):
         state = self.presenter.runtime.permission_state
         tid = self._mode_tid() or ""  # side 聚焦时 YOLO 写主线线程（side 只读不持有 YOLO）
         if on:
+            was_proxy = permissions.proxy_active(state, tid)  # Issue #9：开 YOLO 自动关同 thread 的 proxy
             permissions.yolo_on(state, tid)
+            self.status_label.setText(
+                f"YOLO 已开启（{tid} 免审批；其他会话不受影响）"
+                + ("；替我审批已随之关闭" if was_proxy else "")
+            )
         else:
             permissions.yolo_off(state, tid)
-        self.status_label.setText(
-            f"YOLO 已开启（{tid} 免审批；其他会话不受影响）" if on else "YOLO 已关闭"
-        )
+            self.status_label.setText("YOLO 已关闭")
         self._refresh_mode_badges()
 
     def _on_undo(self) -> None:

@@ -556,6 +556,82 @@ def test_proxy_pure_functions():
     proxy_off(state, "")
 
 
+# Issue #9：YOLO 与 替我审批(proxy) 互斥——开一个自动关另一个（同 thread），off 各自独立
+
+
+def test_yolo_on_turns_off_proxy_same_thread():
+    """开 YOLO 自动关同 thread 的 proxy（互斥，后开者为准）。"""
+    state: dict = {}
+    proxy_on(state, "t")
+    assert proxy_active(state, "t")
+    yolo_on(state, "t")
+    assert yolo_active(state, "t")
+    assert not proxy_active(state, "t")
+
+
+def test_proxy_on_turns_off_yolo_same_thread():
+    """开 proxy 自动关同 thread 的 YOLO（互斥，后开者为准）。"""
+    state: dict = {}
+    yolo_on(state, "t")
+    assert yolo_active(state, "t")
+    proxy_on(state, "t")
+    assert proxy_active(state, "t")
+    assert not yolo_active(state, "t")
+
+
+def test_yolo_off_and_proxy_off_are_independent():
+    """yolo_off 只关 yolo；proxy_off 只关 proxy。"""
+    state: dict = {}
+    yolo_on(state, "t")
+    proxy_on(state, "t")
+    assert proxy_active(state, "t") and not yolo_active(state, "t")
+    proxy_off(state, "t")
+    assert not proxy_active(state, "t") and not yolo_active(state, "t")
+    yolo_on(state, "t")
+    proxy_on(state, "t")
+    assert proxy_active(state, "t")
+    yolo_off(state, "t")
+    assert proxy_active(state, "t")  # proxy 未被 yolo_off 影响
+
+
+def test_yolo_proxy_mutual_exclusion_matrix_forward_and_reverse():
+    """验收 #4：yolo on→proxy on→yolo off→proxy off 与反序。"""
+    state: dict = {}
+
+    def both():
+        return (yolo_active(state, "t"), proxy_active(state, "t"))
+
+    assert both() == (False, False)
+    yolo_on(state, "t")
+    assert both() == (True, False)
+    proxy_on(state, "t")
+    assert both() == (False, True)
+    yolo_off(state, "t")
+    assert both() == (False, True)
+    proxy_off(state, "t")
+    assert both() == (False, False)
+    proxy_on(state, "t")
+    assert both() == (False, True)
+    yolo_on(state, "t")
+    assert both() == (True, False)
+    proxy_off(state, "t")
+    assert both() == (True, False)
+    yolo_off(state, "t")
+    assert both() == (False, False)
+
+
+def test_yolo_proxy_mutual_exclusion_thread_isolation():
+    """互斥仅限同 thread。"""
+    state: dict = {}
+    proxy_on(state, "a")
+    yolo_on(state, "a")
+    assert yolo_active(state, "a") and not proxy_active(state, "a")
+    assert not yolo_active(state, "b") and not proxy_active(state, "b")
+    yolo_on(state, "b")
+    assert not proxy_active(state, "b")
+    assert yolo_active(state, "a") and not proxy_active(state, "a")
+
+
 def test_proxy_auto_allow_rule_table():
     """proxy_auto_allow 确定性规则表（ADR-0014）。
 
