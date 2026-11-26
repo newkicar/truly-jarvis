@@ -44,6 +44,7 @@ def _cfg(tmp_path: Path) -> Config:
 
 def test_discover_skill_catalog_finds_skill_md(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
+    monkeypatch.setenv("AGENTS_HOME", str(tmp_path / "agents"))  # issue-12: 隔离共享 skill 层（目录不存在则不挂载）
     cfg = _cfg(tmp_path)
     catalog = discover_skill_catalog(cfg)
     assert len(catalog) >= 1
@@ -75,6 +76,7 @@ def _write_manual_skill(tmp_path: Path) -> None:
 
 def test_manual_only_detection_and_flags(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
+    monkeypatch.setenv("AGENTS_HOME", str(tmp_path / "agents"))  # issue-12: 隔离共享 skill 层（目录不存在则不挂载）
     _write_manual_skill(tmp_path)
     cfg = _cfg(tmp_path)
     catalog = discover_skill_catalog(cfg)
@@ -89,6 +91,7 @@ def test_manual_only_detection_and_flags(tmp_path, monkeypatch):
 
 def test_summarize_tags_manual_skills(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
+    monkeypatch.setenv("AGENTS_HOME", str(tmp_path / "agents"))  # issue-12: 隔离共享 skill 层（目录不存在则不挂载）
     _write_manual_skill(tmp_path)
     cfg = _cfg(tmp_path)
     text = summarize_skill_catalog(discover_skill_catalog(cfg))
@@ -98,6 +101,7 @@ def test_summarize_tags_manual_skills(tmp_path, monkeypatch):
 
 def test_build_skill_use_message_expands_body_and_task(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
+    monkeypatch.setenv("AGENTS_HOME", str(tmp_path / "agents"))  # issue-12: 隔离共享 skill 层（目录不存在则不挂载）
     _write_manual_skill(tmp_path)
     cfg = _cfg(tmp_path)
     msg = build_skill_use_message(cfg, "manual-skill", "请执行")
@@ -110,6 +114,7 @@ def test_build_skill_use_message_expands_body_and_task(tmp_path, monkeypatch):
 
 def test_build_skill_use_message_case_insensitive_and_missing(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "jh"))
+    monkeypatch.setenv("AGENTS_HOME", str(tmp_path / "agents"))  # issue-12: 隔离共享 skill 层（目录不存在则不挂载）
     _write_manual_skill(tmp_path)
     cfg = _cfg(tmp_path)
     assert build_skill_use_message(cfg, "MANUAL-SKILL") is not None
