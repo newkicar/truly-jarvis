@@ -19,6 +19,7 @@ def resolve_checkpoint_db(project_root: Path, db_name: str = "checkpoints.sqlite
 
 ENV_PROJECT_ROOT = "JARVIS_PROJECT_ROOT"
 ENV_JARVIS_HOME = "JARVIS_HOME"
+ENV_AGENTS_HOME = "AGENTS_HOME"
 DEFAULT_USER_HOME = ".jarvis"
 
 
@@ -101,6 +102,17 @@ def user_home() -> Path:
     if override:
         return Path(override).expanduser().resolve()
     return _migrate_user_home()
+
+
+def agents_home() -> Path:
+    """共享 agent 用户目录（默认 ~/.agents，AGENTS_HOME 可覆盖；对齐 codex 个人 skill 根）。
+
+    只读语义：本函数仅解析路径，绝不 mkdir / 迁移 / seeding（ensure_user_home 不触碰）。
+    """
+    override = os.environ.get(ENV_AGENTS_HOME, "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    return Path.home() / ".agents"
 
 
 def ensure_user_home() -> Path:

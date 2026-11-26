@@ -1,4 +1,4 @@
-"""Skill 目录发现：用户全局 ~/.jarvis + 项目（两层模型，对齐 opencode）。"""
+"""Skill 目录发现：共享 ~/.agents + 用户全局 ~/.jarvis + 项目（三层模型，对齐 opencode/codex）。"""
 from __future__ import annotations
 
 import shutil
@@ -6,9 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src.config import Config
-from src.project_paths import install_root, user_home
+from src.project_paths import agents_home, install_root, user_home
 
 USER_SKILLS_VPATH = "/skills/"
+SHARED_SKILLS_VPATH = "/shared-skills/"
 
 
 @dataclass(frozen=True)
@@ -42,8 +43,20 @@ def seed_builtin_skills() -> None:
 
 
 def discover_skill_layers(config: Config) -> tuple[SkillLayer, ...]:
-    """返回 skill 层（低→高优先级）。两层：全局 USER + 项目 PROJECT。同名 skill 时后层覆盖前层。"""
+    """返回 skill 层（低→高优先级）。三层：共享 SHARED（~/.agents/skills，只读挂载）
+    → 全局 USER（~/.jarvis/skills）→ 项目 PROJECT（.jarvis/skills 等）。同名 skill 时后层覆盖前层。
+
+    issue-12：共享层最低优先级；仅目录存在时挂载（只读语义，绝不 mkdir）；
+    config.share_agent_skills=False 时不挂共享层。
+    """
     layers: list[SkillLayer] = []
+
+    # issue-12: 共享 agent skill 层（最低优先级，只读挂载：仅目录存在时挂，绝不 mkdir；
+    # share_agent_skills=False 时不挂）
+    if config.share_agent_skills:
+        shared = agents_home() / "skills"
+        if shared.is_dir():
+            layers.append(SkillLayer(SHARED_SKILLS_VPATH, shared.resolve()))
 
     user_skills = user_home() / "skills"
     user_skills.mkdir(parents=True, exist_ok=True)

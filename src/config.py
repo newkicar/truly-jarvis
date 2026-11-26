@@ -50,6 +50,7 @@ GLOBAL_DEFAULTS: dict = {
     "execution": {"max_steps": 200},
     "goals": {"max_turns": 5},
     "tui": {"copy_on_select": True},
+    "share_agent_skills": True,
 }
 
 
@@ -110,6 +111,8 @@ class Config:
     keep_first_messages: int = 0
     # goal: /goal 自动续跑预算（回合数）；jarvis.json goals.max_turns，缺省 5
     goals_max_turns: int = 5
+    # issue-12: ~/.agents/skills 共享 skill 层开关（默认 True；非布尔值回落 True 并告警）
+    share_agent_skills: bool = True
 
 
 def parse_env_text(text: str) -> dict[str, str]:
@@ -376,6 +379,11 @@ def load_config(  # noqa: C901
         goals_max_turns = 5
     goals_max_turns = max(1, min(goals_max_turns, 9999))
 
+    share_agent_skills = data.get("share_agent_skills", True)
+    if not isinstance(share_agent_skills, bool):
+        logging.warning("share_agent_skills 非布尔，回落默认 True: %r", share_agent_skills)
+        share_agent_skills = True
+
     cfg = Config(
         project_root=root,
         base_url=base_url,
@@ -402,6 +410,7 @@ def load_config(  # noqa: C901
         context_limit=context_limit,
         keep_first_messages=keep_first_messages,
         goals_max_turns=goals_max_turns,
+        share_agent_skills=share_agent_skills,
     )
     ensure_user_home()
     set_runtime_project_root(cfg.project_root)
