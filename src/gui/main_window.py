@@ -627,6 +627,12 @@ class MainWindow(QMainWindow):
         b = self.presenter.bridge
         first = raw.lstrip().split(None, 1)[0]
 
+        # Issue #8：mode 族（/yolo、/proxy、/approve-for-me）由徽标/菜单/门控按主线线程
+        # （_mode_tid()）读取；侧槽输入时槽 tid 是 side tid，注册过去即「标签亮但门不生效」——
+        # 注册前收敛到主线 tid（主槽路径 no-op；_mode_tid() 空回落槽 tid）
+        if first in ("/yolo", "/proxy", "/approve-for-me"):
+            tid = self._mode_tid() or tid
+
         def _run() -> str:  # noqa: C901
             # ADR-0014: 会话正在执行中禁止手动 /compact（压缩会覆盖历史，
             # 并发回合会丢失压缩边界）——直接拒绝并提示

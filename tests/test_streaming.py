@@ -771,3 +771,61 @@ def test_format_agent_error_generic_400_branch_unchanged():
     assert "API 请求失败" in out
     assert "常见原因" in out
     assert "上下文超限" not in out
+
+
+def test_run_agent_turn_when_predicate_sees_thread_local_tid():
+    """Issue #8：run_agent_turn 入口 set 的 thread-local tid 在 when 求值点（_run_stream 同线程）可见。"""
+    import src.commands as cmd
+    from src.jump_in_queue import get_current_thread_id
+    from src.permissions import build_permission_interrupts, proxy_on
+
+    interrupt_on, state = build_permission_interrupts({})
+    proxy_on(state, "t8")
+    when_exec = interrupt_on["execute"]["when"]
+    seen = {}
+
+    class _Req:
+        def __init__(self, args):
+            self.tool_call = {"name": "execute", "args": args}
+
+    class _Stream:
+        interrupted = False
+        interrupts = None
+        output = None
+
+        def interleave(self, *kinds):
+            if False:
+                yield
+
+    class FakeAgent:
+        checkpointer = None
+
+        def stream_events(self, payload, *, version, config, control=None):
+            seen["tid"] = get_current_thread_id()
+            seen["safe"] = when_exec(_Req({"command": "git status"}))
+            seen["danger"] = when_exec(_Req({"command": "rm -rf /"}))
+            return _Stream()
+
+    agent = FakeAgent()
+    original = cmd.finalize_turn
+    cmd.finalize_turn = lambda *a, **kw: None
+    try:
+        ok = streaming.run_agent_turn(
+            agent, "t8", "hi",
+            handle_interrupts=lambda _: None,
+            callbacks={
+                "on_subagent": lambda *a: None,
+                "on_tool_call": lambda *a: None,
+                "on_message_delta": lambda d: None,
+            },
+            permission_state=state,
+        )
+    finally:
+        cmd.finalize_turn = original
+
+    assert ok.ok is True
+    assert seen["tid"] == "t8"
+    assert seen["safe"] is False
+    assert seen["danger"] is True
+    assert get_current_thread_id() is None  # finally 成对清理
+
