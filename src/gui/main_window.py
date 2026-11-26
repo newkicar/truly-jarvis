@@ -173,11 +173,14 @@ class MainWindow(QMainWindow):
         sched_open = sched_menu.addAction("打开定时任务面板")
         sched_open.triggered.connect(self._on_scheduler_panel)
 
-        # ---- 工单 08：高级菜单（菜单栏末位：Plan/Act · YOLO · 撤回）
+        # ---- 工单 08：高级菜单（菜单栏末位：Plan/Act · 替我审批 · YOLO · 撤回）
         adv = self.menuBar().addMenu("高级")
         self.plan_action = adv.addAction("规划模式（Plan：写工具被拦，先规划）")
         self.plan_action.setCheckable(True)
         self.plan_action.toggled.connect(self._on_plan_toggled)
+        self.proxy_action = adv.addAction("替我审批（自动放行安全审批，拦住危险）")
+        self.proxy_action.setCheckable(True)
+        self.proxy_action.toggled.connect(self._on_proxy_toggled)
         self.yolo_action = adv.addAction("YOLO（本会话免审批）")
         self.yolo_action.setCheckable(True)
         self.yolo_action.toggled.connect(self._on_yolo_toggled)
@@ -417,6 +420,23 @@ class MainWindow(QMainWindow):
         )
         self._refresh_mode_badges()
 
+    def _on_proxy_toggled(self, on: bool) -> None:
+        from src import permissions
+
+        if self.presenter is None:
+            self.proxy_action.setChecked(False)
+            return
+        state = self.presenter.runtime.permission_state
+        tid = self._mode_tid() or ""  # side 聚焦时写主线线程（side 只读不持有 proxy）
+        if on:
+            permissions.proxy_on(state, tid)
+        else:
+            permissions.proxy_off(state, tid)
+        self.status_label.setText(
+            f"替我审批已开启（{tid} 自动放行安全审批、拦住危险审批；其他会话不受影响）" if on else "替我审批已关闭"
+        )
+        self._refresh_mode_badges()
+
     def _on_undo(self) -> None:
         # gui-ux22 工单 03：零参主入口保留（Esc ③ 主路径 / 菜单 / slash 兼容）；逐槽版 _on_undo_for
         # 菜单 undo = 当前焦点槽的主线语义（对标 TUI「undo 作用当前焦点 pane」）；offscreen 无焦点回 main
@@ -644,9 +664,9 @@ class MainWindow(QMainWindow):
                     self.presenter.session_registry.set_compacted(tid, True)
                 except Exception:  # noqa: BLE001 — 基线写失败不影响压缩结果
                     pass
-            # /yolo、/proxy 改的是共享 permission_state：worker 完成后回主线程重同步
+            # /yolo、/proxy、/approve-for-me 改的是共享 permission_state：worker 完成后回主线程重同步
             # 菜单勾选 / [YOLO][PROXY] 徽标（_refresh_mode_badges 单一同步点；状态栏由 notify 承载）
-            if first in ("/yolo", "/proxy"):
+            if first in ("/yolo", "/proxy", "/approve-for-me"):
                 b.sync_modes.emit()
             # diagnosing-bugs /goal 修复：/goal 族 → 状态行常驻目标行（status 信号按槽路由，
             # 非瞬态 notify）+ 徽标刷新（[GOAL]）+ 链重启（create/resume kick 经 start_turn）
@@ -844,6 +864,9 @@ class MainWindow(QMainWindow):
         self.yolo_action.blockSignals(True)
         self.yolo_action.setChecked(yolo)
         self.yolo_action.blockSignals(False)
+        self.proxy_action.blockSignals(True)
+        self.proxy_action.setChecked(proxy)
+        self.proxy_action.blockSignals(False)
 
     _BADGE_STATES: dict = {
         "awaiting": ("等待审批…", "warning"),

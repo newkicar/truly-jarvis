@@ -376,3 +376,45 @@ def test_undo_backfill_routes_by_unundown_tid_in_split(qapp, monkeypatch):
         assert win.input_bar.edit.toPlainText() == "主对话最后一条"
     finally:
         cleanup_home(home)
+
+
+
+def test_proxy_menu_toggle_sets_state_and_badge(qapp):
+    """#5：高级菜单「替我审批」勾选态 → proxy_on/off 写线程级 state、[PROXY] 徽标联动；
+    会话切换同步勾选态（per-thread 不串）；关闭后徽标/状态清除。"""
+    from src import permissions
+
+    win, p, rt, home = _win(qapp)
+    try:
+        state = rt.permission_state
+        win._switch_to("sess-proxy")
+        win.proxy_action.setChecked(True)  # 触发 _on_proxy_toggled
+        assert permissions.proxy_active(state, "sess-proxy")
+        assert "[PROXY]" in win.mode_badge.text()
+        assert "替我审批已开启" in win.status_label.text()
+        # 切到另一会话：proxy 线程级不串，菜单勾选态随会话同步
+        win._switch_to("sess-other")
+        assert not permissions.proxy_active(state, "sess-other")
+        assert "[PROXY]" not in win.mode_badge.text()
+        assert not win.proxy_action.isChecked()
+        # 切回原会话：仍开着
+        win._switch_to("sess-proxy")
+        assert permissions.proxy_active(state, "sess-proxy")
+        assert win.proxy_action.isChecked()
+        assert "[PROXY]" in win.mode_badge.text()
+        # 关闭
+        win.proxy_action.setChecked(False)
+        assert not permissions.proxy_active(state, "sess-proxy")
+        assert "[PROXY]" not in win.mode_badge.text()
+    finally:
+        cleanup_home(home)
+
+
+def test_advanced_menu_contains_proxy_action(qapp):
+    """#5：高级菜单含「替我审批（自动放行安全审批，拦住危险）」入口（与 Plan/YOLO/撤回同组）"""
+    win, p, rt, home = _win(qapp)
+    try:
+        texts = [a.text() for a in win._advanced_menu.actions()]
+        assert "替我审批（自动放行安全审批，拦住危险）" in texts
+    finally:
+        cleanup_home(home)

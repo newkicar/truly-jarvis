@@ -1588,6 +1588,68 @@ def test_help_includes_proxy():
     assert "/proxy" in commands.CLI_HELP
     assert "/proxy" in commands.TUI_HELP
 
+def test_dispatch_approve_for_me_full_cycle():
+    """#5: /approve-for-me 为 /proxy 的正统命令名，四态文案与 /proxy 镜像一致（共享 proxy_command_text）。"""
+    from src.permissions import build_permission_interrupts, proxy_active
+
+    _io, state = build_permission_interrupts({})
+    agent = FakeDispatchAgent()
+
+    # 裸查询（原关）
+    text, nt, rc = commands.dispatch_command(agent, "tp", "/approve-for-me", permission_state=state)
+    assert text == "替我审批状态：本会话已关闭"
+    assert nt is None and rc is None
+    assert not proxy_active(state, "tp")
+
+    # on 首开
+    text, _, _ = commands.dispatch_command(agent, "tp", "/approve-for-me on", permission_state=state)
+    assert text == "替我审批已开启：放行安全审批（只读命令/项目内写编辑）、拦住危险审批（仅当前会话，重启即关）"
+    assert proxy_active(state, "tp")
+
+    # on 重复
+    text, _, _ = commands.dispatch_command(agent, "tp", "/approve-for-me on", permission_state=state)
+    assert text == "替我审批已开启（安全审批自动放行；危险审批仍拦截；/proxy off 关闭）"
+    assert proxy_active(state, "tp")
+
+    # off 原开
+    text, _, _ = commands.dispatch_command(agent, "tp", "/approve-for-me off", permission_state=state)
+    assert text == "替我审批已关闭：恢复本会话原 permissions 规则"
+    assert not proxy_active(state, "tp")
+
+    # off 重复
+    text, _, _ = commands.dispatch_command(agent, "tp", "/approve-for-me off", permission_state=state)
+    assert text == "替我审批已关闭（本会话）"
+    assert not proxy_active(state, "tp")
+
+
+def test_approve_for_me_and_proxy_share_state():
+    """#5: /approve-for-me 与 /proxy 读写同一 PROXY_THREADS_KEY（互相开关生效）。"""
+    from src.permissions import build_permission_interrupts, proxy_active
+
+    _io, state = build_permission_interrupts({})
+    agent = FakeDispatchAgent()
+    commands.dispatch_command(agent, "tp", "/approve-for-me on", permission_state=state)
+    assert proxy_active(state, "tp")
+    commands.dispatch_command(agent, "tp", "/proxy off", permission_state=state)
+    assert not proxy_active(state, "tp")
+
+
+def test_dispatch_approve_for_me_bad_arg_shares_usage_line():
+    """#5: /approve-for-me 非法参数复用共享用法行（与 /proxy 同一文案，既有 L1577 断言不变）。"""
+    from src.permissions import build_permission_interrupts
+
+    _io, state = build_permission_interrupts({})
+    text, nt, rc = commands.dispatch_command(FakeDispatchAgent(), "tp", "/approve-for-me x", permission_state=state)
+    assert text == "用法: /proxy on | /proxy off"
+    assert nt is None and rc is None
+
+
+def test_help_includes_approve_for_me():
+    """#5: /approve-for-me 列入 CLI 与 TUI HELP（_HELP_COMMANDS 单一出处同步）。"""
+    assert "/approve-for-me" in commands.CLI_HELP
+    assert "/approve-for-me" in commands.TUI_HELP
+
+
 
 def test_compact_prompt_includes_unfinished_tasks_section():
     """ADR-0014 ⑤：压缩 prompt 必须含「未完成任务」节，压缩后立即续跑。"""

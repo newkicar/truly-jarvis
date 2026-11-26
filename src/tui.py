@@ -2006,15 +2006,24 @@ class JarvisApp(App):
         self.push_screen(ReportModal(result), after_close)
 
     def _yolo_notify_text(self, text: str) -> str | None:
-        """tui-ux12: /yolo on/off 执行后短 banner（幂等同文案）；裸查询/非法参数不弹。"""
+        """tui-ux12: /yolo、/proxy、/approve-for-me on/off 执行后短 banner（幂等同文案）；裸查询/非法参数不弹。"""
         parts = text.split()
-        if len(parts) < 2 or parts[0] != "/yolo":
+        if len(parts) < 2:
             return None
+        cmd = parts[0]
         arg = parts[1].lower()
-        if arg == "on":
-            return "YOLO 已开启：本会话免审批"
-        if arg == "off":
-            return "YOLO 已关闭：恢复原 permissions 规则"
+        if cmd == "/yolo":
+            if arg == "on":
+                return "YOLO 已开启：本会话免审批"
+            if arg == "off":
+                return "YOLO 已关闭：恢复原 permissions 规则"
+            return None
+        if cmd in ("/proxy", "/approve-for-me"):
+            if arg == "on":
+                return "替我审批已开启：本会话放行安全审批、拦住危险审批"
+            if arg == "off":
+                return "替我审批已关闭：恢复原 permissions 规则"
+            return None
         return None
 
     def _undo_worker(self, n: int) -> None:

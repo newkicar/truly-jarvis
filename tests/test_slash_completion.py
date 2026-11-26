@@ -57,3 +57,17 @@ def test_tui_ux14_proxy_entry():
     assert "/proxy" in [c.name for c in SLASH_COMMANDS]
     assert "/proxy" in [c.name for c in filter_commands(query="prox")]
     assert slash_query("/proxy ") is None
+
+
+
+def test_approve_for_me_entry():
+    """#5: /approve-for-me 为 canonical 条目（列于 /proxy 前）；filter "approv" 命 canonical，"prox" 仍命别名。"""
+    from src.slash_completion import SLASH_COMMANDS, filter_commands, slash_query
+
+    names = [c.name for c in SLASH_COMMANDS]
+    assert "/approve-for-me" in names
+    assert names.index("/approve-for-me") < names.index("/proxy")
+    assert "/approve-for-me" in [c.name for c in filter_commands(query="approv")]
+    assert "/proxy" in [c.name for c in filter_commands(query="prox")]
+    assert "/approve-for-me" not in [c.name for c in filter_commands(query="prox")]
+    assert slash_query("/approve-for-me ") is None
