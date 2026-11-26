@@ -266,6 +266,23 @@ def side_parent(state: dict, thread_id: str) -> str | None:
     return None
 
 
+def side_child(state: dict, main_tid: str) -> str | None:
+    """指定主线会话持有的 side 会话 tid；无 side / 无登记 -> None。
+
+    遍历 side_parents 找 parent == main_tid 的登记项（纯读、零索引；
+    主线同时挂多个 side 时返回首个登记者，与本线登记序一致）。
+    """
+    tid = str(main_tid or "")
+    if not tid:
+        return None
+    parents = state.get(SIDE_PARENTS_KEY)
+    if isinstance(parents, dict):
+        for side, parent in parents.items():
+            if str(parent) == tid:
+                return side
+    return None
+
+
 def _current_turn_tid(state: dict) -> str:
     """工单 #4：当前回合真实 thread_id（门判定双真源收敛）。
 

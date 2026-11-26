@@ -994,6 +994,9 @@ class MainWindow(QMainWindow):
             self._main_slot_tid = self.presenter.side_parent(tid) or self._main_slot_tid
         else:
             self._main_slot_tid = tid
+            # side 工单 03：主线目标 -> 右槽绑该主线的 side child（无则清 None 防 stale）
+            child = self.presenter.side_child(tid) if self.presenter is not None else ""
+            self._side_slot_tid = child or None
 
     def _sync_slot_panes(self) -> None:
         """ChatPane re-parent：把全部 pane 移到应属的栈（同 pane 实例 per-thread 常驻，
@@ -1017,6 +1020,7 @@ class MainWindow(QMainWindow):
         self._side_slot_tid = None
         self.chat_splitter.setSizes([1, 0])
         self._reset_side_esc_state()  # gui-ux22 工单 03：折叠即复位侧槽 Esc 双级 primed
+        self._refresh_side_pill()  # side 工单 03：pill 跟随右槽归属，折叠即同步清 pill
 
     def _save_slot_draft(self, slot: str) -> None:
         """#1 槽版：把指定槽未提交输入（文本+图片条）记为该槽 tid 会话的草稿。"""
@@ -1032,10 +1036,16 @@ class MainWindow(QMainWindow):
         self.active_tid = tid
         self._update_slot_ownership(tid)
         self._sync_slot_panes()  # gui-ux22 工单 02：取代原 stack.setCurrentWidget(p)——各槽自设当前件
-        # gui-ux22 工单 02：状态驱动布局不变式——目标是 side 会话 ⇒ 右槽展开
-        # （覆盖树点 side 叶子的同项目/跨项目两入口；对开/关 side 路径幂等）
-        if self._slot_of_tid(tid) == "side":
+        # side 工单 03：右槽持 side 会话 ⇒ 确保其 pane 存在（_stack_for 路由 side_stack）
+        if self._side_slot_tid:
+            self._ensure_pane(self._side_slot_tid)
+        self._sync_slot_panes()  # gui-ux22 工单 02：各槽自设当前件
+        # gui-ux22 工单 02 + side 工单 03：状态驱动布局不变式——右槽展开 ⇔ 持有 side 会话
+        # （主线目标有 side 重新展开其 child；无 side 折叠清 stale；开/关 side 路径幂等）
+        if self._side_slot_tid:
             self._expand_side_slot()
+        else:
+            self._collapse_side_slot()
         p.stick = True
         p.snap_to_bottom()
         self._workspace.set_last_active(self._workspace.active_root(), tid)
@@ -1492,12 +1502,14 @@ class MainWindow(QMainWindow):
         if ans != QMessageBox.StandardButton.Yes:
             return
         note, parent = self.presenter.close_side(tid)
-        self._collapse_side_slot()  # gui-ux22 工单 02：右槽折叠
         self.status_label.setText(note)
         if parent:
+            # side 工单 03：先切换再折叠，折叠置后覆盖 _switch_to 重推可能复活的 stale side_child
             self._switch_to(parent)
+            self._collapse_side_slot()
         else:
             # gui-ux22 工单 03：无 parent 兜底（孤儿 side 会话删除等）——焦点回左槽输入条
+            self._collapse_side_slot()
             self.input_bar.edit.setFocus()
 
     def _on_side_pill_clicked(self) -> None:
@@ -1512,9 +1524,10 @@ class MainWindow(QMainWindow):
             return
         note, parent = self.presenter.close_side(tid)
         if parent:
-            self._collapse_side_slot()  # gui-ux22 工单 02：右槽折叠
             self.status_label.setText(note)
+            # side 工单 03：先切换再折叠，折叠置后覆盖 _switch_to 重推可能复活的 stale side_child
             self._switch_to(parent)
+            self._collapse_side_slot()
         else:
             # 内核拒绝：不折叠真实开着的右槽，仅提示
             self.status_label.setText(note)
@@ -1678,8 +1691,9 @@ class MainWindow(QMainWindow):
                 note, parent = self.presenter.close_side(stid)
                 st.setText(note)
                 if parent:
-                    self._collapse_side_slot()
+                    # side 工单 03：先切换再折叠，折叠置后覆盖 _switch_to 重推可能复活的 stale side_child
                     self._switch_to(parent)
+                    self._collapse_side_slot()
                 else:
                     # 内核拒绝（如 tid 已失 side 身份）：不折叠真实开着的右槽
                     self.input_bar.edit.setFocus()

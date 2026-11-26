@@ -369,6 +369,13 @@ class GuiPresenter:
             return ""
         return permissions.side_parent(state, tid) or ""
 
+    def side_child(self, tid: str) -> str:
+        """指定主线会话持有的 side tid；无 / 无状态 -> ""（None 归一）。"""
+        state = self.runtime.permission_state
+        if not state:
+            return ""
+        return permissions.side_child(state, tid) or ""
+
     def _maybe_name(self, tid: str, ok: bool) -> None:
         """首轮成功结束 → 后台 AI 命名（已有短名/摘要的不动；失败静默回落）。"""
         if not ok:

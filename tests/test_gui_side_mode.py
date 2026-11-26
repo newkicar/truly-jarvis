@@ -204,3 +204,30 @@ def test_slash_side_close_rejected_keeps_open_slot(qapp):
         assert win.side_pill.isVisibleTo(win)  # pill 跟随右槽持有
     finally:
         cleanup_home(rt._home)
+
+
+def test_switch_mains_right_slot_follows_side_child(qapp):
+    """side 工单 03（修前红）：A→B→C→A 矩阵——主线目标切换时，右槽
+    绑该主线的 side child；目标无 side ⇒ 折叠 + 清 stale；重新回到有 side 的
+    主线 ⇒ 重新展开并绑其 child（幂等，开/关 side 路径不受影响）。"""
+    win, p, rt = _win(qapp)
+    try:
+        state = rt.permission_state
+        permissions.side_open(state, "side-a", "main-a")
+        permissions.side_open(state, "side-c", "main-c")
+        win._switch_to("main-a")
+        assert win._side_slot_tid == "side-a"
+        assert win.chat_splitter.sizes()[1] > 0
+        win._switch_to("main-b")
+        assert win._side_slot_tid is None
+        assert win.chat_splitter.sizes()[1] == 0
+        win._switch_to("main-c")
+        assert win._side_slot_tid == "side-c"
+        assert win.chat_splitter.sizes()[1] > 0
+        assert win.side_stack.currentWidget() is not None
+        assert win.side_stack.currentWidget().tid == "side-c"
+        win._switch_to("main-a")
+        assert win._side_slot_tid == "side-a"
+        assert win.side_stack.currentWidget().tid == "side-a"
+    finally:
+        cleanup_home(rt._home)
