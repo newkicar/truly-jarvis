@@ -20,7 +20,7 @@ ensure_utf8_stdout()
 PROMPT = "JARVIS> "
 
 
-def _cli_tool_line(name, args, err, output, depth=0):
+def _cli_tool_line(name, args, err, output, depth=0, state=None, tid=""):
     from rich.text import Text
 
     from src.tui_format import format_tool_call
@@ -29,6 +29,13 @@ def _cli_tool_line(name, args, err, output, depth=0):
     # Rich markup → plain for CLI（format_tool_call 已 escape 动态片段，
     # Text.from_markup 解析剩余 [dim] 意图后取纯文本，对转义序列免疫）
     print(Text.from_markup(line).plain)
+    # #20: proxy-review 放行标记（最近裁决为 allow 时显示 ⚡ 行，否则静默）
+    if state is not None and not err:
+        from src.proxy_reviewer import review_last_record
+
+        rec = review_last_record(state, name, tid)
+        if rec and rec.get("outcome") == "allow":
+            print("  " * depth + f"⚡ proxy-review 放行 {str(rec.get('rationale') or '')[:60]}".strip())
 
 
 def _run_session(agent, thread_id: str, sched=None, permission_state: dict | None = None, config=None):  # noqa: C901
@@ -82,11 +89,22 @@ def _run_session(agent, thread_id: str, sched=None, permission_state: dict | Non
         _stream_turn(agent, thread_id, user_input, permission_state, config)
 
 
-def _handle_interrupts(interrupts, permission_state: dict | None = None):
+def _handle_interrupts(interrupts, permission_state: dict | None = None, thread_id: str = ""):
     """展示待审批操作并收集用户决策，返回 Command.resume 内容。"""
+    from src.proxy_reviewer import review_last_record
+
+    def prompt_with_note(inv):
+        rec = review_last_record(permission_state, inv.name, thread_id)
+        note = rec.get("note") if (rec and rec.get("outcome") == "ask") else None
+        return streaming.cli_prompt_action(
+            inv,
+            permission_state=permission_state,
+            review_note=note,
+        )
+
     return streaming.collect_interrupt_decisions(
         interrupts,
-        lambda inv: streaming.cli_prompt_action(inv, permission_state=permission_state),
+        prompt_with_note,
         permission_state=permission_state,
     )
 
@@ -100,6 +118,21 @@ def _stream_replay(agent, thread_id: str, checkpoint_id: str, permission_state: 
     def on_always_approve(name: str) -> None:
         print(f"    已永久放行 {name}（已写入 jarvis.json，以后自动放行）")
 
+    def prompt_with_note(inv):
+        # #20: proxy-review 回落注记（最近裁决 outcome=ask 时给审批提示的说明）
+        from src.proxy_reviewer import review_last_record
+
+        rec = review_last_record(permission_state, inv.name, thread_id)
+        note = rec.get("note") if (rec and rec.get("outcome") == "ask") else None
+        return streaming.cli_prompt_action(
+            inv,
+            permission_state=permission_state,
+            on_always_approve=on_always_approve,
+            vault_path=vault_path,
+            workspace_root=workspace_root,
+            review_note=note,
+        )
+
     streaming.run_agent_turn(
         agent,
         thread_id,
@@ -107,20 +140,15 @@ def _stream_replay(agent, thread_id: str, checkpoint_id: str, permission_state: 
         checkpoint_id=checkpoint_id,
         handle_interrupts=lambda interrupts: streaming.collect_interrupt_decisions(
             interrupts,
-            lambda inv: streaming.cli_prompt_action(
-                inv,
-                permission_state=permission_state,
-                on_always_approve=on_always_approve,
-                vault_path=vault_path,
-                workspace_root=workspace_root,
-            ),
+            prompt_with_note,
             permission_state=permission_state,
             on_always_approve=on_always_approve,
         ),
         callbacks={
             "on_subagent": lambda name, status, depth=0: print(f"{'  ' * depth}  [{name}] {status}"),
             "on_tool_call": lambda name, args, err, output=None, depth=0: _cli_tool_line(
-                name, args, err, output, depth
+                name, args, err, output, depth,
+                state=permission_state, tid=thread_id,
             ),
             "on_message_delta": lambda delta: print(delta, end="", flush=True),
             "on_status": _cli_status_line,
@@ -173,6 +201,21 @@ def _stream_turn(agent, thread_id: str, user_input: str, permission_state: dict 
     def on_always_approve(name: str) -> None:
         print(f"    已永久放行 {name}（已写入 jarvis.json，以后自动放行）")
 
+    def prompt_with_note(inv):
+        # #20: proxy-review 回落注记（最近裁决 outcome=ask 时给审批提示的说明）
+        from src.proxy_reviewer import review_last_record
+
+        rec = review_last_record(permission_state, inv.name, thread_id)
+        note = rec.get("note") if (rec and rec.get("outcome") == "ask") else None
+        return streaming.cli_prompt_action(
+            inv,
+            permission_state=permission_state,
+            on_always_approve=on_always_approve,
+            vault_path=vault_path,
+            workspace_root=workspace_root,
+            review_note=note,
+        )
+
     while True:
         print()
         try:
@@ -182,20 +225,15 @@ def _stream_turn(agent, thread_id: str, user_input: str, permission_state: dict 
                 user_input,
                 handle_interrupts=lambda interrupts: streaming.collect_interrupt_decisions(
                     interrupts,
-                    lambda inv: streaming.cli_prompt_action(
-                        inv,
-                        permission_state=permission_state,
-                        on_always_approve=on_always_approve,
-                        vault_path=vault_path,
-                        workspace_root=workspace_root,
-                    ),
+                    prompt_with_note,
                     permission_state=permission_state,
                     on_always_approve=on_always_approve,
                 ),
                 callbacks={
                     "on_subagent": lambda name, status, depth=0: print(f"{'  ' * depth}  [{name}] {status}"),
                     "on_tool_call": lambda name, args, err, output=None, depth=0: _cli_tool_line(
-                        name, args, err, output, depth
+                        name, args, err, output, depth,
+                        state=permission_state, tid=thread_id,
                     ),
                     "on_message_delta": lambda delta: print(delta, end="", flush=True),
                     "on_status": _cli_status_line,

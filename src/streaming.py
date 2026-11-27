@@ -297,12 +297,16 @@ def cli_prompt_action(  # noqa: C901
     on_always_approve: Callable[[str], None] | None = None,
     vault_path=None,
     workspace_root=None,
+    review_note: str | None = None,
 ) -> dict | None:
     """CLI 终端逐条审批，返回 modal 同构结果 dict。"""
     from src.tui_format import permission_preview
 
     read = input_fn or input
     print(f"\n  [审批] {inv.name}")
+    # #20: proxy-review 回落注记（裁决 ask 时说明为何未自动放行）
+    if review_note:
+        print(f"    [proxy-review] {review_note}")
     preview = permission_preview(
         inv,
         vault_path=vault_path,

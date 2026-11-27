@@ -397,3 +397,70 @@ def test_prompt_user_text_capped(env):
     prompt = model.last_prompt
     assert "x" * 2000 in prompt
     assert "x" * 2001 not in prompt
+
+
+# ---------- #20: 呈现层 review_last_record（state 键读取契约） ----------
+
+def test_review_last_record_hit_and_copy():
+    rec_src = {"tool": "execute", "thread_id": "t1", "outcome": "allow", "rationale": "低危只读"}
+    state = {PROXY_REVIEW_LAST_KEY: rec_src}
+    for tid in ("t1", ""):
+        rec = pr.review_last_record(state, "execute", tid)
+        assert rec == rec_src
+        assert rec is not rec_src
+        # 浅拷贝：改调用方副本不影响共享 state 里的记录
+        rec["outcome"] = "mutated"
+        assert state[PROXY_REVIEW_LAST_KEY]["outcome"] == "allow"
+
+
+@pytest.mark.parametrize(("tool", "tid"), [("write_file", "t1"), ("execute", "t2")])
+def test_review_last_record_mismatch(tool, tid):
+    rec = {"tool": "execute", "thread_id": "t1", "outcome": "allow"}
+    state = {PROXY_REVIEW_LAST_KEY: rec}
+    # write_file != execute（工具不匹配）；execute+t2 != rec.thread_id t1（跨线程）
+    assert pr.review_last_record(state, tool, tid) is None
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        None,
+        {},
+        {PROXY_REVIEW_LAST_KEY: {}},
+        {PROXY_REVIEW_LAST_KEY: "not-a-dict"},
+        {PROXY_REVIEW_LAST_KEY: None},
+        {PROXY_REVIEW_LAST_KEY: 42},
+        {"other": 1},
+    ],
+)
+def test_review_last_record_defensive(state):
+    assert pr.review_last_record(state, "execute", "t1") is None
+
+
+# outcome=ask 时的回落注记（#20）：critical/high 走成功回落三分支，枚举越界由 _decide 给出注记
+@pytest.mark.parametrize(
+    ("tool", "verdict_json", "check"),
+    [
+        ("delete", CRITICAL_JSON, lambda n: n == "critical 风险回落人工审批"),
+        (
+            "execute",
+            '{"risk": "high", "authorization": "critical", "rationale": "r"}',
+            lambda n: n == "high 风险未收窄范围，回落人工审批",
+        ),
+        # 枚举越界 → _decide fail-closed 注记（非成功回落三分支，三分支 note 为空时才有）
+        (
+            "write_file",
+            '{"risk": "urgent", "authorization": "low", "rationale": "r"}',
+            lambda n: n.startswith("JSON 解析失败") and "越界" in n,
+        ),
+    ],
+)
+def test_outcome_ask_fallback_note(env, tool, verdict_json, check):
+    model = FakeModel(content=verdict_json)
+    io, state = _make_state(env, model)
+    args = _GATE_ARGS[tool]
+    assert pr.proxy_review_upgrade(state, tool, args, _req(tool, args)) is False
+    rec = state[PROXY_REVIEW_LAST_KEY]
+    assert rec["outcome"] == "ask"
+    assert check(rec["note"])
+

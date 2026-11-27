@@ -62,6 +62,26 @@ def clear_review_cache() -> None:
     _REVIEW_CACHE.clear()
 
 
+def review_last_record(state: dict | None, tool: str, thread_id: str = "") -> dict | None:
+    """"#20: 取共享 state 的最近裁决记录（state[PROXY_REVIEW_LAST_KEY]）。
+
+    呈现层（TUI ⚡ 标记 / CLI ⚡ / 审批注记）读这一个键：
+    - state 非 dict / 键缺失 / 非 dict / tool 不匹配 → None；
+    - thread_id 非空时要求记录 thread_id 相等（跨线程记录不呈现）；
+    命中即返回记录的浅拷贝，调用方只读。
+    """
+    if not isinstance(state, dict):
+        return None
+    rec = state.get(PROXY_REVIEW_LAST_KEY)
+    if not isinstance(rec, dict) or not rec:
+        return None
+    if str(rec.get("tool", "")) != tool:
+        return None
+    if thread_id and str(rec.get("thread_id", "")) != thread_id:
+        return None
+    return dict(rec)
+
+
 def proxy_review_upgrade(state: dict, tool: str, args: dict, request: object = None) -> bool:
     """裁决一次 ask 是否升级放行。True = 自动放行（when 不中断）；False = 维持原审批。"""
     if state is None or not tool:
@@ -86,6 +106,15 @@ def proxy_review_upgrade(state: dict, tool: str, args: dict, request: object = N
         str(verdict.get("authorization", "")),
         scope_is_narrow(tool, args),
     )
+    # #20: 成功裁决回落人工审批（outcome=ask）时填 note（失败路径 note 已由 _decide 给出）
+    if outcome == "ask" and not note:
+        risk = str(verdict.get("risk", ""))
+        if risk == "critical":
+            note = "critical 风险回落人工审批"
+        elif risk == "high":
+            note = "high 风险未收窄范围，回落人工审批"
+        else:
+            note = "裁决回落人工审批"
     record = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "tool": tool,
@@ -350,4 +379,10 @@ def _write_audit(cfg: dict, record: dict) -> None:
         return
 
 
-__all__ = ["clear_review_cache", "proxy_review_upgrade", "review_outcome", "scope_is_narrow"]
+__all__ = [
+    "clear_review_cache",
+    "proxy_review_upgrade",
+    "review_last_record",
+    "review_outcome",
+    "scope_is_narrow",
+]

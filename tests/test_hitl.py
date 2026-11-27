@@ -209,3 +209,70 @@ def test_handle_interrupts_always_approve_updates_state_and_json(monkeypatch, tm
     assert state2["tools"]["execute"] == {"*": "ask", "git *": "allow"}
     assert written2["p"]["execute"] == {"*": "ask", "git *": "allow"}
     assert written["path"] == tmp_path / "jarvis.json"
+
+
+# ----------------------------------------------------------------------
+# #20: CLI proxy-review 呈现（⚡ 放行标记 / 回落注记）
+# ----------------------------------------------------------------------
+
+
+def test_cli_tool_line_proxy_review_marker() -> None:
+    """state 带 allow 裁决记录 → ⚡ 放行行；state=None 或工具不符 → 无 ⚡。"""
+    import contextlib
+    import io
+
+    import src.main as main
+    from src.permissions import PROXY_REVIEW_LAST_KEY
+
+    state = {
+        PROXY_REVIEW_LAST_KEY: {
+            "tool": "execute",
+            "outcome": "allow",
+            "rationale": "低危只读",
+            "thread_id": "t1",
+        }
+    }
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        main._cli_tool_line("execute", "curl http://x", False, None, 0, state=state, tid="t1")
+    assert "⚡ proxy-review 放行 低危只读" in out.getvalue()
+
+    out2 = io.StringIO()
+    with contextlib.redirect_stdout(out2):
+        main._cli_tool_line("execute", "curl http://x", False, None, 0, state=None, tid="t1")
+    assert "⚡" not in out2.getvalue()
+
+    out3 = io.StringIO()
+    with contextlib.redirect_stdout(out3):
+        main._cli_tool_line("write_file", "x", False, None, 0, state=state, tid="t1")
+    assert "⚡" not in out3.getvalue()
+
+
+def test_cli_prompt_action_review_note() -> None:
+    """review_note 非空 → 审批首屏打印 [proxy-review] 注记；空则不打印。"""
+    import contextlib
+    import io
+
+    from src import streaming
+    from src.commands import ToolInvocation
+
+    inv = ToolInvocation(name="execute", path="rm x", args={"command": "rm x"})
+    perms = {"default": "ask", "tools": {"execute": "ask"}}
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        res = streaming.cli_prompt_action(
+            inv,
+            permission_state=perms,
+            input_fn=lambda _: "y",
+            review_note="裁决回落人工审批：高风险写操作",
+        )
+    assert res == {"decision": "approve"}
+    assert "[proxy-review] 裁决回落人工审批：高风险写操作" in out.getvalue()
+
+    out2 = io.StringIO()
+    with contextlib.redirect_stdout(out2):
+        res2 = streaming.cli_prompt_action(
+            inv, permission_state=perms, input_fn=lambda _: "y"
+        )
+    assert res2 == {"decision": "approve"}
+    assert "[proxy-review]" not in out2.getvalue()

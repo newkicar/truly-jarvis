@@ -61,6 +61,7 @@ CLI_HELP = (
     _HELP_COMMANDS
     + "审批操作时: [y]本次放行 [n]拒绝 [e]编辑参数 [a]always approve(q 放弃本轮)；\n"
     + f"也可直接编辑 {JARVIS_JSON} 的 permissions 段（allow/ask/deny）。\n"
+    + "proxy.review（LLM 替我审批）：放行显示 ⚡ 标记；回落人工审批时审批提示显示审查注记。\n"
 )
 
 TUI_HELP = (
@@ -74,6 +75,7 @@ TUI_HELP = (
     + "Esc 三段（运行中）：Esc#1 提醒取消 → 1.5s 内 Esc#2 取消本轮 → 收尾后 1.5s 内 Esc#3 撤回上一轮。\n"
     + "撤回：/undo 撤回最近 1 条用户消息（多轮请反复调用）；TUI 空闲时双 Esc（1.5s 内）撤回上一轮，单 Esc 不退出。\n"
     + "HITL 审批时: 点击按钮选择（放行/永久放行/拒绝/编辑参数），Esc 放弃。\n"
+    + "proxy.review（LLM 替我审批）：transcript 放行显示 ⚡ 标记；回落人工审批时弹窗显示注记。\n"
 )
 
 
@@ -85,6 +87,7 @@ GUI_HELP = (
     + "自检：/doctor 以对话框展示（可滚动、可选中），不进状态栏。\n"
     + "HITL 审批时: 审批卡片点击按钮选择（放行/永久放行/拒绝/编辑参数/放弃本轮）。\n"
     + "退出：/exit 或关闭窗口。\n"
+    + "proxy.review（LLM 替我审批）：开启后安全审批自动放行，危险回落人工审批（GUI 卡片注记后续工单）。\n"
 )
 
 @dataclass(frozen=True)
