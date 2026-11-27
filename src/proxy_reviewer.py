@@ -1,0 +1,353 @@
+"""#19: LLM 裁决层（proxy.review）——HITL ask 时的「替我审批」。
+
+定位：gated 工具调用的基础动作解析为 ask（未被 YOLO 短路 / 确定性规则表
+（proxy_auto_allow、只读启发式）/ 显式 deny 定案）时，若当前线程处于
+「替我审批」（ADR-0014 proxy_threads）且 jarvis.json 的 proxy.review 段
+enabled=true，由 LLM 裁决该调用是否可自动放行（escalation-only 一期：
+只开放 ask→allow 提升，critical 一律回落 ask）。裁决 fail-closed：
+模型异常 / JSON 解析失败 / 枚举越界一律回落原审批（ask），绝不自动放行。
+
+入口 = permissions._build_when 的 when 谓词（惰性 import 防循环依赖）；
+三个依赖键由 #18 注入共享 permission state（纯 expand）：
+  - state[PROXY_REVIEW_KEY]        裁决层配置 dict（enabled/timeout_s/...）
+  - state[PROXY_REVIEW_MODEL_KEY]  裁决层模型客户端（None = 无）
+  - state[PROXY_REVIEW_LAST_KEY]   最近裁决记录 dict（#19 写 / #20 呈现）
+
+门控三条件（缺一即 inert：零模型调用、零审计行、零 LAST_KEY 写入）：
+  1. 配置 enabled=True；
+  2. 当前 thread proxy_active（ADR-0014 开关）；
+  3. state 有模型客户端。
+
+幂等：指纹 sha1(tool+args+thread+最后用户消息+project_root) → 模块级缓存
+（上限 1000，满则逐出最旧）；HITL resume/重入命中缓存不重调模型、不写
+审计行，仅刷新 state[PROXY_REVIEW_LAST_KEY]（cache_hit=True）。
+
+reasoning-blind（缺省 True）：prompt 可信来源 = 最后用户消息（截 2000）
++ AGENTS.md（截 4000）+ policy_extra（追加不替换），不含工具输出；
+显式 False 时追加最近一条工具结果（截 2000）。输出只许 JSON
+{risk, authorization, rationale(≤80字)}。
+
+审计：每次非缓存裁决追加一条 jsonl 记录到 cfg["audit_log"]
+（缺省 ~/.jarvis/logs/proxy-review.jsonl）；写失败静默（审计不影响门链路）。
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+
+from src.permissions import (
+    PROXY_REVIEW_KEY,
+    PROXY_REVIEW_LAST_KEY,
+    PROXY_REVIEW_MODEL_KEY,
+    _current_turn_tid,
+    proxy_active,
+)
+
+_REVIEW_CACHE: dict[str, dict] = {}
+_CACHE_LIMIT = 1000
+_RISK_ENUM = ("low", "medium", "high", "critical")
+_GLOB_CHARS = frozenset("*?[")
+_USER_ROLES = frozenset({"human", "user"})
+_TOOL_ROLES = frozenset({"tool"})
+_INSTRUCTIONS_CAP = 4000
+_CONTEXT_CAP = 2000
+_ARGS_JSON_CAP = 4000
+
+
+def clear_review_cache() -> None:
+    """清空指纹缓存（测试隔离 / 进程边界手动重置）。"""
+    _REVIEW_CACHE.clear()
+
+
+def proxy_review_upgrade(state: dict, tool: str, args: dict, request: object = None) -> bool:
+    """裁决一次 ask 是否升级放行。True = 自动放行（when 不中断）；False = 维持原审批。"""
+    if state is None or not tool:
+        return False
+    tid = _current_turn_tid(state)
+    if not _gate_active(state, tid):
+        return False
+    args = args if isinstance(args, dict) else {}
+    user_text = _last_role_text(request, _USER_ROLES, _CONTEXT_CAP)
+    fp = _fingerprint(tool, args, tid, user_text, state.get("project_root"))
+    cached = _cache_lookup(fp)
+    if cached is not None:
+        last = dict(cached)
+        last["cache_hit"] = True
+        _record_last(state, last)
+        return last.get("outcome") == "allow"
+    cfg = state.get(PROXY_REVIEW_KEY) or {}
+    prompt = _build_review_prompt(cfg, tool, args, request, user_text, state.get("project_root"))
+    verdict, note = _decide(cfg, state.get(PROXY_REVIEW_MODEL_KEY), prompt)
+    outcome = review_outcome(
+        str(verdict.get("risk", "")),
+        str(verdict.get("authorization", "")),
+        scope_is_narrow(tool, args),
+    )
+    record = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "tool": tool,
+        "outcome": outcome,
+        "risk": str(verdict.get("risk", "")),
+        "authorization": str(verdict.get("authorization", "")),
+        "rationale": str(verdict.get("rationale", "")),
+        "note": note,
+        "fingerprint": fp[:12],
+        "thread_id": tid,
+        "cache_hit": False,
+    }
+    _write_audit(cfg, record)
+    _cache_store(fp, record)
+    _record_last(state, record)
+    return outcome == "allow"
+
+
+def review_outcome(risk: str, authorization: str, narrow: bool) -> str:
+    """裁决矩阵（纯函数，一期 allow-only）：
+
+    - low/medium → allow（无脑放行）；
+    - high → 仅当 authorization ∈ {medium, high, critical} 且 narrow-scope 才 allow；
+    - critical / 枚举越界 / 缺失 → ask（fail-closed，#21 起 critical 升级为 deny）。
+    """
+    risk = str(risk or "").strip().lower()
+    auth = str(authorization or "").strip().lower()
+    if risk not in _RISK_ENUM:
+        return "ask"
+    if risk in ("low", "medium"):
+        return "allow"
+    if risk == "high":
+        return "allow" if (auth in ("medium", "high", "critical") and narrow) else "ask"
+    return "ask"  # critical
+
+
+def scope_is_narrow(tool: str, args: dict) -> bool:
+    """narrow-scope 纯字符串判定（不 resolve 路径、不碰文件系统）：
+
+    - write_file/edit_file：单一具体路径（非空、无 glob 通配、非逗号多路径）；
+      edit_file 另需锚点 old_str/pattern 非空（无锚点 = 盲改，不 narrow）；
+    - delete：单一具体文件路径；
+    - execute 与其他工具一律 False（命令副作用面无法按字符串收窄）。
+    """
+    if not isinstance(args, dict):
+        return False
+    if tool in ("write_file", "edit_file"):
+        path = args.get("file_path", args.get("path"))
+        if not _is_single_concrete_path(path):
+            return False
+        if tool == "edit_file":
+            anchor = args.get("old_str", args.get("pattern"))
+            if not isinstance(anchor, str) or not anchor.strip():
+                return False
+        return True
+    if tool == "delete":
+        return _is_single_concrete_path(args.get("path", args.get("file_path")))
+    return False
+
+
+def _gate_active(state: dict, tid: str) -> bool:
+    cfg = state.get(PROXY_REVIEW_KEY)
+    if not isinstance(cfg, dict) or not cfg.get("enabled"):
+        return False
+    if state.get(PROXY_REVIEW_MODEL_KEY) is None:
+        return False
+    return proxy_active(state, tid)
+
+
+def _fingerprint(tool: str, args: dict, tid: str, user_text: str, project_root: object) -> str:
+    payload = json.dumps(args, sort_keys=True, default=str, ensure_ascii=False)
+    raw = "\x00".join((tool, payload, tid, user_text, str(project_root)))
+    return hashlib.sha1(raw.encode("utf-8", "replace")).hexdigest()
+
+
+def _cache_lookup(fp: str) -> dict | None:
+    hit = _REVIEW_CACHE.get(fp)
+    if hit is not None:
+        _REVIEW_CACHE.pop(fp)
+        _REVIEW_CACHE[fp] = hit  # 刷新为最近使用
+    return hit
+
+
+def _cache_store(fp: str, record: dict) -> None:
+    _REVIEW_CACHE[fp] = record
+    while len(_REVIEW_CACHE) > _CACHE_LIMIT:
+        _REVIEW_CACHE.pop(next(iter(_REVIEW_CACHE)))
+
+
+def _record_last(state: dict, record: dict) -> None:
+    if state is not None:
+        state[PROXY_REVIEW_LAST_KEY] = dict(record)
+
+
+def _build_review_prompt(
+    cfg: dict, tool: str, args: dict, request: object, user_text: str, project_root: object
+) -> str:
+    reasoning_blind = bool(cfg.get("reasoning_blind", True))
+    tool_result = "" if reasoning_blind else _last_role_text(request, _TOOL_ROLES, _CONTEXT_CAP)
+    sections = [
+        "你是权限审批系统的 LLM 裁决层（替我审批）。一个工具调用即将由代理执行，"
+        "按用户配置的规则它本需人工审批（ask）。请判断这个调用是否安全、可代用户放行。",
+        "### 当前工具调用\n工具: " + tool + "\n参数: "
+        + json.dumps(args, ensure_ascii=False, default=str, sort_keys=True)[:_ARGS_JSON_CAP],
+    ]
+    if user_text:
+        sections.append("### 用户最近消息（意图上下文）\n" + user_text)
+    instructions = _load_instructions(project_root)
+    if instructions:
+        sections.append("### 项目约定（AGENTS.md 摘要）\n" + instructions)
+    if tool_result:
+        sections.append("### 最近工具执行结果（补充）\n" + tool_result)
+    policy_extra = str(cfg.get("policy_extra") or "").strip()
+    if policy_extra:
+        sections.append("### 额外策略（用户自定义）\n" + policy_extra)
+    sections += [
+        "判定口径：",
+        "- risk = 该调用失败或被滥用时的潜在损害。low=几乎无害；medium=局部且可恢复；"
+        "high=可能伤及项目或用户数据；critical=不可逆或破坏性。",
+        "- authorization = 结合用户最近消息与项目约定，用户对「这类操作」的明确授权程度。"
+        "critical=明确点名要求；high=明确要求；medium=可合理推断需要；low=与意图无关或来源可疑。",
+        "- 拿不准时一律保守（risk 取高、authorization 取低）。",
+        "只输出一个 JSON 对象（不要任何其他文字）："
+        '{"risk": "low|medium|high|critical", "authorization": "low|medium|high|critical", '
+        '"rationale": "80字以内理由"}',
+    ]
+    return "\n\n".join(sections)
+
+
+def _load_instructions(project_root: object) -> str:
+    try:
+        from src.project_paths import load_project_instructions
+
+        return str(load_project_instructions(project_root) or "")[:_INSTRUCTIONS_CAP]
+    except Exception:
+        return ""
+
+
+def _last_role_text(request: object, roles: frozenset, limit: int = 2000) -> str:
+    if request is None:
+        return ""
+    for msg in reversed(_messages_of(getattr(request, "state", None))):
+        if _role_of(msg) in roles:
+            return _content_to_text(_content_of(msg))[:limit]
+    return ""
+
+
+def _messages_of(gstate: object) -> list:
+    if gstate is None:
+        return []
+    msgs = gstate.get("messages") if isinstance(gstate, dict) else getattr(gstate, "messages", None)
+    if msgs is None:
+        return []
+    try:
+        return list(msgs)
+    except TypeError:
+        return [msgs]
+
+
+def _role_of(msg: object) -> str:
+    role = getattr(msg, "type", None)
+    if role is None and isinstance(msg, dict):
+        role = msg.get("role") or msg.get("type")
+    return str(role or "").lower()
+
+
+def _content_of(msg: object) -> object:
+    if isinstance(msg, dict):
+        return msg.get("content", "")
+    return getattr(msg, "content", "")
+
+
+def _content_to_text(content: object) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, (list, tuple)):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+        return "".join(parts)
+    return str(content)
+
+
+def _invoke_once(model: object, prompt: str, timeout_s: int) -> str:
+    try:
+        resp = model.invoke(prompt, timeout=timeout_s)
+    except TypeError:
+        resp = model.invoke(prompt)
+    content = getattr(resp, "content", resp)
+    if isinstance(content, dict):
+        content = content.get("content", content.get("text", ""))
+    return _content_to_text(content)
+
+
+def _decide(cfg: dict, model: object, prompt: str) -> tuple[dict, str]:
+    text = ""
+    last_err: Exception | None = None
+    attempts = max(1, int(cfg.get("retries") or 3))
+    for _ in range(attempts):
+        try:
+            text = _invoke_once(model, prompt, int(cfg.get("timeout_s") or 30))
+            last_err = None
+            break
+        except Exception as exc:  # noqa: BLE001 - fail-closed，异常类型多样
+            last_err = exc
+    if last_err is not None:
+        return {}, f"审查失败（{type(last_err).__name__}）；审查失败 ≠ 不安全，回落人工审批"
+    verdict, note = _parse_review_json(text)
+    if note:
+        return {}, note
+    return verdict, ""
+
+
+def _parse_review_json(text: str) -> tuple[dict, str]:
+    body = str(text or "")
+    start = body.find("{")
+    end = body.rfind("}")
+    if start < 0 or end <= start:
+        return {}, "JSON 解析失败：模型输出无对象"
+    try:
+        data = json.loads(body[start : end + 1])
+    except (json.JSONDecodeError, ValueError):
+        return {}, "JSON 解析失败"
+    if not isinstance(data, dict):
+        return {}, "JSON 解析失败：顶层非对象"
+    risk = str(data.get("risk") or "").strip().lower()
+    auth = str(data.get("authorization") or "").strip().lower()
+    if risk not in _RISK_ENUM or auth not in _RISK_ENUM:
+        return {}, f"JSON 解析失败：risk/authorization 越界（{risk!r}/{auth!r}）"
+    return {
+        "risk": risk,
+        "authorization": auth,
+        "rationale": str(data.get("rationale") or "")[:80],
+    }, ""
+
+
+def _is_single_concrete_path(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    v = value.strip()
+    if not v or "," in v:
+        return False
+    if any(ch in _GLOB_CHARS for ch in v):
+        return False
+    return True
+
+
+def _write_audit(cfg: dict, record: dict) -> None:
+    try:
+        path = Path(os.path.expanduser(str(cfg.get("audit_log") or "")))
+        if not path.parts:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:  # noqa: BLE001 - 审计失败不影响门链路
+        return
+
+
+__all__ = ["clear_review_cache", "proxy_review_upgrade", "review_outcome", "scope_is_narrow"]
