@@ -4,13 +4,24 @@ Seam: src.agent.build_agent（输入 config → 输出可调用的 deep agent）
 用自定义 fake 模型（支持 bind_tools）模拟模型，不触网、不碰真 vault，
 验证组装成功且 invoke 能返回消息。
 """
+import dataclasses
+import os
+import shutil
+import tempfile
+import time
 from datetime import datetime
+from pathlib import Path
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from src.agent import JARVIS_HARNESS_SUFFIX, build_agent, build_main_prompt
+from src.permissions import (
+    PROXY_REVIEW_KEY,
+    PROXY_REVIEW_MODEL_KEY,
+    build_permission_interrupts,
+)
 from src.skill_paths import USER_SKILLS_VPATH
 from src.subagents import build_knowledge_keeper
 from tests.conftest import make_fake_config
@@ -513,3 +524,100 @@ def test_build_agent_no_dream_injection_when_absent(tmp_path, monkeypatch):
     build_agent(cfg, model=ToolCapableFake(reply="ok"))
 
     assert not any(str(p).replace("\\", "/").endswith("dream/knowledge.md") for p in captured.get("memory", []))
+
+
+
+_AGENT18_SEQ = 0
+
+
+def _agent18_base():
+    """#18 测试自建目录纪律：不依赖 tmp_path fixture（基目录 WinError 5 中毒）。"""
+    global _AGENT18_SEQ
+    _AGENT18_SEQ += 1
+    base = Path(
+        tempfile.gettempdir()
+    ) / (
+        f"jarvis_agent_18_{os.getpid()}_{int(time.time() * 1000)}_{_AGENT18_SEQ}"
+    )
+    base.mkdir(parents=True)
+    (base / "jh").mkdir()
+    (base / "vault").mkdir()
+    (base / "memory").mkdir()
+    return base
+
+
+def test_agent18_default_review_reuses_main_model(monkeypatch):
+    """#18 默认路径：未配 proxy_review.model → 裁决层复用主模型客户端。"""
+    import src.agent as agent_mod
+    from src.agent import create_deep_agent
+
+    base = _agent18_base()
+    try:
+        monkeypatch.setenv("JARVIS_HOME", str(base / "jh"))
+        cfg = make_fake_config(base)
+        state = build_permission_interrupts(cfg.permissions)[1]
+        model = ToolCapableFake(reply="ok")
+        captured = {}
+
+        def spy(**kwargs):
+            captured.update(kwargs)
+            return create_deep_agent(**kwargs)
+
+        monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+        build_agent(cfg, model=model, permission_state=state)
+        assert state[PROXY_REVIEW_KEY] == cfg.proxy_review
+        assert state[PROXY_REVIEW_MODEL_KEY] is model
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_agent18_review_model_separate_client(monkeypatch):
+    """#18 独立客户端：proxy_review.model 非空 → _make_model(reviewer-x)。"""
+    import src.agent as agent_mod
+
+    base = _agent18_base()
+    try:
+        monkeypatch.setenv("JARVIS_HOME", str(base / "jh"))
+        cfg = dataclasses.replace(make_fake_config(base), proxy_review={"enabled": True, "model": "reviewer-x"})
+        state = build_permission_interrupts(cfg.permissions)[1]
+        main_model = ToolCapableFake(reply="ok")
+        calls = []
+
+        class _FakeReviewModel:
+            model_name = "reviewer-x"
+
+        def fake_make_model(config, model_id=None):
+            calls.append(model_id)
+            return _FakeReviewModel()
+
+        monkeypatch.setattr(agent_mod, "_make_model", fake_make_model)
+        build_agent(cfg, model=main_model, permission_state=state)
+        assert calls == ["reviewer-x"]
+        assert state[PROXY_REVIEW_MODEL_KEY] is not main_model
+        assert state[PROXY_REVIEW_MODEL_KEY].model_name == "reviewer-x"
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_agent18_make_proxy_review_model_helper(monkeypatch):
+    """#18 helper 单元：model 空/缺键 → 复用传入 main_model；非空 → 走 _make_model。"""
+    import src.agent as agent_mod
+
+    class _CfgStub:
+        def __init__(self, proxy_review):
+            self.proxy_review = proxy_review
+
+    main = object()
+    for pr in ({}, {"model": ""}, {"model": "   "}, None):
+        assert agent_mod._make_proxy_review_model(_CfgStub(pr), main_model=main) is main
+
+    calls = []
+    sentinel = object()
+
+    def fake_make_model(config, model_id=None):
+        calls.append(model_id)
+        return sentinel
+
+    monkeypatch.setattr(agent_mod, "_make_model", fake_make_model)
+    assert agent_mod._make_proxy_review_model(_CfgStub({"model": "reviewer-x"}), main_model=main) is sentinel
+    assert calls == ["reviewer-x"]

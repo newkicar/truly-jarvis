@@ -43,6 +43,15 @@ YOLO_THREADS_KEY = "yolo_threads"
 # 规则表放行安全动作（ADR-0014），危险动作仍走 HITL 审批。
 PROXY_THREADS_KEY = "proxy_threads"
 
+# 裁决层依赖（proxy.review，LLM 替我审批，工单 #18）：注入共享 permission
+# state 的两个键。与上方 PROXY_THREADS_KEY（ADR-0014 确定性「替我审批」，
+# 规则表转发）不同：裁决层由 #19 的 LLM 裁决 middleware 消费；#18 仅做
+# 装配注入，两键不参与 _action_for_args 门链路，纯 expand 零行为变化。
+# state[PROXY_REVIEW_KEY] = 裁决层完整配置 dict（缺省 {}；#19 读到 enabled 才启用）；
+# state[PROXY_REVIEW_MODEL_KEY] = 裁决层模型客户端（BaseChatModel 或 None）。
+PROXY_REVIEW_KEY = "proxy_review"
+PROXY_REVIEW_MODEL_KEY = "proxy_review_model"
+
 # /side 侧边会话（side-chat，2026-11-16）：线程级 side 标记。
 # state["side_threads"] = 当前所有 side thread_id 集合；
 # state["side_parents"] = side tid -> 主线 parent tid 映射。
@@ -402,6 +411,8 @@ def build_permission_interrupts(
     *,
     hooks: dict | None = None,
     project_root: Path | None = None,
+    proxy_review: dict | None = None,
+    proxy_review_model: object = None,
 ) -> tuple[dict, dict]:
     """把 javis.json 的 permissions 配置转成 deepagents 的 interrupt_on。
 
@@ -410,6 +421,8 @@ def build_permission_interrupts(
       - state：{"tools": {tool: rule}, "default": rule} 可变引用，运行时改它即改行为。
 
     permissions 缺省/为 None 时，所有 gated tool 默认 "ask"（每次都审批）。
+    proxy_review / proxy_review_model（#18，纯 expand）：裁决层配置与模型客户端，
+    注入 state 的 PROXY_REVIEW_KEY / PROXY_REVIEW_MODEL_KEY，供 #19 裁决 middleware 消费。
     """
     from src.permission_hooks import parse_permission_hooks
 
@@ -428,6 +441,8 @@ def build_permission_interrupts(
         SIDE_THREADS_KEY: set(),
         SIDE_PARENTS_KEY: {},
         EXTRA_RULE_TOOLS_KEY: (),
+        PROXY_REVIEW_KEY: proxy_review if isinstance(proxy_review, dict) else {},
+        PROXY_REVIEW_MODEL_KEY: proxy_review_model,
     }
     return _build_interrupt_on(state), state
 
@@ -439,6 +454,8 @@ def build_permission_interrupts_from_state(state: dict) -> dict:
     state.setdefault(SIDE_THREADS_KEY, set())
     state.setdefault(SIDE_PARENTS_KEY, {})
     state.setdefault(EXTRA_RULE_TOOLS_KEY, ())
+    state.setdefault(PROXY_REVIEW_KEY, {})
+    state.setdefault(PROXY_REVIEW_MODEL_KEY, None)
     return _build_interrupt_on(state)
 
 
@@ -470,6 +487,8 @@ def build_permission_interrupts_extended(
     extra_tools: tuple = (),
     hooks: dict | None = None,
     project_root: Path | None = None,
+    proxy_review: dict | None = None,
+    proxy_review_model: object = None,
 ) -> tuple[dict, dict]:
     """ticket 05: extend gated rules to profile-scoped tools (fail-closed ask).
 
@@ -477,7 +496,11 @@ def build_permission_interrupts_extended(
     "*" default that may be "allow"); explicit rules are kept.
     """
     interrupt_on, state = build_permission_interrupts(
-        permissions, hooks=hooks, project_root=project_root
+        permissions,
+        hooks=hooks,
+        project_root=project_root,
+        proxy_review=proxy_review,
+        proxy_review_model=proxy_review_model,
     )
     extra = tuple(dict.fromkeys(extra_tools))
     pool = permissions or {}
@@ -485,6 +508,25 @@ def build_permission_interrupts_extended(
         state["tools"].setdefault(tool, pool.get(tool) or "ask")
     state[EXTRA_RULE_TOOLS_KEY] = extra
     return _build_interrupt_on(state), state
+
+
+def inject_proxy_review_deps(
+    state: dict,
+    review_config: object,
+    review_model: object = None,
+) -> None:
+    """#18: 把裁决层依赖幂等注入共享 permission state。
+
+    覆写两个键：PROXY_REVIEW_KEY（非 dict 配置归一为 {}）与
+    PROXY_REVIEW_MODEL_KEY（模型客户端或 None）。纯扩键：两键不参与
+    _action_for_args 门链路，既有 allow/ask/deny/YOLO/proxy_threads
+    行为零变化。外部 state（main.py 预建）与 from_state 回填的
+    旧形态 state 注入后同样完整。
+    """
+    if state is None:
+        return
+    state[PROXY_REVIEW_KEY] = review_config if isinstance(review_config, dict) else {}
+    state[PROXY_REVIEW_MODEL_KEY] = review_model
 
 
 def merge_permissions_deny_wins(

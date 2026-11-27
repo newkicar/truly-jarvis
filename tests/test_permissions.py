@@ -9,12 +9,15 @@ from contextlib import contextmanager
 
 from src.permissions import (
     GATED_TOOLS,
+    PROXY_REVIEW_KEY,
+    PROXY_REVIEW_MODEL_KEY,
     _action_for_args,
     _current_turn_tid,
     apply_permission_override,
     build_permission_interrupts,
     build_permission_interrupts_from_state,
     dump_permissions_json,
+    inject_proxy_review_deps,
     proxy_active,
     proxy_auto_allow,
     proxy_off,
@@ -840,3 +843,94 @@ def test_proxy_when_predicate_gate_issue8():
     proxy_off(state, "tp8")
     assert when_exec(_fake_req("execute", {"command": "git status"}, "g")) is True
     assert when_write(_fake_req("write_file", {"file_path": "notes.md"}, "h")) is True
+
+
+
+_PROXY_GATE_ARGS = {
+    "execute": {"command": "rm -rf /"},
+    "write_file": {"file_path": "x.md", "content": "x"},
+    "edit_file": {"file_path": "x.md", "old_string": "a", "new_string": "b"},
+    "delete": {"file_path": "x.md"},
+}
+
+
+def test_proxy_review_keys_absent_by_default():
+    """#18 纯 expand：不传 kwarg → 两键缺省值；gated 工具行为与注入前一致（全 ask）。"""
+    interrupt_on, state = build_permission_interrupts(
+        {"execute": "*", "write_file": "*", "edit_file": "*", "delete": "*"},
+    )
+    assert interrupt_on["execute"]["when"](_fake_req("execute", {"command": "x"}, "a")) is True
+    assert state[PROXY_REVIEW_KEY] == {}
+    assert state[PROXY_REVIEW_MODEL_KEY] is None
+    state["thread_id"] = "t-pr18-a"
+    for tool, args in _PROXY_GATE_ARGS.items():
+        assert _action_for_args(state, tool, args) == "ask"
+        assert tool in interrupt_on
+
+
+def test_build_permission_interrupts_proxy_review_kwargs():
+    """#18 kwarg 注入：state 持有配置与模型客户端的同一引用；非 dict 归一 {}。"""
+    cfg = {"enabled": True, "model": "reviewer-x"}
+    model = object()
+    interrupt_on, state = build_permission_interrupts(
+        {}, proxy_review=cfg, proxy_review_model=model
+    )
+    assert state[PROXY_REVIEW_KEY] is cfg
+    assert state[PROXY_REVIEW_MODEL_KEY] is model
+
+    interrupt_on2, state2 = build_permission_interrupts(
+        {}, proxy_review="junk", proxy_review_model=None
+    )
+    assert state2[PROXY_REVIEW_KEY] == {}
+    assert state2[PROXY_REVIEW_MODEL_KEY] is None
+
+
+def test_inject_proxy_review_deps_idempotent_and_none_safe():
+    """#18 inject：引用级覆写幂等；state=None 不崩；非 dict 配置归一。"""
+    state = {}
+    cfg = {"enabled": True}
+    model = object()
+    inject_proxy_review_deps(state, cfg, model)
+    ref_cfg = state[PROXY_REVIEW_KEY]
+    ref_model = state[PROXY_REVIEW_MODEL_KEY]
+    inject_proxy_review_deps(state, cfg, model)
+    assert state[PROXY_REVIEW_KEY] is ref_cfg is cfg
+    assert state[PROXY_REVIEW_MODEL_KEY] is ref_model is model
+    inject_proxy_review_deps(None, cfg, model)  # state None → no-op，不崩
+    inject_proxy_review_deps(state, "junk", None)
+    assert state[PROXY_REVIEW_KEY] == {}
+    assert state[PROXY_REVIEW_MODEL_KEY] is None
+
+
+def test_from_state_backfills_proxy_review_keys():
+    """#18 旧形态 state 回填：缺键自动 setdefault；门链路行为不变。"""
+    state = {"tools": {"execute": "allow"}, "default": "ask", "thread_id": "t-legacy"}
+    interrupt_on = build_permission_interrupts_from_state(state)
+    assert state[PROXY_REVIEW_KEY] == {}
+    assert state[PROXY_REVIEW_MODEL_KEY] is None
+    assert interrupt_on["execute"] is False  # allow 占位：不中断、自动放行（_build_interrupt_on 语义）
+    assert "write_file" in interrupt_on
+    assert _action_for_args(state, "write_file", {"file_path": "x.md", "content": "x"}) == "ask"
+
+
+def test_proxy_review_injection_is_behavioral_noop():
+    """#18 行为回归（纯 expand 证明）：注入前后同一规则表下门判定结果逐一相等。"""
+    perms = {"execute": {"*": "ask", "git *": "allow"}, "write_file": "ask"}
+    interrupt_on_a, state_a = build_permission_interrupts(perms)
+    interrupt_on_b, state_b = build_permission_interrupts(perms)
+    state_a["thread_id"] = "ta"
+    state_b["thread_id"] = "tb"
+    cfg = {"enabled": True, "model": "reviewer-x"}
+    model = object()
+    inject_proxy_review_deps(state_b, cfg, model)
+    cases = [
+        ("execute", {"command": "git status"}),
+        ("execute", {"command": "rm -rf /"}),
+        ("execute", {"command": "ls"}),
+        ("write_file", {"file_path": "x.md", "content": "x"}),
+        ("delete", {"file_path": "x.md"}),
+    ]
+    for tool, args in cases:
+        assert _action_for_args(state_b, tool, args) == _action_for_args(state_a, tool, args)
+    assert _action_for_args(state_b, "execute", {"command": "git status"}) == "allow"
+    assert _action_for_args(state_b, "execute", {"command": "rm -rf /"}) == "ask"
