@@ -405,6 +405,7 @@ class PermissionModal(ModalScreen):
         workspace_root: Path | None = None,
         on_lost: Callable[[], None] | None = None,
         note: str | None = None,
+        override: bool = False,
     ):
         super().__init__()
         self.inv = inv
@@ -413,6 +414,8 @@ class PermissionModal(ModalScreen):
         self.path_label = "Command:" if inv.name == "execute" else "Path:"
         # #20: proxy-review 回落注记（最近裁决 outcome=ask 时给弹窗的说明；None 不显示）
         self.note = note
+        # #21: 一次性覆盖（模型 deny + 尚有余量：「放行」按钮改标「一次性覆盖」）
+        self.override = override
         # issue-10：弹窗经异常路径销毁（Textual 丢弃 result callback）时的兜底回调
         self._on_lost = on_lost
         self._settled = False
@@ -451,7 +454,7 @@ class PermissionModal(ModalScreen):
             )
             yield Static(preview, id="perm_preview", markup=False)
         with Horizontal(id="perm_buttons"):
-            yield Button("放行", id="btn_approve", variant="success")
+            yield Button("一次性覆盖" if self.override else "放行", id="btn_approve", variant="success")
             yield Button("永久放行", id="btn_always", variant="primary")
             yield Button("拒绝", id="btn_reject", variant="error")
             yield Button("编辑参数", id="btn_edit", variant="default")
@@ -2457,14 +2460,11 @@ class JarvisApp(App):
             thread_id=thread_id,
         ).run()
 
-    def _proxy_review_note(self, tool: str, thread_id: str) -> str | None:
-        # #20: proxy-review 回落注记（最近裁决 outcome=ask 时给审批弹窗的说明）
-        from src.proxy_reviewer import review_last_record
+    def _proxy_review_note(self, tool: str, thread_id: str) -> tuple[str | None, bool]:
+        # #20/#21: proxy-review 注记（ask→说明；deny+尚有余量→override=True）
+        from src.proxy_reviewer import proxy_review_note
 
-        rec = review_last_record(self.permission_state, tool, thread_id)
-        if not rec or rec.get("outcome") != "ask":
-            return None
-        return str(rec.get("note") or "") or None
+        return proxy_review_note(self.permission_state, tool, thread_id)
 
     async def _wait_modal_dismiss(self, inv: commands.ToolInvocation, thread_id: str | None = None):
         """push PermissionModal 并等待 dismiss 结果（在 UI 线程执行）。
@@ -2485,7 +2485,7 @@ class JarvisApp(App):
             done.set()
 
         tid = thread_id if thread_id is not None else (self.thread_id or "")
-        note = self._proxy_review_note(inv.name, tid)
+        note, override = self._proxy_review_note(inv.name, tid)
         self._maybe_warn_ime_drift()
         self.push_screen(
             PermissionModal(
@@ -2494,6 +2494,7 @@ class JarvisApp(App):
                 workspace_root=self._workspace_root(),
                 on_lost=partial(resolve, None),
                 note=note,
+                override=override,
             ),
             resolve,
         )

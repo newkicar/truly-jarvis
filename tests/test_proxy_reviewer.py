@@ -14,7 +14,9 @@ from src import jump_in_queue as jq
 from src.config import resolve_proxy_review
 from src.permissions import (
     GATED_TOOLS,
+    PROXY_REVIEW_BREAKERS_KEY,
     PROXY_REVIEW_LAST_KEY,
+    PROXY_REVIEW_OVERRIDES_KEY,
     build_permission_interrupts,
     proxy_on,
     yolo_on,
@@ -248,7 +250,7 @@ def test_critical_verdict_on_write_fails_closed(env):
     io, state = _make_state(env, model)
     args = _GATE_ARGS["write_file"]
     assert pr.proxy_review_upgrade(state, "write_file", args, _req("write_file", args)) is False
-    assert state[PROXY_REVIEW_LAST_KEY]["outcome"] == "ask"
+    assert state[PROXY_REVIEW_LAST_KEY]["outcome"] == "deny"
 
 
 def test_high_risk_execute_never_narrow_fails_closed(env):
@@ -322,7 +324,7 @@ def test_when_critical_verdict_keeps_interrupt(env):
     io, state = _make_state(env, model)
     args = _GATE_ARGS["delete"]
     assert io["delete"]["when"](_req("delete", args)) is True
-    assert state[PROXY_REVIEW_LAST_KEY]["outcome"] == "ask"
+    assert state[PROXY_REVIEW_LAST_KEY]["outcome"] == "deny"
     assert len(_audit_lines(env.audit)) == 1
 
 
@@ -437,11 +439,10 @@ def test_review_last_record_defensive(state):
     assert pr.review_last_record(state, "execute", "t1") is None
 
 
-# outcome=ask 时的回落注记（#20）：critical/high 走成功回落三分支，枚举越界由 _decide 给出注记
+# outcome=ask 时的回落注记（#20/#21）：critical → deny 不再回落 ask（#21），high / 越界注记保留
 @pytest.mark.parametrize(
     ("tool", "verdict_json", "check"),
     [
-        ("delete", CRITICAL_JSON, lambda n: n == "critical 风险回落人工审批"),
         (
             "execute",
             '{"risk": "high", "authorization": "critical", "rationale": "r"}',
@@ -464,3 +465,142 @@ def test_outcome_ask_fallback_note(env, tool, verdict_json, check):
     assert rec["outcome"] == "ask"
     assert check(rec["note"])
 
+
+
+# ---------- #21：critical → deny（模型否决）/ 一次性覆盖预算 / 线程级断路器 ----------
+
+
+def test_critical_deny_with_budget(env):
+    """#21：critical 裁决 → 升级不成立，LAST 记录留 risk/rationale，note 空，审计 1 行。"""
+    model = FakeModel(content=CRITICAL_JSON)
+    io, state = _make_state(env, model)
+    args = _GATE_ARGS["delete"]
+    assert pr.proxy_review_upgrade(state, "delete", args, _req("delete", args)) is False
+    assert model.calls == 1
+    rec = state[PROXY_REVIEW_LAST_KEY]
+    assert rec["outcome"] == "deny"
+    assert rec["risk"] == "critical"
+    assert rec["rationale"] == "不可逆"
+    assert rec["note"] == ""
+    assert rec["cache_hit"] is False
+    assert len(_audit_lines(env.audit)) == 1
+
+
+def test_budget_exhausted_downgrades_to_ask(env):
+    """#21：覆盖预算耗尽（t1 已用 10 条）→ deny 降级 ask + 回落注记。"""
+    model = FakeModel(content=CRITICAL_JSON)
+    io, state = _make_state(env, model)
+    state[PROXY_REVIEW_OVERRIDES_KEY] = {"t1": 10}
+    args = _GATE_ARGS["delete"]
+    assert pr.proxy_review_upgrade(state, "delete", args, _req("delete", args)) is False
+    rec = state[PROXY_REVIEW_LAST_KEY]
+    assert rec["outcome"] == "ask"
+    assert rec["note"] == "覆盖上限（10 条）已达，回落人工审批"
+    assert model.calls == 1
+
+
+def test_breaker_streak_three_consecutive_denies(env):
+    """#21：连续 3 次 deny 触发断路器；再调不调模型/不写审计，回落 ask + 断路器注记。"""
+    model = FakeModel(content=CRITICAL_JSON)
+    io, state = _make_state(env, model)
+    for i in range(3):
+        args = {"path": "d-%d.md" % i}
+        assert pr.proxy_review_upgrade(state, "delete", args, _req("delete", args)) is False
+    b = state[PROXY_REVIEW_BREAKERS_KEY]["t1"]
+    assert b["tripped"] is True
+    assert b["streak"] == 3
+    args = {"path": "d-9.md"}
+    assert pr.proxy_review_upgrade(state, "delete", args, _req("delete", args)) is False
+    rec = state[PROXY_REVIEW_LAST_KEY]
+    assert rec["outcome"] == "ask"
+    assert "断路器已触发" in rec["note"]
+    assert rec["breaker_tripped"] is True
+    assert model.calls == 3
+    assert len(_audit_lines(env.audit)) == 3
+
+
+def test_breaker_window_trip_via_helper():
+    """#21（交错）：窗口内 deny 达 10 次触发；allow 清零 streak 但占窗口名额。"""
+    state = {}
+    cfg = {"breaker": {"deny_streak": 3, "deny_in_window": 10, "window": 50}}
+    for _ in range(9):
+        pr._record_verdict_breaker(state, "t1", "deny", cfg)
+        assert pr.breaker_tripped(state, "t1") is False
+        pr._record_verdict_breaker(state, "t1", "allow", cfg)
+    pr._record_verdict_breaker(state, "t1", "deny", cfg)
+    rec = state[PROXY_REVIEW_BREAKERS_KEY]["t1"]
+    assert rec["tripped"] is True
+    assert rec["streak"] == 1
+    assert rec["window"].count("deny") == 10
+
+
+def test_breaker_streak_reset_by_non_deny():
+    """#21：deny、deny（streak 2）后 allow → streak 清零、窗口保留、不触发。"""
+    state = {}
+    cfg = {"breaker": {"deny_streak": 3, "deny_in_window": 10, "window": 50}}
+    pr._record_verdict_breaker(state, "t1", "deny", cfg)
+    pr._record_verdict_breaker(state, "t1", "deny", cfg)
+    rec = state[PROXY_REVIEW_BREAKERS_KEY]["t1"]
+    assert rec["streak"] == 2
+    assert rec["tripped"] is False
+    pr._record_verdict_breaker(state, "t1", "allow", cfg)
+    rec = state[PROXY_REVIEW_BREAKERS_KEY]["t1"]
+    assert rec["streak"] == 0
+    assert rec["window"].count("deny") == 2
+    assert rec["tripped"] is False
+
+
+def test_cache_hit_does_not_advance_breaker(env):
+    """#21：同参缓存命中不是新裁决 → 断路器不推进，模型只调 1 次。"""
+    model = FakeModel(content=CRITICAL_JSON)
+    io, state = _make_state(env, model)
+    args = _GATE_ARGS["delete"]
+    for _ in range(2):
+        assert pr.proxy_review_upgrade(state, "delete", args, _req("delete", args)) is False
+    assert model.calls == 1
+    rec = state[PROXY_REVIEW_LAST_KEY]
+    assert rec["outcome"] == "deny"
+    assert rec["cache_hit"] is True
+    b = state[PROXY_REVIEW_BREAKERS_KEY]["t1"]
+    assert b["streak"] == 1
+    assert b["tripped"] is False
+
+
+def test_override_budget_math_and_isolation():
+    """#21：record_override 返回已用次数（1-based）；预算 = 上限 - 已用；线程隔离；None-state 兜底。"""
+    state = {}
+    assert pr.override_budget_left(state, "t1") == pr.OVERRIDE_CAP
+    for i in range(10):
+        assert pr.record_override(state, "t1") == i + 1
+    assert pr.override_budget_left(state, "t1") == 0
+    assert pr.record_override(state, "t1") == pr.OVERRIDE_CAP + 1
+    assert state[PROXY_REVIEW_OVERRIDES_KEY] == {"t1": pr.OVERRIDE_CAP + 1}
+    assert pr.override_budget_left(state, "t2") == pr.OVERRIDE_CAP
+    assert pr.override_budget_left(None, "t1") == pr.OVERRIDE_CAP
+    assert pr.record_override(None, "t1") == 0
+
+
+def test_proxy_review_note_cases(env):
+    """#21：proxy_review_note 四态：无记录 / deny+余量（hint 开关）/ 预算耗尽 / ask 注记透传。"""
+    model = FakeModel(content=CRITICAL_JSON)
+    io, state = _make_state(env, model)
+    assert pr.proxy_review_note(state, "delete", "t1") == (None, False)
+    args = _GATE_ARGS["delete"]
+    assert pr.proxy_review_upgrade(state, "delete", args, _req("delete", args)) is False
+    assert pr.proxy_review_note(state, "delete", "t1", override_hint=True) == (
+        "不可逆｜可一次性覆盖（本线程剩 10 次）",
+        True,
+    )
+    assert pr.proxy_review_note(state, "delete", "t1") == ("不可逆", True)
+    state[PROXY_REVIEW_OVERRIDES_KEY] = {"t1": 10}
+    assert pr.proxy_review_note(state, "delete", "t1") == (None, False)
+    state[PROXY_REVIEW_LAST_KEY] = {
+        "tool": "execute",
+        "thread_id": "t1",
+        "outcome": "ask",
+        "note": "high 风险未收窄范围，回落人工审批",
+    }
+    assert pr.proxy_review_note(state, "execute", "t1") == (
+        "high 风险未收窄范围，回落人工审批",
+        False,
+    )

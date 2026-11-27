@@ -262,6 +262,14 @@ def collect_interrupt_decisions(  # noqa: C901
             if decision == "approve":
                 _emit("approval_approved", inv.name)
                 decisions.append({"type": "approve"})
+                # #21: one-time override counts the thread budget
+                # (plain approve over a model deny; always-approve / edit do not count)
+                if permission_state is not None:
+                    from src.proxy_reviewer import record_override, review_last_record
+
+                    rec = review_last_record(permission_state, inv.name, thread_id)
+                    if rec and rec.get("outcome") == "deny":
+                        record_override(permission_state, thread_id)
             elif decision == "reject":
                 _emit("approval_rejected", inv.name)
                 decisions.append({"type": "reject", "message": REJECT_MESSAGE})

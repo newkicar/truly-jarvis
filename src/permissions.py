@@ -49,10 +49,14 @@ PROXY_THREADS_KEY = "proxy_threads"
 # 装配注入，这些键不参与 _action_for_args 门链路，纯 expand 零行为变化。
 # state[PROXY_REVIEW_KEY] = 裁决层完整配置 dict（缺省 {}；#19 读到 enabled 才启用）；
 # state[PROXY_REVIEW_MODEL_KEY] = 裁决层模型客户端（BaseChatModel 或 None）；
-# state[PROXY_REVIEW_LAST_KEY] = 最近一次裁决记录 dict（#19 写 / #20 呈现；缺省 {}）。
+# state[PROXY_REVIEW_LAST_KEY] = 最近一次裁决记录 dict（#19 写 / #20 呈现；缺省 {}）；
+# state[PROXY_REVIEW_OVERRIDES_KEY] = tid -> 已用一次性覆盖次数（#21 写，上限 10）；
+# state[PROXY_REVIEW_BREAKERS_KEY] = tid -> {"streak","window","tripped"} 断路器（#21 写）。
 PROXY_REVIEW_KEY = "proxy_review"
 PROXY_REVIEW_MODEL_KEY = "proxy_review_model"
 PROXY_REVIEW_LAST_KEY = "proxy_review_last"
+PROXY_REVIEW_OVERRIDES_KEY = "proxy_review_overrides"
+PROXY_REVIEW_BREAKERS_KEY = "proxy_review_breakers"
 
 # /side 侧边会话（side-chat，2026-11-16）：线程级 side 标记。
 # state["side_threads"] = 当前所有 side thread_id 集合；
@@ -457,6 +461,8 @@ def build_permission_interrupts(
         PROXY_REVIEW_KEY: proxy_review if isinstance(proxy_review, dict) else {},
         PROXY_REVIEW_MODEL_KEY: proxy_review_model,
         PROXY_REVIEW_LAST_KEY: {},
+        PROXY_REVIEW_OVERRIDES_KEY: {},
+        PROXY_REVIEW_BREAKERS_KEY: {},
     }
     return _build_interrupt_on(state), state
 
@@ -471,6 +477,8 @@ def build_permission_interrupts_from_state(state: dict) -> dict:
     state.setdefault(PROXY_REVIEW_KEY, {})
     state.setdefault(PROXY_REVIEW_MODEL_KEY, None)
     state.setdefault(PROXY_REVIEW_LAST_KEY, {})
+    state.setdefault(PROXY_REVIEW_OVERRIDES_KEY, {})
+    state.setdefault(PROXY_REVIEW_BREAKERS_KEY, {})
     return _build_interrupt_on(state)
 
 
@@ -534,7 +542,9 @@ def inject_proxy_review_deps(
 
     覆写两个键：PROXY_REVIEW_KEY（非 dict 配置归一为 {}）与
     PROXY_REVIEW_MODEL_KEY（模型客户端或 None）；并回填 PROXY_REVIEW_LAST_KEY
-    （最近裁决记录 dict，缺省 {}）。纯扩键：这些键不参与
+    （最近裁决记录 dict，缺省 {}）与 #21 的 PROXY_REVIEW_OVERRIDES_KEY /
+    PROXY_REVIEW_BREAKERS_KEY（一次性覆盖计数 / 线程级断路器，缺省 {}）。
+    纯扩键：这些键不参与
     _action_for_args 门链路，既有 allow/ask/deny/YOLO/proxy_threads
     行为零变化。外部 state（main.py 预建）与 from_state 回填的
     旧形态 state 注入后同样完整。
@@ -544,6 +554,8 @@ def inject_proxy_review_deps(
     state[PROXY_REVIEW_KEY] = review_config if isinstance(review_config, dict) else {}
     state[PROXY_REVIEW_MODEL_KEY] = review_model
     state.setdefault(PROXY_REVIEW_LAST_KEY, {})
+    state.setdefault(PROXY_REVIEW_OVERRIDES_KEY, {})
+    state.setdefault(PROXY_REVIEW_BREAKERS_KEY, {})
 
 
 def merge_permissions_deny_wins(

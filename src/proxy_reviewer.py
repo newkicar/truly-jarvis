@@ -39,15 +39,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.permissions import (
+    PROXY_REVIEW_BREAKERS_KEY,
     PROXY_REVIEW_KEY,
     PROXY_REVIEW_LAST_KEY,
     PROXY_REVIEW_MODEL_KEY,
+    PROXY_REVIEW_OVERRIDES_KEY,
     _current_turn_tid,
     proxy_active,
 )
 
 _REVIEW_CACHE: dict[str, dict] = {}
 _CACHE_LIMIT = 1000
+# #21: 一次性覆盖每线程上限（同任务 10 条；第 11 次 deny 回落 ask、不再提供覆盖入口）
+OVERRIDE_CAP = 10
 _RISK_ENUM = ("low", "medium", "high", "critical")
 _GLOB_CHARS = frozenset("*?[")
 _USER_ROLES = frozenset({"human", "user"})
@@ -55,6 +59,8 @@ _TOOL_ROLES = frozenset({"tool"})
 _INSTRUCTIONS_CAP = 4000
 _CONTEXT_CAP = 2000
 _ARGS_JSON_CAP = 4000
+# #21: 线程级断路器状态（state[PROXY_REVIEW_BREAKERS_KEY][tid]）
+_BreakerState = dict  # {"streak": int, "window": list, "tripped": bool}
 
 
 def clear_review_cache() -> None:
@@ -89,6 +95,23 @@ def proxy_review_upgrade(state: dict, tool: str, args: dict, request: object = N
     tid = _current_turn_tid(state)
     if not _gate_active(state, tid):
         return False
+    # #21: 断路器已触发 → 该线程停用裁决层：不调模型 / 不写审计 / 不写缓存，回落人工审批
+    if breaker_tripped(state, tid):
+        rec = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "tool": tool,
+            "outcome": "ask",
+            "risk": "",
+            "authorization": "",
+            "rationale": "",
+            "note": "断路器已触发：该线程裁决层停用，回落人工审批",
+            "fingerprint": "",
+            "thread_id": tid,
+            "cache_hit": False,
+            "breaker_tripped": True,
+        }
+        _record_last(state, rec)
+        return False
     args = args if isinstance(args, dict) else {}
     user_text = _last_role_text(request, _USER_ROLES, _CONTEXT_CAP)
     fp = _fingerprint(tool, args, tid, user_text, state.get("project_root"))
@@ -97,6 +120,7 @@ def proxy_review_upgrade(state: dict, tool: str, args: dict, request: object = N
         last = dict(cached)
         last["cache_hit"] = True
         _record_last(state, last)
+        # 缓存命中不推进断路器计数（非新的模型裁决）
         return last.get("outcome") == "allow"
     cfg = state.get(PROXY_REVIEW_KEY) or {}
     prompt = _build_review_prompt(cfg, tool, args, request, user_text, state.get("project_root"))
@@ -106,15 +130,20 @@ def proxy_review_upgrade(state: dict, tool: str, args: dict, request: object = N
         str(verdict.get("authorization", "")),
         scope_is_narrow(tool, args),
     )
-    # #20: 成功裁决回落人工审批（outcome=ask）时填 note（失败路径 note 已由 _decide 给出）
+    # #21: critical → deny（开放模型否决）；一次性覆盖每线程上限，耗尽后降级 ask（回落人工审批）
+    if outcome == "deny" and not override_budget_left(state, tid):
+        outcome = "ask"
+        note = "覆盖上限（10 条）已达，回落人工审批"
+    # #20/#21: 成功裁决回落人工审批（outcome=ask）时填 note（失败路径 note 已由 _decide 给出）
     if outcome == "ask" and not note:
         risk = str(verdict.get("risk", ""))
-        if risk == "critical":
-            note = "critical 风险回落人工审批"
-        elif risk == "high":
+        if risk == "high":
             note = "high 风险未收窄范围，回落人工审批"
         else:
             note = "裁决回落人工审批"
+    # #21: 断路器仅统计成功的模型裁决（verdict 非空；解析失败 / fail-closed 路径不计数）
+    if verdict:
+        _record_verdict_breaker(state, tid, outcome, cfg)
     record = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "tool": tool,
@@ -134,11 +163,13 @@ def proxy_review_upgrade(state: dict, tool: str, args: dict, request: object = N
 
 
 def review_outcome(risk: str, authorization: str, narrow: bool) -> str:
-    """裁决矩阵（纯函数，一期 allow-only）：
+    """裁决矩阵（纯函数，#21 起开放模型 deny）：
 
     - low/medium → allow（无脑放行）；
-    - high → 仅当 authorization ∈ {medium, high, critical} 且 narrow-scope 才 allow；
-    - critical / 枚举越界 / 缺失 → ask（fail-closed，#21 起 critical 升级为 deny）。
+    - high → 仅当 authorization ∈ {medium, high, critical} 且 narrow-scope 才 allow，否则 ask；
+    - critical → deny（模型否决；审批 modal 展示 rationale + 一次性覆盖入口，
+      每线程覆盖上限 OVERRIDE_CAP，耗尽后由 proxy_review_upgrade 降级 ask）；
+    - 枚举越界 / 缺失 → ask（fail-closed）。
     """
     risk = str(risk or "").strip().lower()
     auth = str(authorization or "").strip().lower()
@@ -148,7 +179,7 @@ def review_outcome(risk: str, authorization: str, narrow: bool) -> str:
         return "allow"
     if risk == "high":
         return "allow" if (auth in ("medium", "high", "critical") and narrow) else "ask"
-    return "ask"  # critical
+    return "deny"  # critical（#21）：模型否决
 
 
 def scope_is_narrow(tool: str, args: dict) -> bool:
@@ -367,6 +398,112 @@ def _is_single_concrete_path(value: object) -> bool:
     return True
 
 
+# ---------------- #21: 一次性覆盖预算 + 线程级断路器 ----------------
+
+
+def override_budget_left(state: dict | None, thread_id: str) -> int:
+    """#21: 该线程剩余的一次性覆盖次数（上限 OVERRIDE_CAP；缺省全量可用）。"""
+    if not isinstance(state, dict):
+        return OVERRIDE_CAP
+    used = state.get(PROXY_REVIEW_OVERRIDES_KEY)
+    used = used.get(str(thread_id)) if isinstance(used, dict) else 0
+    if not isinstance(used, int) or used < 0:
+        used = 0
+    return max(OVERRIDE_CAP - used, 0)
+
+
+def record_override(state: dict | None, thread_id: str) -> int:
+    """#21: 记录该线程一次一次性覆盖（人工放行模型 deny），返回已用次数。"""
+    if not isinstance(state, dict):
+        return 0
+    overrides = state.setdefault(PROXY_REVIEW_OVERRIDES_KEY, {})
+    if not isinstance(overrides, dict):
+        overrides = {}
+        state[PROXY_REVIEW_OVERRIDES_KEY] = overrides
+    used = overrides.get(str(thread_id))
+    overrides[str(thread_id)] = (used + 1) if isinstance(used, int) else 1
+    return overrides[str(thread_id)]
+
+
+def breaker_tripped(state: dict | None, thread_id: str) -> bool:
+    """#21: 该线程断路器是否已触发（触发即会话内不复位，裁决层整体停用）。"""
+    if not isinstance(state, dict):
+        return False
+    breakers = state.get(PROXY_REVIEW_BREAKERS_KEY)
+    rec = breakers.get(str(thread_id)) if isinstance(breakers, dict) else None
+    return bool(isinstance(rec, dict) and rec.get("tripped"))
+
+
+def _record_verdict_breaker(
+    state: dict, thread_id: str, outcome: str, cfg: dict | None
+) -> None:
+    """#21: 记录一次成功的模型裁决进断路器计数。
+
+    触发条件（任一即触发，触发后会话内不复位）：
+    - 连续 deny 达 deny_streak（缺省 3）；或
+    - 滑动窗口（缺省 50 次裁决）内 deny 达 deny_in_window（缺省 10）。
+    allow / ask 裁决清零连续计数但窗口保留（非 deny 也占窗口名额）。
+    阈值读 cfg["breaker"]（config.resolve_proxy_review 已归一）；缺省回落 3/10/50。
+    """
+    if not isinstance(state, dict):
+        return
+    breaker_cfg = (cfg or {}).get("breaker")
+    breaker_cfg = breaker_cfg if isinstance(breaker_cfg, dict) else {}
+    streak_cap = int(breaker_cfg.get("deny_streak") or 3)
+    window_cap = int(breaker_cfg.get("deny_in_window") or 10)
+    window_size = int(breaker_cfg.get("window") or 50)
+    breakers = state.setdefault(PROXY_REVIEW_BREAKERS_KEY, {})
+    if not isinstance(breakers, dict):
+        breakers = {}
+        state[PROXY_REVIEW_BREAKERS_KEY] = breakers
+    rec = breakers.get(str(thread_id))
+    if not isinstance(rec, dict):
+        rec = {"streak": 0, "window": [], "tripped": False}
+        breakers[str(thread_id)] = rec
+    window = rec.get("window")
+    if not isinstance(window, list):
+        window = []
+        rec["window"] = window
+    streak = int(rec.get("streak") or 0)
+    if outcome == "deny":
+        streak += 1
+    else:
+        streak = 0  # allow / ask（降级后）清零连续计数，窗口保留
+    window.append(outcome)
+    if len(window) > window_size:
+        del window[: len(window) - window_size]
+    rec["streak"] = streak
+    if streak >= streak_cap or window.count("deny") >= window_cap:
+        rec["tripped"] = True
+
+
+def proxy_review_note(
+    state: dict | None, tool: str, thread_id: str = "", override_hint: bool = False
+) -> tuple[str | None, bool]:
+    """#21: 统一生成审批注记 (note, override)。
+
+    - 最近裁决 outcome=deny 且尚有覆盖预算 → note = rationale（空则「模型否决」），
+      override_hint=True 时追加「｜可一次性覆盖（本线程剩 N 次）」，override=True
+      （呈现层据此显示「一次性覆盖」按钮）；
+    - 最近裁决 outcome=ask → note = 记录内 note（解析失败 / 覆盖上限 / 断路器 / 高风险回落），override=False；
+    - 其余（allow / 无记录 / tool 不匹配 / 跨线程）→ (None, False)。
+    """
+    rec = review_last_record(state, tool, thread_id)
+    if not rec:
+        return None, False
+    outcome = rec.get("outcome")
+    if outcome == "deny":
+        if override_budget_left(state, str(thread_id or "")) <= 0:
+            return None, False
+        note = str(rec.get("rationale") or "模型否决")
+        if override_hint:
+            note += "｜可一次性覆盖（本线程剩 %d 次）" % override_budget_left(state, str(thread_id or ""))
+        return note, True
+    if outcome == "ask":
+        return (str(rec.get("note") or "") or None), False
+    return None, False
+
+
 def _write_audit(cfg: dict, record: dict) -> None:
     try:
         path = Path(os.path.expanduser(str(cfg.get("audit_log") or "")))
@@ -380,8 +517,13 @@ def _write_audit(cfg: dict, record: dict) -> None:
 
 
 __all__ = [
+    "OVERRIDE_CAP",
+    "breaker_tripped",
     "clear_review_cache",
+    "override_budget_left",
+    "proxy_review_note",
     "proxy_review_upgrade",
+    "record_override",
     "review_last_record",
     "review_outcome",
     "scope_is_narrow",

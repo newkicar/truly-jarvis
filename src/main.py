@@ -91,11 +91,12 @@ def _run_session(agent, thread_id: str, sched=None, permission_state: dict | Non
 
 def _handle_interrupts(interrupts, permission_state: dict | None = None, thread_id: str = ""):
     """展示待审批操作并收集用户决策，返回 Command.resume 内容。"""
-    from src.proxy_reviewer import review_last_record
 
     def prompt_with_note(inv):
-        rec = review_last_record(permission_state, inv.name, thread_id)
-        note = rec.get("note") if (rec and rec.get("outcome") == "ask") else None
+        # #20/#21: proxy-review 注记（ask→说明；deny→一次性覆盖提示）
+        from src.proxy_reviewer import proxy_review_note
+
+        note, _ = proxy_review_note(permission_state, inv.name, thread_id, override_hint=True)
         return streaming.cli_prompt_action(
             inv,
             permission_state=permission_state,
@@ -119,11 +120,10 @@ def _stream_replay(agent, thread_id: str, checkpoint_id: str, permission_state: 
         print(f"    已永久放行 {name}（已写入 jarvis.json，以后自动放行）")
 
     def prompt_with_note(inv):
-        # #20: proxy-review 回落注记（最近裁决 outcome=ask 时给审批提示的说明）
-        from src.proxy_reviewer import review_last_record
+        # #20/#21: proxy-review 注记（ask→说明；deny→一次性覆盖提示）
+        from src.proxy_reviewer import proxy_review_note
 
-        rec = review_last_record(permission_state, inv.name, thread_id)
-        note = rec.get("note") if (rec and rec.get("outcome") == "ask") else None
+        note, _ = proxy_review_note(permission_state, inv.name, thread_id, override_hint=True)
         return streaming.cli_prompt_action(
             inv,
             permission_state=permission_state,
@@ -202,11 +202,10 @@ def _stream_turn(agent, thread_id: str, user_input: str, permission_state: dict 
         print(f"    已永久放行 {name}（已写入 jarvis.json，以后自动放行）")
 
     def prompt_with_note(inv):
-        # #20: proxy-review 回落注记（最近裁决 outcome=ask 时给审批提示的说明）
-        from src.proxy_reviewer import review_last_record
+        # #20/#21: proxy-review 注记（ask→说明；deny→一次性覆盖提示）
+        from src.proxy_reviewer import proxy_review_note
 
-        rec = review_last_record(permission_state, inv.name, thread_id)
-        note = rec.get("note") if (rec and rec.get("outcome") == "ask") else None
+        note, _ = proxy_review_note(permission_state, inv.name, thread_id, override_hint=True)
         return streaming.cli_prompt_action(
             inv,
             permission_state=permission_state,

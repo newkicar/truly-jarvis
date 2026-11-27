@@ -408,3 +408,33 @@ async def test_permission_modal_note_markup_safe() -> None:
         assert "curl [1]" in rendered, f"原文被吞：{rendered!r}"
 
     await _mount_and_check(PermissionModal(_inv(), note=note), check)
+
+
+# ----------------------------------------------------------------------
+# #21: 一次性覆盖（override=True → #btn_approve 改标「一次性覆盖」）
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_permission_modal_override_relabels_approve_button() -> None:
+    """#21：override=True → #btn_approve 文案改「一次性覆盖」；a 键 dismiss 契约不变。"""
+
+    async def check(host, pilot) -> None:
+        btn = host.screen.query_one("#btn_approve", Button)
+        assert "一次性覆盖" in str(btn.label), f"override 未改标：{btn.label!r}"
+        await pilot.press("a")
+        await pilot.pause()
+        assert not isinstance(host.screen, PermissionModal), "a 键后 modal 应已 dismiss"
+
+    await _mount_and_check(PermissionModal(_inv(), override=True), check)
+
+
+@pytest.mark.asyncio
+async def test_permission_modal_default_label_stays_approve() -> None:
+    """#21：默认（无 override）→ #btn_approve 文案保持「放行」。"""
+
+    async def check(host, pilot) -> None:
+        btn = host.screen.query_one("#btn_approve", Button)
+        assert str(btn.label) == "放行", f"默认文案不应变：{btn.label!r}"
+
+    await _mount_and_check(PermissionModal(_inv()), check)
