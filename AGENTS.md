@@ -92,7 +92,7 @@
 
 ### Issue tracker
 
-本仓库的 issues 以 markdown 文件存于 `.scratch/<feature-slug>/`（本地 markdown，无 remote）。见 `docs/agents/issue-tracker.md`。
+issues 与 spec 存于 GitHub Issues（`newkicar/truly-jarvis`，origin），全部操作走 `gh` CLI。见 `docs/agents/issue-tracker.md`。
 
 ### Triage labels
 
@@ -102,3 +102,14 @@
 
 单上下文：仓库根 `CONTEXT.md` + `docs/adr/`。见 `docs/agents/domain.md`。
 
+
+
+### 提 GitHub issue 的卡点与解法（2026-11-26 实证）
+
+- **现象**：向 `newkicar/truly-jarvis` 提 issue 持续 401 "Bad credentials"，看似网络/代理问题，实际 API 一直通（返回的是 401 JSON 而非超时）。
+- **根因**：本机 `git config credential.helper=manager`（GCM），但 GCM 未安装，`git credential fill` 永远返回空密码；真正有效的 PAT 存在 Windows 凭据管理器里（`cmdkey /list` 可见 `LegacyGeneric:target=git:https://github.com`）。
+- **解法**：绕过 GCM，直接用 Windows Credential Manager helper 取 token：
+  `("protocol=https`nhost=github.com`n`n" | & "D:\Program Files\Git\mingw64\libexec\git-core\git-credential-wincred.exe" get)`，取 `password=` 行。
+  验证 `curl -H "Authorization: token <t>" api.github.com/user` → 200 即 token 可用，然后 `POST /repos/newkicar/truly-jarvis/issues` 提 issue。
+- **诊断技巧**：`cmdkey /list` 查 Windows 凭据管理器有哪些条目；CRED blob 大小可用 P/Invoke `CredRead` 查（blob=0 即条目已空）；`git credential fill` 返回空 ≠ 网络问题，先分清 401（凭据失效）与超时（网络问题）。
+- **可复用资产**：脚本 `Create-GhIssues.ps1` + 内容文件 `issueN.title`/`issueN.md` 在 `.scratch/gh-issues/`（UTF-8 内容文件与 ASCII 脚本分离，避免 PowerShell 编码坑；按 title 查重可幂等重跑）。

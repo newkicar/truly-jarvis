@@ -45,7 +45,7 @@
 
 ### Issue tracker
 
-本仓库的 issues 以 markdown 文件存于 `.scratch/<feature-slug>/`（本地 markdown，无 remote）。见 `docs/agents/issue-tracker.md`。
+issues 与 spec 存于 GitHub Issues（`newkicar/truly-jarvis`，origin），全部操作走 `gh` CLI。见 `docs/agents/issue-tracker.md`。
 
 ### Triage labels
 
