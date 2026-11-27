@@ -643,3 +643,12 @@ def test_resolve_proxy_review_pure_semantics():
     raw = {"enabled": True}
     resolve_proxy_review(raw)
     assert raw == {"enabled": True}
+
+
+def test_resolve_proxy_review_context_aware_default_and_override():
+    """#22: context_aware 键缺省 False、可覆盖、非 dict 入参仍 False。"""
+    assert resolve_proxy_review({})["context_aware"] is False
+    assert resolve_proxy_review({"context_aware": True})["context_aware"] is True
+    assert resolve_proxy_review("junk")["context_aware"] is False
+    assert PROXY_REVIEW_DEFAULTS["context_aware"] is False
+

@@ -15,6 +15,7 @@ from src.config import resolve_proxy_review
 from src.permissions import (
     GATED_TOOLS,
     PROXY_REVIEW_BREAKERS_KEY,
+    PROXY_REVIEW_KEY,
     PROXY_REVIEW_LAST_KEY,
     PROXY_REVIEW_OVERRIDES_KEY,
     build_permission_interrupts,
@@ -24,6 +25,7 @@ from src.permissions import (
 
 ALLOW_JSON = '{"risk": "low", "authorization": "low", "rationale": "低危"}'
 CRITICAL_JSON = '{"risk": "critical", "authorization": "critical", "rationale": "不可逆"}'
+ASK_JSON = '{"risk": "high", "authorization": "low", "rationale": "定不了"}'
 
 # 每个 gated 工具各取一组「穿过地板 → 维持 ask」的参数（execute 未命中只读表）
 _GATE_ARGS = {
@@ -604,3 +606,146 @@ def test_proxy_review_note_cases(env):
         "high 风险未收窄范围，回落人工审批",
         False,
     )
+
+# ---------- #22 context_aware 有界只读探查 ----------
+
+
+class SeqModel:
+    """按序响应：首响应=一阶段裁决，次响应=二阶段（探查）裁决；越界取最后。"""
+
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = 0
+        self.prompts = []
+
+    def invoke(self, prompt, **kwargs):
+        self.calls += 1
+        self.prompts.append(prompt)
+        return SimpleNamespace(
+            content=self.responses[min(self.calls - 1, len(self.responses) - 1)]
+        )
+
+
+def _probe_req(msgs):
+    return SimpleNamespace(
+        tool_call={"name": "write_file", "args": _GATE_ARGS["write_file"], "id": "tc1"},
+        state={"messages": msgs},
+    )
+
+
+def test_probe_loosens_ask_to_allow(env, monkeypatch):
+    model = SeqModel([ASK_JSON, ALLOW_JSON])
+    io, state = _make_state(env, model)
+    state[PROXY_REVIEW_KEY]["context_aware"] = True
+    monkeypatch.setattr(pr, "_diff_summary", lambda *a, **k: " src/x.py | 2 +-" + chr(10))
+    req = _probe_req(
+        [
+            {"role": "human", "content": "更早指令: 改 readme"},
+            {"role": "tool", "content": "done"},
+            {"role": "human", "content": "最近指令: 写 outside.md"},
+        ]
+    )
+    assert pr.proxy_review_upgrade(state, "write_file", _GATE_ARGS["write_file"], req) is True
+    assert model.calls == 2
+    last = state[PROXY_REVIEW_LAST_KEY]
+    assert last["outcome"] == "allow"
+    assert last["probed"] is True
+    assert "只读探查" not in model.prompts[0]
+    p1 = model.prompts[1]
+    assert "更早用户消息（只读探查）" in p1
+    assert "更早指令: 改 readme" in p1
+    assert "文件变更摘要（只读探查，git diff --stat）" in p1
+    assert " src/x.py" in p1
+    assert p1.count("最近指令: 写 outside.md") == 1
+
+
+def test_probe_disabled_by_default(env):
+    model = FakeModel(ASK_JSON)
+    io, state = _make_state(env, model)
+    req = _req("write_file", _GATE_ARGS["write_file"])
+    assert pr.proxy_review_upgrade(state, "write_file", _GATE_ARGS["write_file"], req) is False
+    assert model.calls == 1
+    last = state[PROXY_REVIEW_LAST_KEY]
+    assert "probed" not in last
+    assert last["outcome"] == "ask"
+
+
+def test_probe_only_loosens_not_tighten(env):
+    model = SeqModel([ASK_JSON, CRITICAL_JSON])
+    io, state = _make_state(env, model)
+    state[PROXY_REVIEW_KEY]["context_aware"] = True
+    req = _req("write_file", _GATE_ARGS["write_file"])
+    assert pr.proxy_review_upgrade(state, "write_file", _GATE_ARGS["write_file"], req) is False
+    assert model.calls == 2
+    last = state[PROXY_REVIEW_LAST_KEY]
+    assert last["probed"] is True
+    assert last["outcome"] == "ask"
+    assert last["note"].endswith("（只读探查未采纳）")
+
+
+def test_probe_stage2_fail_closed(env):
+    model = SeqModel([ASK_JSON, "not json"])
+    io, state = _make_state(env, model)
+    state[PROXY_REVIEW_KEY]["context_aware"] = True
+    req = _req("write_file", _GATE_ARGS["write_file"])
+    assert pr.proxy_review_upgrade(state, "write_file", _GATE_ARGS["write_file"], req) is False
+    assert model.calls == 2
+    last = state[PROXY_REVIEW_LAST_KEY]
+    assert last["probed"] is True
+    assert last["outcome"] == "ask"
+    assert last["note"].endswith("（只读探查未采纳）")
+
+
+def test_diff_summary_bounded_and_fail_safe(env, monkeypatch):
+    assert pr._diff_summary("") == ""
+    assert pr._diff_summary(None) == ""
+
+    def _raise(*a, **k):
+        raise TimeoutError("timeout")
+
+    monkeypatch.setattr(pr.subprocess, "run", _raise)
+    assert pr._diff_summary(env.tmp) == ""
+
+    big = ("a| 1 +-" + chr(10)) * 2000
+
+    def _fake_ok(cmd, **kwargs):
+        return SimpleNamespace(stdout=big, stderr="", returncode=0)
+
+    monkeypatch.setattr(pr.subprocess, "run", _fake_ok)
+    assert len(pr._diff_summary(env.tmp)) == pr._DIFF_CAP
+
+    def _fake_staged(cmd, **kwargs):
+        return SimpleNamespace(
+            stdout="b| 1 +" + chr(10) if "--staged" in cmd else "", stderr="", returncode=0
+        )
+
+    monkeypatch.setattr(pr.subprocess, "run", _fake_staged)
+    out = pr._diff_summary(env.tmp)
+    assert "[staged]" in out and "b| 1 +" in out
+
+
+def test_probe_user_history_bounded(env, monkeypatch):
+    model = SeqModel([ASK_JSON, ALLOW_JSON])
+    io, state = _make_state(env, model)
+    state[PROXY_REVIEW_KEY]["context_aware"] = True
+    monkeypatch.setattr(pr, "_diff_summary", lambda *a, **k: "")
+    req = _probe_req([{"role": "human", "content": m} for m in ("m1", "m2", "m3", "m4", "m5")])
+    assert pr.proxy_review_upgrade(state, "write_file", _GATE_ARGS["write_file"], req) is True
+    p1 = model.prompts[1]
+    assert "更早用户消息（只读探查）" in p1
+    assert "m3" in p1 and "m4" in p1
+    assert "m1" not in p1 and "m2" not in p1
+
+
+def test_upgrade_no_probe_when_stage1_allow(env):
+    model = SeqModel([ALLOW_JSON, ASK_JSON])
+    io, state = _make_state(env, model)
+    state[PROXY_REVIEW_KEY]["context_aware"] = True
+    req = _req("write_file", _GATE_ARGS["write_file"])
+    assert pr.proxy_review_upgrade(state, "write_file", _GATE_ARGS["write_file"], req) is True
+    assert model.calls == 1
+    assert "只读探查" not in model.prompts[0]
+    last = state[PROXY_REVIEW_LAST_KEY]
+    assert "probed" not in last
+    assert last["outcome"] == "allow"
+

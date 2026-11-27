@@ -35,6 +35,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -62,6 +63,11 @@ _ARGS_JSON_CAP = 4000
 # #21: 线程级断路器状态（state[PROXY_REVIEW_BREAKERS_KEY][tid]）
 _BreakerState = dict  # {"streak": int, "window": list, "tripped": bool}
 
+# #22: context_aware 有界只读探查（"定不了" ask 后的二阶段）
+_CONTEXT_AWARE_MAX_MSGS = 3   # 最多取 3 条最近用户消息（含最后一条）
+_DIFF_CAP = 2000              # diff 摘要总大小上限（git diff --stat 输出）
+_DIFF_TIMEOUT_S = 10          # 只读 git 探查子进程超时
+
 
 def clear_review_cache() -> None:
     """清空指纹缓存（测试隔离 / 进程边界手动重置）。"""
@@ -87,6 +93,44 @@ def review_last_record(state: dict | None, tool: str, thread_id: str = "") -> di
         return None
     return dict(rec)
 
+
+def _probe_stage2(
+    cfg: dict,
+    tool: str,
+    args: dict,
+    request: object,
+    user_text: str,
+    project_root: object,
+    state: dict,
+) -> tuple[dict, str]:
+    """#22: context_aware 二阶段有界只读探查（只松动、不收紧）。
+
+    返回 (v2, outcome2)：
+    - 开关关 → ({}, )：未探查；
+    - v2 假值（解析失败/模型异常）→ (v2, "ask")：fail-closed，维持一阶段 ask；
+    - 否则 (v2, review_outcome(...))，仅 allow 被调用方采纳。
+    """
+    if not bool(cfg.get("context_aware")):
+        return {}, ""
+    probe_prompt = _build_review_prompt(cfg, tool, args, request, user_text, project_root, probed=True)
+    v2, _n2 = _decide(cfg, state.get(PROXY_REVIEW_MODEL_KEY), probe_prompt)
+    if not v2:
+        return v2, "ask"
+    return v2, review_outcome(
+        str(v2.get("risk", "")),
+        str(v2.get("authorization", "")),
+        scope_is_narrow(tool, args),
+    )
+
+
+def _finalize_note(outcome: str, note: str, probed: bool, verdict: dict) -> str:
+    """#20/#21/#22: 回填人工审批回落 note，并追加 #22 探查未采纳标记（纯函数，不改 state）。"""
+    if outcome == "ask" and not note:
+        risk = str(verdict.get("risk", ""))
+        note = "high 风险未收窄范围，回落人工审批" if risk == "high" else "裁决回落人工审批"
+    if probed and outcome == "ask":
+        note = (note or "裁决回落人工审批") + "（只读探查未采纳）"
+    return note
 
 def proxy_review_upgrade(state: dict, tool: str, args: dict, request: object = None) -> bool:
     """裁决一次 ask 是否升级放行。True = 自动放行（when 不中断）；False = 维持原审批。"""
@@ -130,17 +174,20 @@ def proxy_review_upgrade(state: dict, tool: str, args: dict, request: object = N
         str(verdict.get("authorization", "")),
         scope_is_narrow(tool, args),
     )
+    probed = False
+    if outcome == "ask":
+        v2, probe_outcome = _probe_stage2(
+            cfg, tool, args, request, user_text, state.get("project_root"), state
+        )
+        probed = bool(probe_outcome)
+        if probe_outcome == "allow":
+            verdict, outcome, note = v2, "allow", "只读探查松动裁决（二阶段）"
     # #21: critical → deny（开放模型否决）；一次性覆盖每线程上限，耗尽后降级 ask（回落人工审批）
     if outcome == "deny" and not override_budget_left(state, tid):
         outcome = "ask"
         note = "覆盖上限（10 条）已达，回落人工审批"
-    # #20/#21: 成功裁决回落人工审批（outcome=ask）时填 note（失败路径 note 已由 _decide 给出）
-    if outcome == "ask" and not note:
-        risk = str(verdict.get("risk", ""))
-        if risk == "high":
-            note = "high 风险未收窄范围，回落人工审批"
-        else:
-            note = "裁决回落人工审批"
+    # #20/#21/#22: 人工审批回落 note 回填 + #22 探查未采纳标记
+    note = _finalize_note(outcome, note, probed, verdict)
     # #21: 断路器仅统计成功的模型裁决（verdict 非空；解析失败 / fail-closed 路径不计数）
     if verdict:
         _record_verdict_breaker(state, tid, outcome, cfg)
@@ -156,6 +203,8 @@ def proxy_review_upgrade(state: dict, tool: str, args: dict, request: object = N
         "thread_id": tid,
         "cache_hit": False,
     }
+    if probed:
+        record["probed"] = True
     _write_audit(cfg, record)
     _cache_store(fp, record)
     _record_last(state, record)
@@ -241,7 +290,8 @@ def _record_last(state: dict, record: dict) -> None:
 
 
 def _build_review_prompt(
-    cfg: dict, tool: str, args: dict, request: object, user_text: str, project_root: object
+    cfg: dict, tool: str, args: dict, request: object, user_text: str, project_root: object,
+    probed: bool = False,
 ) -> str:
     reasoning_blind = bool(cfg.get("reasoning_blind", True))
     tool_result = "" if reasoning_blind else _last_role_text(request, _TOOL_ROLES, _CONTEXT_CAP)
@@ -258,6 +308,14 @@ def _build_review_prompt(
         sections.append("### 项目约定（AGENTS.md 摘要）\n" + instructions)
     if tool_result:
         sections.append("### 最近工具执行结果（补充）\n" + tool_result)
+    if probed:
+        # #22: 有界只读探查——仅「定不了」ask 的二阶段复审使用，不影响一阶段
+        history = _probe_user_history(request)
+        if history:
+            sections.append("### 更早用户消息（只读探查）\n" + history)
+        diff = _diff_summary(project_root)
+        if diff:
+            sections.append("### 文件变更摘要（只读探查，git diff --stat）\n" + diff)
     policy_extra = str(cfg.get("policy_extra") or "").strip()
     if policy_extra:
         sections.append("### 额外策略（用户自定义）\n" + policy_extra)
@@ -273,6 +331,44 @@ def _build_review_prompt(
         '"rationale": "80字以内理由"}',
     ]
     return "\n\n".join(sections)
+
+
+def _probe_user_history(request: object) -> str:
+    """#22: 取最近 3 条用户消息（含最后一条），剔除已在 base prompt 的最后一条，其余按旧→新顺序返回，单条截断。"""
+    picked: list[str] = []
+    for msg in reversed(_messages_of(getattr(request, "state", None))):
+        if _role_of(msg) not in _USER_ROLES:
+            continue
+        picked.append(_content_to_text(_content_of(msg))[:_CONTEXT_CAP])
+        if len(picked) >= _CONTEXT_AWARE_MAX_MSGS:
+            break
+    if len(picked) <= 1:
+        return ""
+    rest = [t for t in picked[1:][::-1] if t]
+    return "\n---\n".join(rest)
+
+
+def _diff_summary(project_root: object, cap: int = _DIFF_CAP) -> str:
+    """#22: 只读 git diff --stat 摘要（worktree + staged）；子进程失败静默，总量截断。"""
+    root = str(project_root or "").strip()
+    if not root:
+        return ""
+    parts: list[str] = []
+    for label, cmd in (
+        ("", ["git", "-C", root, "diff", "--stat"]),
+        ("[staged] ", ["git", "-C", root, "diff", "--staged", "--stat"]),
+    ):
+        try:
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=_DIFF_TIMEOUT_S,
+                encoding="utf-8", errors="replace",
+            )
+        except Exception:
+            continue
+        out = (proc.stdout or "").strip()
+        if out:
+            parts.append(label + out)
+    return "\n".join(parts)[:cap]
 
 
 def _load_instructions(project_root: object) -> str:

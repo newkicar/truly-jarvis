@@ -63,6 +63,7 @@ PROXY_REVIEW_DEFAULTS: dict = {
     "timeout_s": 30,
     "retries": 3,
     "reasoning_blind": True,
+    "context_aware": False,
     "policy_extra": "",
     "breaker": {"deny_streak": 3, "deny_in_window": 10, "window": 50},
     "audit_log": "~/.jarvis/logs/proxy-review.jsonl",
