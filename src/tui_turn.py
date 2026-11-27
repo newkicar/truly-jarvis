@@ -72,6 +72,20 @@ class TurnPresenter:
         if not self.cancelled():
             self.app.call_from_thread(self.log.write, text)
 
+    def _proxy_review_marker(self, name: str, depth: int, err: bool) -> str | None:
+        # #20: 最近裁决为 allow 时显示 ⚡ proxy-review 放行标记；否则 None
+        if err:
+            return None
+        from rich.markup import escape
+
+        from src.proxy_reviewer import review_last_record
+
+        rec = review_last_record(self.app.permission_state, name, self.thread_id or "")
+        if not rec or rec.get("outcome") != "allow":
+            return None
+        rationale = str(rec.get("rationale") or "")[:60]
+        return f"\n{'  ' * depth}[yellow]⚡ proxy-review 放行 {escape(rationale)}[/yellow]".rstrip()
+
     # ---- 流式头部/正文 ----
 
     def reset_header(self) -> None:
@@ -123,8 +137,13 @@ class TurnPresenter:
         # 否则普通单行调用（write_line 已含取消守卫）。
         detail = tool_detail_worth_expanding(name, args, error=err, output=output)
         collapsed = format_tool_call(name, args, error=err, output=output, indent=depth, detail=detail)
+        marker = self._proxy_review_marker(name, depth, err)
+        if marker:
+            collapsed += marker
         if detail and not self.cancelled():
             expanded = tool_detail_block(name, args, error=err, output=output, indent=depth)
+            if marker:
+                expanded += marker
             self.app.call_from_thread(self.log.write_tool_entry, collapsed, expanded)
         else:
             self.write_line(collapsed)
@@ -170,7 +189,9 @@ class TurnPresenter:
         }
 
         def ask_action(inv):
-            return self.app.call_from_thread(self.app._wait_modal_dismiss, inv)
+            return self.app.call_from_thread(
+                self.app._wait_modal_dismiss, inv, thread_id=self.thread_id
+            )
 
         return streaming.collect_interrupt_decisions(
             filtered,

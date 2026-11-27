@@ -167,3 +167,15 @@ def test_init_project_creates_dotdir_skills_layout():
     finally:
         shutil.rmtree(base, ignore_errors=True)
 
+
+
+def test_jarvis_json_template_has_proxy_review_defaults():
+    """#20: 模板 proxy.review 默认块——enabled=False（默认关）、model 空串、timeout_s 30、retries 3。"""
+    from src.project_init import JARVIS_JSON_TEMPLATE
+
+    assert JARVIS_JSON_TEMPLATE["proxy"]["review"] == {
+        "enabled": False,
+        "model": "",
+        "timeout_s": 30,
+        "retries": 3,
+    }

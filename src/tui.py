@@ -375,6 +375,11 @@ class PermissionModal(ModalScreen):
     #perm_path {
         color: $text-muted;
     }
+
+    #perm_note {
+        color: $text-muted;
+        margin-top: 1;
+    }
     #perm_preview {
         height: auto;
         max-height: 14;
@@ -399,12 +404,18 @@ class PermissionModal(ModalScreen):
         vault_path: Path | None = None,
         workspace_root: Path | None = None,
         on_lost: Callable[[], None] | None = None,
+        note: str | None = None,
+        override: bool = False,
     ):
         super().__init__()
         self.inv = inv
         self.vault_path = vault_path
         self.workspace_root = workspace_root
         self.path_label = "Command:" if inv.name == "execute" else "Path:"
+        # #20: proxy-review 回落注记（最近裁决 outcome=ask 时给弹窗的说明；None 不显示）
+        self.note = note
+        # #21: 一次性覆盖（模型 deny + 尚有余量：「放行」按钮改标「一次性覆盖」）
+        self.override = override
         # issue-10：弹窗经异常路径销毁（Textual 丢弃 result callback）时的兜底回调
         self._on_lost = on_lost
         self._settled = False
@@ -434,6 +445,8 @@ class PermissionModal(ModalScreen):
         with VerticalScroll(id="perm_box", can_focus=False):
             yield Label(f"Tool: {self.inv.name}", id="perm_tool", markup=False)
             yield Label(f"{self.path_label} {self.inv.path}", id="perm_path", markup=False)
+            if self.note:
+                yield Label(self.note, id="perm_note", markup=False)
             preview = permission_preview(
                 self.inv,
                 vault_path=self.vault_path,
@@ -441,7 +454,7 @@ class PermissionModal(ModalScreen):
             )
             yield Static(preview, id="perm_preview", markup=False)
         with Horizontal(id="perm_buttons"):
-            yield Button("放行", id="btn_approve", variant="success")
+            yield Button("一次性覆盖" if self.override else "放行", id="btn_approve", variant="success")
             yield Button("永久放行", id="btn_always", variant="primary")
             yield Button("拒绝", id="btn_reject", variant="error")
             yield Button("编辑参数", id="btn_edit", variant="default")
@@ -2447,7 +2460,13 @@ class JarvisApp(App):
             thread_id=thread_id,
         ).run()
 
-    async def _wait_modal_dismiss(self, inv: commands.ToolInvocation):
+    def _proxy_review_note(self, tool: str, thread_id: str) -> tuple[str | None, bool]:
+        # #20/#21: proxy-review 注记（ask→说明；deny+尚有余量→override=True）
+        from src.proxy_reviewer import proxy_review_note
+
+        return proxy_review_note(self.permission_state, tool, thread_id)
+
+    async def _wait_modal_dismiss(self, inv: commands.ToolInvocation, thread_id: str | None = None):
         """push PermissionModal 并等待 dismiss 结果（在 UI 线程执行）。
 
         issue-10：exactly-once resolver——正常 dismiss 与异常销毁兜底
@@ -2465,6 +2484,8 @@ class JarvisApp(App):
             holder["value"] = value
             done.set()
 
+        tid = thread_id if thread_id is not None else (self.thread_id or "")
+        note, override = self._proxy_review_note(inv.name, tid)
         self._maybe_warn_ime_drift()
         self.push_screen(
             PermissionModal(
@@ -2472,6 +2493,8 @@ class JarvisApp(App):
                 vault_path=self._vault_path(),
                 workspace_root=self._workspace_root(),
                 on_lost=partial(resolve, None),
+                note=note,
+                override=override,
             ),
             resolve,
         )

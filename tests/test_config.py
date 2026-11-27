@@ -13,11 +13,13 @@ from pathlib import Path
 import pytest
 
 from src.config import (
+    PROXY_REVIEW_DEFAULTS,
     Config,
     ConfigError,
     load_config,
     parse_env_file,
     parse_env_text,
+    resolve_proxy_review,
     save_auto_compaction,
 )
 
@@ -550,3 +552,103 @@ def test_load_config_context_limit_negative_clamps_zero():
     finally:
         _restore_home(old)
         shutil.rmtree(base, ignore_errors=True)
+
+
+
+def test_load_config_proxy_review_missing_section_defaults():
+    """#18: 无 proxy 段 → 全默认深拷贝（不别名 PROXY_REVIEW_DEFAULTS）。"""
+    base = _fresh_dir()
+    old = _isolated_home(base)
+    try:
+        env = _write_min_env(base)
+        jf = _write_json(base, {})
+        cfg = load_config(env_file=env, json_file=jf)
+        assert cfg.proxy_review == PROXY_REVIEW_DEFAULTS
+        assert cfg.proxy_review is not PROXY_REVIEW_DEFAULTS
+        assert cfg.proxy_review["breaker"] is not PROXY_REVIEW_DEFAULTS["breaker"]
+        assert cfg.proxy_review["enabled"] is False
+        assert cfg.proxy_review["audit_log"] == "~/.jarvis/logs/proxy-review.jsonl"
+    finally:
+        _restore_home(old)
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_load_config_proxy_review_partial_override_breaker_merge():
+    """#18: 部分覆盖 → 缺键补默认；breaker 双侧 dict 做 dict 级合并。"""
+    base = _fresh_dir()
+    old = _isolated_home(base)
+    try:
+        env = _write_min_env(base)
+        jf = _write_json(
+            base,
+            {
+                "proxy": {
+                    "review": {
+                        "enabled": True,
+                        "model": "reviewer-x",
+                        "breaker": {"deny_streak": 5},
+                        "audit_log": "custom.jsonl",
+                    }
+                }
+            },
+        )
+        cfg = load_config(env_file=env, json_file=jf)
+        pr = cfg.proxy_review
+        assert pr["enabled"] is True
+        assert pr["model"] == "reviewer-x"
+        assert pr["audit_log"] == "custom.jsonl"
+        assert pr["timeout_s"] == 30
+        assert pr["retries"] == 3
+        assert pr["reasoning_blind"] is True
+        assert pr["policy_extra"] == ""
+        assert pr["breaker"] == {"deny_streak": 5, "deny_in_window": 10, "window": 50}
+    finally:
+        _restore_home(old)
+        shutil.rmtree(base, ignore_errors=True)
+
+
+@pytest.mark.parametrize("proxy_value", ["not a dict", {"review": "garbage"}])
+def test_load_config_proxy_review_non_dict_defaults(proxy_value):
+    """#18: proxy / proxy.review 非 dict → 全默认且不别名。"""
+    base = _fresh_dir()
+    old = _isolated_home(base)
+    try:
+        env = _write_min_env(base)
+        jf = _write_json(base, {"proxy": proxy_value})
+        cfg = load_config(env_file=env, json_file=jf)
+        assert cfg.proxy_review == PROXY_REVIEW_DEFAULTS
+        assert cfg.proxy_review is not PROXY_REVIEW_DEFAULTS
+        assert cfg.proxy_review["breaker"] is not PROXY_REVIEW_DEFAULTS["breaker"]
+    finally:
+        _restore_home(old)
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_resolve_proxy_review_pure_semantics():
+    """#18: 纯函数语义——非 dict 入参全默认、未知键保留、可变性隔离、入参不被修改。"""
+    for raw in (None, "junk", 42, ["x"]):
+        got = resolve_proxy_review(raw)
+        assert got == PROXY_REVIEW_DEFAULTS
+        assert got is not PROXY_REVIEW_DEFAULTS
+        assert got["breaker"] is not PROXY_REVIEW_DEFAULTS["breaker"]
+    unknown = resolve_proxy_review({"zzz": 1, "enabled": True})
+    assert unknown["zzz"] == 1
+    assert unknown["enabled"] is True
+    assert unknown["audit_log"] == "~/.jarvis/logs/proxy-review.jsonl"
+    got = resolve_proxy_review(None)
+    got["enabled"] = True
+    got["breaker"]["deny_streak"] = 99
+    assert PROXY_REVIEW_DEFAULTS["enabled"] is False
+    assert PROXY_REVIEW_DEFAULTS["breaker"]["deny_streak"] == 3
+    raw = {"enabled": True}
+    resolve_proxy_review(raw)
+    assert raw == {"enabled": True}
+
+
+def test_resolve_proxy_review_context_aware_default_and_override():
+    """#22: context_aware 键缺省 False、可覆盖、非 dict 入参仍 False。"""
+    assert resolve_proxy_review({})["context_aware"] is False
+    assert resolve_proxy_review({"context_aware": True})["context_aware"] is True
+    assert resolve_proxy_review("junk")["context_aware"] is False
+    assert PROXY_REVIEW_DEFAULTS["context_aware"] is False
+

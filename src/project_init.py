@@ -54,6 +54,15 @@ JARVIS_JSON_TEMPLATE: dict = {
     "tui": {
         "copy_on_select": True,
     },
+    # #20: proxy 审查层（LLM 替我审批）：默认关闭；breaker/audit_log 等走 resolve 默认
+    "proxy": {
+        "review": {
+            "enabled": False,
+            "model": "",
+            "timeout_s": 30,
+            "retries": 3,
+        },
+    },
     "theme": "flexoki",
 }
 

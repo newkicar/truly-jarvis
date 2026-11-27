@@ -53,6 +53,44 @@ GLOBAL_DEFAULTS: dict = {
     "share_agent_skills": True,
 }
 
+# #18: 裁决层（proxy.review，LLM 替我审批）缺省配置。
+# 注意与 ADR-0014 的 proxy_threads 确定性「替我审批」是两回事：
+# proxy_threads 是确定性转发，本段是 LLM 裁决层（#19 起消费，#18 仅装配注入）。
+# 纯 expand 语义：缺省 enabled=False，未配置时裁决层关闭，既有行为零变化。
+PROXY_REVIEW_DEFAULTS: dict = {
+    "enabled": False,
+    "model": "",
+    "timeout_s": 30,
+    "retries": 3,
+    "reasoning_blind": True,
+    "context_aware": False,
+    "policy_extra": "",
+    "breaker": {"deny_streak": 3, "deny_in_window": 10, "window": 50},
+    "audit_log": "~/.jarvis/logs/proxy-review.jsonl",
+}
+
+
+def resolve_proxy_review(raw: object) -> dict:
+    """解析 jarvis.json 的 proxy.review 段为完整 dict（#18）。
+
+    - 非 dict / None → 返回全部缺省值的深拷贝（不别名 PROXY_REVIEW_DEFAULTS）；
+    - dict → 逐键覆盖、缺键补默认、未知键保留；
+    - breaker 两侧均为 dict 时做 dict 级合并（raw 覆盖缺省），否则整值取 raw。
+    纯函数：不修改入参，返回值每次都是新 dict。
+    """
+    resolved = json.loads(json.dumps(PROXY_REVIEW_DEFAULTS))
+    if not isinstance(raw, dict):
+        return resolved
+    for key, val in raw.items():
+        if key == "breaker" and isinstance(val, dict):
+            base_breaker = resolved.get("breaker")
+            if isinstance(base_breaker, dict):
+                merged = dict(base_breaker)
+                merged.update(val)
+                resolved["breaker"] = merged
+                continue
+        resolved[key] = val
+    return resolved
 
 def _deep_merge(base: dict, override: dict) -> dict:
     """合并两个 dict：override 覆盖 base（同 key），嵌套 dict 递归合并。"""
@@ -113,6 +151,9 @@ class Config:
     goals_max_turns: int = 5
     # issue-12: ~/.agents/skills 共享 skill 层开关（默认 True；非布尔值回落 True 并告警）
     share_agent_skills: bool = True
+    # #18: 裁决层（proxy.review）完整配置 dict（缺键已由 resolve_proxy_review 补齐），
+    # 注入共享 permission state 供 #19 LLM 裁决 middleware 消费；缺省 = PROXY_REVIEW_DEFAULTS 深拷贝
+    proxy_review: dict = field(default_factory=dict)
 
 
 def parse_env_text(text: str) -> dict[str, str]:
@@ -384,6 +425,12 @@ def load_config(  # noqa: C901
         logging.warning("share_agent_skills 非布尔，回落默认 True: %r", share_agent_skills)
         share_agent_skills = True
 
+    # #18: 裁决层配置（proxy.review 段；缺失/非 dict 一律补齐缺省，纯 expand）
+    proxy_cfg = data.get("proxy")
+    if not isinstance(proxy_cfg, dict):
+        proxy_cfg = {}
+    proxy_review = resolve_proxy_review(proxy_cfg.get("review"))
+
     cfg = Config(
         project_root=root,
         base_url=base_url,
@@ -411,6 +458,7 @@ def load_config(  # noqa: C901
         keep_first_messages=keep_first_messages,
         goals_max_turns=goals_max_turns,
         share_agent_skills=share_agent_skills,
+        proxy_review=proxy_review,
     )
     ensure_user_home()
     set_runtime_project_root(cfg.project_root)

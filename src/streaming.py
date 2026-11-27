@@ -262,6 +262,14 @@ def collect_interrupt_decisions(  # noqa: C901
             if decision == "approve":
                 _emit("approval_approved", inv.name)
                 decisions.append({"type": "approve"})
+                # #21: one-time override counts the thread budget
+                # (plain approve over a model deny; always-approve / edit do not count)
+                if permission_state is not None:
+                    from src.proxy_reviewer import record_override, review_last_record
+
+                    rec = review_last_record(permission_state, inv.name, thread_id)
+                    if rec and rec.get("outcome") == "deny":
+                        record_override(permission_state, thread_id)
             elif decision == "reject":
                 _emit("approval_rejected", inv.name)
                 decisions.append({"type": "reject", "message": REJECT_MESSAGE})
@@ -297,12 +305,16 @@ def cli_prompt_action(  # noqa: C901
     on_always_approve: Callable[[str], None] | None = None,
     vault_path=None,
     workspace_root=None,
+    review_note: str | None = None,
 ) -> dict | None:
     """CLI 终端逐条审批，返回 modal 同构结果 dict。"""
     from src.tui_format import permission_preview
 
     read = input_fn or input
     print(f"\n  [审批] {inv.name}")
+    # #20: proxy-review 回落注记（裁决 ask 时说明为何未自动放行）
+    if review_note:
+        print(f"    [proxy-review] {review_note}")
     preview = permission_preview(
         inv,
         vault_path=vault_path,

@@ -40,6 +40,7 @@ from src.permissions import (
     build_permission_interrupts,
     build_permission_interrupts_extended,
     build_permission_interrupts_from_state,
+    inject_proxy_review_deps,
     merge_permissions_deny_wins,
 )
 from src.rag import make_semantic_search_tool
@@ -234,6 +235,19 @@ def _make_model(config: Config, model_id: str | None = None) -> BaseChatModel:
     )
 
 
+def _make_proxy_review_model(
+    config: Config,
+    main_model: BaseChatModel | None = None,
+) -> BaseChatModel | None:
+    """#18: 裁决层模型客户端。config.proxy_review.model 空 → 复用主模型客户端
+    （main_model）；非空 → _make_model(config, model_id=该值)（同端点/凭据，
+    可含 context_limit profile）。返回 None 时 #19 侧按「未配置客户端」降级。"""
+    review_id = str((config.proxy_review or {}).get("model") or "").strip()
+    if review_id:
+        return _make_model(config, model_id=review_id)
+    return main_model
+
+
 def _make_backend(config: Config, extra_skill_routes=None) -> CompositeBackend:
     from src.path_policy import apply_unrestricted_paths
     from src.shell_backend import InheritedEnvShellBackend
@@ -376,6 +390,13 @@ def build_agent(  # noqa: C901
             hooks=config.hooks,
             project_root=config.project_root,
         )
+    # #18: 裁决层依赖注入共享 permission state（纯 expand；三分支含外部
+    # state 都汇到此处，model 在分支前已解析，profile 分支亦正确）。
+    inject_proxy_review_deps(
+        permission_state,
+        config.proxy_review,
+        _make_proxy_review_model(config, main_model=model),
+    )
     deny_middleware = build_permission_deny_middleware(permission_state)
     deprecated_guard = DeprecatedPathMiddleware()
     from src.system_context_enforcer import SystemContextEnforcerMiddleware

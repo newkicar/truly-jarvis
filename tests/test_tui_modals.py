@@ -365,3 +365,76 @@ async def test_permission_modal_on_lost_not_fired_on_normal_dismiss() -> None:
         await pilot.pause()
         await pilot.pause()
     assert fired == []
+
+# ----------------------------------------------------------------------
+# #20: proxy-review 裁决备注（TUI modal note）
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_permission_modal_renders_proxy_review_note() -> None:
+    """#20：note 非空 → 渲染 #perm_note Label，content 为原文（markup=False）。"""
+
+    note = "⚡ proxy-review 放行 低危只读"
+
+    async def check(host, pilot) -> None:
+        lbl = host.screen.query_one("#perm_note", Label)
+        assert lbl.content == note, f"label content 不符：{lbl.content!r}"
+        assert note in str(lbl.render()), f"渲染丢失原文：{lbl.render()!r}"
+
+    await _mount_and_check(PermissionModal(_inv(), note=note), check)
+
+
+@pytest.mark.asyncio
+async def test_permission_modal_no_note_label_without_note() -> None:
+    """#20：无 note（或空串）→ 不生成 #perm_note。"""
+
+    async def check(host, pilot) -> None:
+        assert list(host.screen.query("#perm_note")) == [], "不应生成 note Label"
+
+    await _mount_and_check(PermissionModal(_inv()), check)
+
+
+@pytest.mark.asyncio
+async def test_permission_modal_note_markup_safe() -> None:
+    """#20：note 含 [ ] 等 Rich markup 字符时按纯文本渲染，不炸布局不丢字。"""
+
+    note = "⚡ [proxy-review] 放行: curl [1] http://example.com"
+
+    async def check(host, pilot) -> None:
+        lbl = host.screen.query_one("#perm_note", Label)
+        rendered = str(lbl.render())
+        assert "[proxy-review]" in rendered, f"markup 字符丢失：{rendered!r}"
+        assert "curl [1]" in rendered, f"原文被吞：{rendered!r}"
+
+    await _mount_and_check(PermissionModal(_inv(), note=note), check)
+
+
+# ----------------------------------------------------------------------
+# #21: 一次性覆盖（override=True → #btn_approve 改标「一次性覆盖」）
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_permission_modal_override_relabels_approve_button() -> None:
+    """#21：override=True → #btn_approve 文案改「一次性覆盖」；a 键 dismiss 契约不变。"""
+
+    async def check(host, pilot) -> None:
+        btn = host.screen.query_one("#btn_approve", Button)
+        assert "一次性覆盖" in str(btn.label), f"override 未改标：{btn.label!r}"
+        await pilot.press("a")
+        await pilot.pause()
+        assert not isinstance(host.screen, PermissionModal), "a 键后 modal 应已 dismiss"
+
+    await _mount_and_check(PermissionModal(_inv(), override=True), check)
+
+
+@pytest.mark.asyncio
+async def test_permission_modal_default_label_stays_approve() -> None:
+    """#21：默认（无 override）→ #btn_approve 文案保持「放行」。"""
+
+    async def check(host, pilot) -> None:
+        btn = host.screen.query_one("#btn_approve", Button)
+        assert str(btn.label) == "放行", f"默认文案不应变：{btn.label!r}"
+
+    await _mount_and_check(PermissionModal(_inv()), check)
