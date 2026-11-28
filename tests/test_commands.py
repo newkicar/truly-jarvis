@@ -1397,24 +1397,7 @@ def test_dispatch_compact_with_guide():
 
 
 # ---------------------------------------------------------------- #goal 03
-from contextlib import contextmanager as _goal_ctx  # noqa: E402
-from pathlib import Path as _GoalPath  # noqa: E402
-
-_GOAL_TEST_BASE = _GoalPath(__file__).resolve().parent.parent / ".scratch" / "goal-cmd-test-tmp"
-
-
-@_goal_ctx
-def _goal_tmp(name: str):
-    """自建目录纪律（WinError5 中毒，禁 tmp_path）。"""
-    import shutil
-    import uuid
-
-    d = _GOAL_TEST_BASE / f"{name}-{uuid.uuid4().hex[:8]}"
-    d.mkdir(parents=True, exist_ok=True)
-    try:
-        yield d
-    finally:
-        shutil.rmtree(d, ignore_errors=True)
+from tests._goal_harness import goal_tmp as _goal_tmp  # noqa: E402
 
 
 def test_goal_set_no_record_creates():
@@ -1431,16 +1414,7 @@ def test_goal_set_existing_active_reports_exists():
         commands.goal_command_text("t1", "/goal A", p)
         out = commands.goal_command_text("t1", "/goal B", p)
         assert "目标已存在" in out and "进行中" in out and "/goal clear" in out
-
-
-def test_goal_set_terminal_reports_hint():
-    from src import goals as g
-    with _goal_tmp("terminal") as d:
-        p = d / "goals.json"
-        commands.goal_command_text("t1", "/goal A", p)
-        g.goal_complete(path=p, thread_id="t1", audit_evidence="done")
-        out = commands.goal_command_text("t1", "/goal C", p)
-        assert "目标已终态（已完成）" in out and "不可新建目标" in out
+        assert "/goal edit 变更目标" in out
 
 
 def test_goal_pause_four_states():

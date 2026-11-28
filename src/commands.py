@@ -44,7 +44,7 @@ _HELP_COMMANDS = """\
   /use <skill> [说明]  手动调用 manual-only skill（注入完整指令）
   /yolo on | off  YOLO 模式开关：本会话所有动作免审批（仅当前会话、重启即关）
   /proxy on | off  替我审批开关：安全审批自动放行、危险审批仍拦截（仅当前会话、重启即关）
-  /goal <objective>|status|pause|resume|clear|edit  持久目标：创建/查询/暂停/恢复/清除/变更（回合预算内自动续跑、跨重启持久）
+  /goal <objective>|status|pause|resume|clear|edit  持久目标：创建/查询/暂停/恢复/清除/变更（回合预算内自动续跑、跨重启持久、终态自动关旧建新）
   /side | /side close  开/关侧边会话（继承历史，只读，禁 sub-agents 与 execute；关=删除会话）
   /compact [提示]  压缩当前会话历史为一条延续性摘要写回（可选文字提示压缩倾向）
   /dream   梦境沉淀：回顾近期会话，蒸馏可复用知识到 梦境知识库（默认全局 ~/.jarvis/memory/dream/）
@@ -1547,12 +1547,12 @@ def goal_text(thread_id: str, goals_path: Path | None = None) -> str:
 
 
 def _goal_terminal_hint(thread_id: str, goals_path: Path | None = None, action: str = "") -> str:
-    """终态下 set/pause/resume 被拒的统一文案：指路 clear 重建。"""
+    """#33 起 pause/resume/edit 被拒的统一文案：指路 clear 重建（create 终态已自动关旧建新，不走此处）。"""
     from src import goals as g
 
     goal = g.goal_status(path=goals_path, thread_id=thread_id)
     label = g.GOAL_STATUS_CN.get(goal.status, goal.status) if goal else "终态"
-    verb = {"pause": "暂停", "resume": "恢复", "create": "新建目标", "edit": "变更"}.get(action, "操作")
+    verb = {"pause": "暂停", "resume": "恢复", "edit": "变更"}.get(action, "操作")
     return f"目标已终态（{label}），不可{verb}；/goal clear 清除后可新建"
 
 
@@ -1575,6 +1575,8 @@ def goal_command_text(thread_id: str, raw_command: str, goals_path: Path | None 
     其余一律视作 objective（可多词句）。set 的 max_turns 取 jarvis.json goals.max_turns。
     #29: /goal edit <objective> = 在途目标 objective 原地变更（版本+1、状态保留）；
     终态拒绝指路 clear 重建，无目标/裸 edit 不写盘。
+    #33: create 遇终态（complete/budget_limited）自动关旧建新（int 墓碑保留 goal_id 序列）并 kick 新目标；
+    在途（active/paused）维持拒绝并指路 /goal edit（弹窗属 #34）。
     """
     from src import goals as g
 
@@ -1645,19 +1647,43 @@ def goal_command_text(thread_id: str, raw_command: str, goals_path: Path | None 
         return "用法: /goal <objective> | status | pause | resume | clear | edit <objective>"
     from src.config import load_config
 
+    max_turns = load_config().goals_max_turns
     try:
         goal = g.goal_set(
             path=goals_path,
             thread_id=thread_id,
             objective=objective,
-            max_turns=load_config().goals_max_turns,
+            max_turns=max_turns,
         )
     except g.GoalExistsError:
         cur = g.goal_status(path=goals_path, thread_id=thread_id)
         label = g.GOAL_STATUS_CN.get(cur.status, cur.status)
-        return f"目标已存在（{label}：'{cur.objective}'）；/goal clear 替换，/goal pause|resume 调状态"
+        return f"目标已存在（{label}：'{cur.objective}'）；/goal edit 变更目标，/goal clear 替换"
     except g.TerminalGoalError:
-        return _goal_terminal_hint(thread_id, goals_path, "create")
+        # #33: 终态 = 自动关旧建新（int 墓碑保留 goal_id 序列，无需手动 clear）；
+        # 存储层契约：TerminalGoalError 时记录必为终态 dict（old 非 None）；clear/create 失败回落存储层文案
+        old = g.goal_status(path=goals_path, thread_id=thread_id)
+        if old is None:
+            return "旧目标记录不可用（并发变更或墓碑）；请先 /goal clear 再 /goal <objective>"
+        cleared = False
+        try:
+            g.goal_clear(path=goals_path, thread_id=thread_id)
+            cleared = True
+            goal = g.goal_set(
+                path=goals_path,
+                thread_id=thread_id,
+                objective=objective,
+                max_turns=max_turns,
+            )
+        except g.GoalError as exc:
+            if cleared:
+                return f"旧目标已清除但新建失败（{exc}）；请重试 /goal {objective} 重新创建"
+            return str(exc)
+        old_label = g.GOAL_STATUS_CN.get(old.status, old.status)
+        return (
+            f"已关闭旧目标（{old_label}：'{old.objective}'）"
+            f"并新建：'{goal.objective}'（版本 {goal.goal_id}，最多 {goal.max_turns} 回合自动续跑，/goal status 查看）"
+        )
     except g.GoalError as exc:
         return str(exc)
     return f"目标已创建：'{goal.objective}'（最多 {goal.max_turns} 回合自动续跑，/goal status 查看）"
@@ -1665,8 +1691,9 @@ def goal_command_text(thread_id: str, raw_command: str, goals_path: Path | None 
 
 def goal_kick_prompt(thread_id: str, raw_command: str, goals_path: Path | None = None) -> str | None:
     """#goal diagnosing-bugs 修复：/goal create & resume 的链重启手柄（纯只读，调用方在
-    dispatch 已写盘后调用——paused→active 已生效可读；create 失败仍 kick 旧 active 目标
-    为已知边界，见 ADR）。status/pause/clear/裸 /goal/无目标/非 active/预算耗尽 → None。
+    dispatch 已写盘后调用——paused→active 已生效可读；#33 起终态 create 已自动建新目标，
+    重读盘必命中新 active 目标；在途 create 被拒仍 kick 旧 active 目标为已知边界（弹窗属 #34），
+    见 ADR）。status/pause/clear/裸 /goal/无目标/非 active/预算耗尽 → None。
     #29: /goal edit <objective> 亦产 [目标变更] 注入行（读盘时 objective 已是新值；
     终态/预算耗尽/无目标/裸 edit → None）。"""
     from src import goals as g
