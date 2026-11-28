@@ -1541,9 +1541,114 @@ def test_goal_dispatch_hook(monkeypatch):
         assert "目标 [进行中] 0/5：修 bug" in text2
 
 
+# ---------------------------------------------------------------- goal edit (#29)
+
+
+def test_goal_edit_success_replaces_objective():
+    import json
+
+    with _goal_tmp("edit") as d:
+        p = d / "goals.json"
+        commands.goal_command_text("t1", "/goal A", p)
+        out = commands.goal_command_text("t1", "/goal edit B", p)
+        assert "目标已变更" in out and "'B'" in out and "版本 2" in out
+        rec = json.loads(p.read_text(encoding="utf-8"))
+        assert rec["t1"]["objective"] == "B" and rec["t1"]["goal_id"] == 2
+
+
+def test_goal_edit_bare_shows_usage_keeps_objective():
+    import json
+
+    with _goal_tmp("edit-bare") as d:
+        p = d / "goals.json"
+        commands.goal_command_text("t1", "/goal A", p)
+        out = commands.goal_command_text("t1", "/goal edit", p)
+        assert "用法:" in out
+        rec = json.loads(p.read_text(encoding="utf-8"))
+        assert rec["t1"]["objective"] == "A"
+
+
+def test_goal_edit_no_goal_reports_none():
+    with _goal_tmp("edit-none") as d:
+        p = d / "goals.json"
+        out = commands.goal_command_text("t9", "/goal edit B", p)
+        assert "本会话无目标" in out and "无需变更" in out
+
+
+def test_goal_edit_terminal_rejected():
+    from src import goals as g
+
+    with _goal_tmp("edit-terminal") as d:
+        p = d / "goals.json"
+        commands.goal_command_text("t1", "/goal A", p)
+        g.goal_complete(path=p, thread_id="t1", audit_evidence="done")
+        out = commands.goal_command_text("t1", "/goal edit B", p)
+        assert "目标已终态" in out and "不可变更" in out
+
+
+def test_goal_edit_paused_keeps_paused():
+    import json
+
+    from src import goals as g
+
+    with _goal_tmp("edit-paused") as d:
+        p = d / "goals.json"
+        commands.goal_command_text("t1", "/goal A", p)
+        g.goal_pause(path=p, thread_id="t1")
+        out = commands.goal_command_text("t1", "/goal edit B", p)
+        assert "目标已变更" in out and "已暂停" in out
+        rec = json.loads(p.read_text(encoding="utf-8"))
+        assert rec["t1"]["status"] == "paused"
+
+
+def test_goal_kick_prompt_edit_active():
+    with _goal_tmp("kick-edit") as d:
+        p = d / "goals.json"
+        commands.goal_command_text("t1", "/goal A", p)
+        commands.goal_command_text("t1", "/goal edit B", p)  # dispatch 先写盘
+        out = commands.goal_kick_prompt("t1", "/goal edit B", p)
+        assert out is not None
+        assert out.startswith("[目标变更] ") and "B" in out
+
+
+def test_goal_kick_prompt_edit_paused():
+    from src import goals as g
+
+    with _goal_tmp("kick-edit-paused") as d:
+        p = d / "goals.json"
+        commands.goal_command_text("t1", "/goal A", p)
+        g.goal_pause(path=p, thread_id="t1")
+        commands.goal_command_text("t1", "/goal edit B", p)
+        assert commands.goal_kick_prompt("t1", "/goal edit B", p) is not None
+
+
+def test_goal_kick_prompt_edit_terminal_none():
+    from src import goals as g
+
+    with _goal_tmp("kick-edit-terminal") as d:
+        p = d / "goals.json"
+        commands.goal_command_text("t1", "/goal A", p)
+        g.goal_complete(path=p, thread_id="t1", audit_evidence="done")
+        commands.goal_command_text("t1", "/goal edit B", p)
+        assert commands.goal_kick_prompt("t1", "/goal edit B", p) is None
+
+
+def test_goal_kick_prompt_edit_no_goal_none():
+    with _goal_tmp("kick-edit-none") as d:
+        p = d / "goals.json"
+        assert commands.goal_kick_prompt("t9", "/goal edit B", p) is None
+
+
+def test_goal_kick_prompt_edit_bare_none():
+    with _goal_tmp("kick-edit-bare") as d:
+        p = d / "goals.json"
+        commands.goal_command_text("t1", "/goal A", p)
+        assert commands.goal_kick_prompt("t1", "/goal edit", p) is None
+
+
 def test_goal_listed_in_help_and_slash_completion():
-    assert "/goal <objective>|status|pause|resume|clear" in commands.CLI_HELP
-    assert "/goal <objective>|status|pause|resume|clear" in commands.TUI_HELP
+    assert "/goal <objective>|status|pause|resume|clear|edit" in commands.CLI_HELP
+    assert "/goal <objective>|status|pause|resume|clear|edit" in commands.TUI_HELP
     from src.slash_completion import SLASH_COMMANDS
     names = [c.name for c in SLASH_COMMANDS]
     assert "/goal" in names

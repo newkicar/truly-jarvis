@@ -31,7 +31,7 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("/use", "/use <skill> [说明]", "手动注入指定 skill（名称模糊补全）"),
     SlashCommand("/yolo", "/yolo on | off", "YOLO 模式开关（仅当前会话）"),
     SlashCommand("/proxy", "/proxy on | off", "替我审批开关（放行安全审批，拦住危险审批；仅当前会话）"),
-    SlashCommand("/goal", "/goal <objective> | status | pause | resume | clear", "持久目标：创建/查询/暂停/恢复/清除（回合预算内自动续跑、跨重启持久）"),
+    SlashCommand("/goal", "/goal <objective> | status | pause | resume | clear | edit", "持久目标：创建/查询/暂停/恢复/清除/变更（回合预算内自动续跑、跨重启持久）"),
     SlashCommand("/side", "/side | /side close", "开/关侧边会话（继承历史，只读，禁 sub-agents 与 execute；关=删除会话）"),
     SlashCommand("/compact", "/compact [提示]", "压缩当前会话上下文为延续性摘要（可选文字提示引导方向）"),
     SlashCommand("/dream", "/dream", "梦境沉淀：回顾近期会话，蒸馏可复用知识到 梦境知识库（默认全局 ~/.jarvis/memory/dream/）"),
