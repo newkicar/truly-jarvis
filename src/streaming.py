@@ -507,6 +507,9 @@ def run_agent_turn(  # noqa: C901
     max_steps: int = 200,
     model_image_input: str = "auto",
     user_input_fallback: str | None = None,
+    # #32: 上下文超限反应层——捕获 context_overflow 自动 /compact 并重放用户输入
+    auto_compact_on_overflow: bool = True,
+    auto_compact_max_attempts: int = 1,
 ) -> TurnOutcome:
     """跑一轮对话或 checkpoint 重跑（含 HITL resume 循环）。返回 TurnOutcome（ok=True 正常结束，False=放弃/取消）。
 
@@ -577,6 +580,7 @@ def run_agent_turn(  # noqa: C901
     base_config = {**commands.thread_config(thread_id), "recursion_limit": max_steps}
     resume = None
     _image_fallback_done = False  # #03: 多模态 auto 回落只重试一次
+    _auto_compact_used = 0  # #32: 单回合自动压缩预算（0=关闭）
     replay_pending = checkpoint_id is not None
     outcome = "complete"
 
@@ -745,6 +749,42 @@ def run_agent_turn(  # noqa: C901
                     if status_cb:
                         status_cb("模型端点拒绝图片输入，已改为路径引用自动重试")
                     continue
+                # #32: 上下文超限反应层（对标 opencode auto-compact）——捕获 context_overflow
+                # 自动 /compact 并重放用户输入。护栏：单回合至多 auto_compact_max_attempts 次
+                # （默认 1，0=关闭）。compact 整表重写（head 终态，不带 as_node），悬挂 HITL
+                # 审批随重放作废；预算耗尽/压缩失败回落原 raise（finalize 已在上游做）。
+                if (
+                    resilience.classify_error(exc) == "context_overflow"
+                    and user_input is not None
+                    and auto_compact_on_overflow
+                    and _auto_compact_used < auto_compact_max_attempts
+                ):
+                    compact_result = commands.compact(agent, thread_id)
+                    _auto_compact_used += 1
+                    if compact_result.startswith("已压缩上下文"):
+                        status_cb = callbacks.get("on_status") or on_fallback_message
+                        if status_cb:
+                            status_cb("上下文超限，已自动压缩，任务继续")
+                        resume = None  # 悬挂已作废，改重放用户输入
+                        continue
+                    if callbacks.get("on_status"):
+                        callbacks["on_status"](compact_result)
+                    elif on_fallback_message:
+                        on_fallback_message(compact_result)
+                elif (
+                    resilience.classify_error(exc) == "context_overflow"
+                    and user_input is not None
+                    and auto_compact_on_overflow
+                    and auto_compact_max_attempts > 0
+                ):
+                    _msg = (
+                        "上下文超限：自动压缩后仍超限（单条消息可能本身过大）。"
+                        "开新会话或减少输入体积；/compact 亦可手动重试。"
+                    )
+                    if callbacks.get("on_status"):
+                        callbacks["on_status"](_msg)
+                    elif on_fallback_message:
+                        on_fallback_message(_msg)
                 # 内部 _stream_with_resilience 上抛前已 finalize，这里不重复清理。
                 raise
             if is_cancelled():

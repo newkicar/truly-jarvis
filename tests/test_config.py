@@ -652,3 +652,64 @@ def test_resolve_proxy_review_context_aware_default_and_override():
     assert resolve_proxy_review("junk")["context_aware"] is False
     assert PROXY_REVIEW_DEFAULTS["context_aware"] is False
 
+def test_load_config_execution_auto_compact_defaults():
+    """#32: 无 execution 段 → auto_compact_on_overflow=True / auto_compact_max_attempts=1。"""
+    base = _fresh_dir()
+    old = _isolated_home(base)
+    try:
+        env = _write_min_env(base)
+        jf = _write_json(base, {})
+        cfg = load_config(env_file=env, json_file=jf)
+        assert cfg.execution_auto_compact_on_overflow is True
+        assert cfg.execution_auto_compact_max_attempts == 1
+    finally:
+        _restore_home(old)
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_load_config_execution_auto_compact_explicit_values():
+    """#32: 显式 false / 3 生效。"""
+    base = _fresh_dir()
+    old = _isolated_home(base)
+    try:
+        env = _write_min_env(base)
+        jf = _write_json(
+            base,
+            {"execution": {"auto_compact_on_overflow": False, "auto_compact_max_attempts": 3}},
+        )
+        cfg = load_config(env_file=env, json_file=jf)
+        assert cfg.execution_auto_compact_on_overflow is False
+        assert cfg.execution_auto_compact_max_attempts == 3
+    finally:
+        _restore_home(old)
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_load_config_execution_auto_compact_clamp_and_fallback(caplog):
+    """#32: 越界 clamp（100→10、-5→0）；非整/非布尔回落默认并告警。"""
+    base = _fresh_dir()
+    old = _isolated_home(base)
+    try:
+        env = _write_min_env(base)
+        jf = _write_json(
+            base,
+            {"execution": {"auto_compact_on_overflow": "yes", "auto_compact_max_attempts": 100}},
+        )
+        cfg = load_config(env_file=env, json_file=jf)
+        assert cfg.execution_auto_compact_on_overflow is True
+        assert cfg.execution_auto_compact_max_attempts == 10
+
+        jf = _write_json(
+            base,
+            {"execution": {"auto_compact_on_overflow": 1, "auto_compact_max_attempts": "abc"}},
+        )
+        cfg = load_config(env_file=env, json_file=jf)
+        assert cfg.execution_auto_compact_on_overflow is True
+        assert cfg.execution_auto_compact_max_attempts == 1
+
+        jf = _write_json(base, {"execution": {"auto_compact_max_attempts": -5}})
+        cfg = load_config(env_file=env, json_file=jf)
+        assert cfg.execution_auto_compact_max_attempts == 0
+    finally:
+        _restore_home(old)
+        shutil.rmtree(base, ignore_errors=True)

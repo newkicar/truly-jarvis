@@ -197,6 +197,8 @@ def _stream_turn(agent, thread_id: str, user_input: str, permission_state: dict 
     vault_path = getattr(config, "vault_path", None) if config else None
     workspace_root = config.project_root if config else None
     max_steps = int(getattr(config, "execution_max_steps", 200)) if config else 200
+    auto_compact_on = bool(getattr(config, "execution_auto_compact_on_overflow", True)) if config else True
+    auto_compact_attempts = int(getattr(config, "execution_auto_compact_max_attempts", 1)) if config else 1
 
     def on_always_approve(name: str) -> None:
         print(f"    已永久放行 {name}（已写入 jarvis.json，以后自动放行）")
@@ -241,6 +243,8 @@ def _stream_turn(agent, thread_id: str, user_input: str, permission_state: dict 
                 permission_state=permission_state,
                 project_root=workspace_root,
                 max_steps=max_steps,
+                auto_compact_on_overflow=auto_compact_on,
+                auto_compact_max_attempts=auto_compact_attempts,
             )
         except Exception as exc:
             print(f"\n错误: {streaming.format_agent_error(exc)}\n")

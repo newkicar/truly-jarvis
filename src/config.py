@@ -47,7 +47,7 @@ GLOBAL_DEFAULTS: dict = {
         "ollama_base_url": "http://localhost:11434",
         "embed_model": "quentinz/bge-small-zh-v1.5",
     },
-    "execution": {"max_steps": 200},
+    "execution": {"max_steps": 200, "auto_compact_on_overflow": True, "auto_compact_max_attempts": 1},
     "goals": {"max_turns": 5},
     "tui": {"copy_on_select": True},
     "share_agent_skills": True,
@@ -154,6 +154,10 @@ class Config:
     # #18: 裁决层（proxy.review）完整配置 dict（缺键已由 resolve_proxy_review 补齐），
     # 注入共享 permission state 供 #19 LLM 裁决 middleware 消费；缺省 = PROXY_REVIEW_DEFAULTS 深拷贝
     proxy_review: dict = field(default_factory=dict)
+    # #32: 上下文超限反应层（execution.auto_compact_on_overflow / auto_compact_max_attempts）
+    # 主代理回合捕获 context_overflow 时自动 /compact 并重放用户输入；缺省开、单回合至多 1 次（0=关闭）
+    execution_auto_compact_on_overflow: bool = True
+    execution_auto_compact_max_attempts: int = 1
 
 
 def parse_env_text(text: str) -> dict[str, str]:
@@ -372,6 +376,16 @@ def load_config(  # noqa: C901
     except (TypeError, ValueError):
         max_steps = 200
     max_steps = max(10, min(max_steps, 9999))
+    auto_compact_on_overflow = execution_cfg.get("auto_compact_on_overflow", True)
+    if not isinstance(auto_compact_on_overflow, bool):
+        logging.warning("execution.auto_compact_on_overflow 非布尔，回落默认 True: %r", auto_compact_on_overflow)
+        auto_compact_on_overflow = True
+    try:
+        auto_compact_max_attempts = int(execution_cfg.get("auto_compact_max_attempts", 1))
+    except (TypeError, ValueError):
+        logging.warning("execution.auto_compact_max_attempts 非整数，回落默认 1: %r", execution_cfg.get("auto_compact_max_attempts"))
+        auto_compact_max_attempts = 1
+    auto_compact_max_attempts = max(0, min(auto_compact_max_attempts, 10))
 
     tui_cfg = data.get("tui", {})
     if not isinstance(tui_cfg, dict):
@@ -459,6 +473,8 @@ def load_config(  # noqa: C901
         goals_max_turns=goals_max_turns,
         share_agent_skills=share_agent_skills,
         proxy_review=proxy_review,
+        execution_auto_compact_on_overflow=auto_compact_on_overflow,
+        execution_auto_compact_max_attempts=auto_compact_max_attempts,
     )
     ensure_user_home()
     set_runtime_project_root(cfg.project_root)
