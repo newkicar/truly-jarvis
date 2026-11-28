@@ -19,7 +19,7 @@
 - `/goal <objective>`（或模型 `create_goal`）声明目标；每个回合结束后系统自动排队"续跑回合"（输入 = continuation prompt），直到：
   - 模型 `complete_goal(audit_evidence)` 审计通过（objective 逐条达成、必须附证据），或
   - 续跑预算耗尽（默认 5 回合，`jarvis.json` `goals.max_turns` 可覆盖）→ 终态 `budget_limited`，最后一轮为收尾交接轮（budget prompt）。
-- 命令面：`/goal <objective>|status|pause|resume|clear`；Esc 取消 = 断链（该回合不续跑，goal 保持 active，非暂停）；Plan 模式不续跑；HITL 审批照常（goal 不豁免任何审批）。
+- 命令面：`/goal <objective>|status|pause|resume|clear|edit`；Esc 取消 = 断链（该回合不续跑，goal 保持 active，非暂停）；Plan 模式不续跑；HITL 审批照常（goal 不豁免任何审批）。
 - 模型侧仅主代理注入 3 工具：`create_goal` / `complete_goal` / `get_goal`（不给 pause/resume——人类命令面）。
 - 一会话（thread）一个 active goal；sched-* 线程不参与续跑；side-* 线程独立 goal 空间。
 
@@ -71,7 +71,7 @@
 
 ### 命令（三前端共享 dispatch）
 
-- `/goal <objective>|status|pause|resume|clear`；单 dispatch 函数，yolo_command_text 写法四态幂等文案；`slash_completion.py` 条目。
+- `/goal <objective>|status|pause|resume|clear|edit`；单 dispatch 函数，yolo_command_text 写法四态幂等文案；`slash_completion.py` 条目。#29 `edit` = 在途目标 objective 原地变更（版本+1、状态与剩余回合保留、终态拒绝指路 clear 重建），变更轮注入 `[目标变更]` 前缀用户指令行（前端 dim 系统行 + 短标签「目标变更」）。
 
 ### 续跑触发（回合收尾钩子，三前端共用）
 
@@ -124,7 +124,6 @@
 - 模型侧 pause/resume 工具。
 - sched-* 定时任务设目标。
 - 跨进程 goal 同步（单进程假设）。
-- `/goal edit`（改 objective = clear + 重设）。
 - 自动建议 goal。
 - /undo、/compact 与 goal 交互特判（消息层不动 goal 状态）。
 

@@ -139,6 +139,90 @@ def test_set_on_terminal_raises(goal_dir):
         g.goal_set(path=goal_dir, thread_id="t1", objective="again")
 
 
+# ---------------------------------------------------------------- edit (#29)
+
+
+def test_edit_active_bumps_version_keeps_state(goal_dir):
+    """#29: edit = objective 原地替换 + goal_id+1；status/turns_used/max_turns 保留。"""
+    g.goal_set(path=goal_dir, thread_id="t1", objective="A")
+    g.goal_note_turn(path=goal_dir, thread_id="t1")
+    edited = g.goal_edit(path=goal_dir, thread_id="t1", objective="B")
+    assert edited.objective == "B"
+    assert edited.goal_id == 2
+    assert edited.status == g.GOAL_ACTIVE
+    assert edited.turns_used == 1
+    assert edited.max_turns == 5
+
+
+def test_edit_paused_stays_paused(goal_dir):
+    g.goal_set(path=goal_dir, thread_id="t1", objective="A")
+    g.goal_pause(path=goal_dir, thread_id="t1")
+    edited = g.goal_edit(path=goal_dir, thread_id="t1", objective="B")
+    assert edited.status == g.GOAL_PAUSED
+    assert edited.objective == "B"
+    assert edited.goal_id == 2
+
+
+def test_edit_without_record_raises_no_goal(goal_dir):
+    with pytest.raises(g.NoGoalError):
+        g.goal_edit(path=goal_dir, thread_id="t9", objective="B")
+
+
+def test_edit_on_complete_raises_terminal(goal_dir):
+    g.goal_set(path=goal_dir, thread_id="t1", objective="A")
+    g.goal_complete(path=goal_dir, thread_id="t1", audit_evidence="done")
+    with pytest.raises(g.TerminalGoalError):
+        g.goal_edit(path=goal_dir, thread_id="t1", objective="B")
+
+
+def test_edit_on_budget_limited_raises_terminal(goal_dir):
+    g.goal_set(path=goal_dir, thread_id="t2", objective="A")
+    g.goal_mark_budget_exhausted(path=goal_dir, thread_id="t2")
+    with pytest.raises(g.TerminalGoalError):
+        g.goal_edit(path=goal_dir, thread_id="t2", objective="B")
+
+
+def test_edit_stale_version_raises(goal_dir):
+    g.goal_set(path=goal_dir, thread_id="t1", objective="A")
+    g.goal_edit(path=goal_dir, thread_id="t1", objective="B", expected_goal_id=1)
+    with pytest.raises(g.StaleGoalVersion):
+        g.goal_edit(path=goal_dir, thread_id="t1", objective="C", expected_goal_id=1)
+
+
+def test_edit_blank_objective_raises_plain_goal_error(goal_dir):
+    g.goal_set(path=goal_dir, thread_id="t1", objective="A")
+    with pytest.raises(g.GoalError) as exc_info:
+        g.goal_edit(path=goal_dir, thread_id="t1", objective="   ")
+    assert type(exc_info.value) is g.GoalError
+    assert "不能为空" in str(exc_info.value)
+
+
+def test_change_prompt_renders_untrusted_marker():
+    """#29: 续跑变更行 [目标变更]，untrusted 标记（模型当作用户指令读）+ complete_goal 纪律。"""
+    text = g.goal_change_prompt(g.Goal("t1", 1, "目标O", g.GOAL_ACTIVE, 1, 3))
+    assert text.startswith("[目标变更] ")
+    assert "新目标：目标O" in text
+    assert "用户指令" in text
+    assert "complete_goal" in text
+
+
+def test_change_prompt_braces_in_objective_no_crash():
+    goal = g.Goal("t1", 1, "fix {CI} build", g.GOAL_ACTIVE, 1, 5)
+    text = g.goal_change_prompt(goal)
+    assert "fix {CI} build" in text
+
+
+def test_input_label_goal_change_prefix():
+    assert g.goal_input_label("[目标变更] 新目标：x") == "目标变更"
+
+
+def test_input_label_regressions():
+    assert g.goal_input_label("[目标续跑 1/5] 自动续跑目标「o」。") == "目标续跑 1/5"
+    assert g.goal_input_label("[目标预算耗尽 5/5] 最后一续跑轮") == "目标收尾 5/5"
+    assert g.goal_input_label("普通用户消息") is None
+    assert g.goal_input_label(None) is None
+
+
 # ---------------------------------------------------------------- complete
 
 

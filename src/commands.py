@@ -44,7 +44,7 @@ _HELP_COMMANDS = """\
   /use <skill> [说明]  手动调用 manual-only skill（注入完整指令）
   /yolo on | off  YOLO 模式开关：本会话所有动作免审批（仅当前会话、重启即关）
   /proxy on | off  替我审批开关：安全审批自动放行、危险审批仍拦截（仅当前会话、重启即关）
-  /goal <objective>|status|pause|resume|clear  持久目标：创建/查询/暂停/恢复/清除（回合预算内自动续跑、跨重启持久）
+  /goal <objective>|status|pause|resume|clear|edit  持久目标：创建/查询/暂停/恢复/清除/变更（回合预算内自动续跑、跨重启持久）
   /side | /side close  开/关侧边会话（继承历史，只读，禁 sub-agents 与 execute；关=删除会话）
   /compact [提示]  压缩当前会话历史为一条延续性摘要写回（可选文字提示压缩倾向）
   /dream   梦境沉淀：回顾近期会话，蒸馏可复用知识到 梦境知识库（默认全局 ~/.jarvis/memory/dream/）
@@ -1552,17 +1552,29 @@ def _goal_terminal_hint(thread_id: str, goals_path: Path | None = None, action: 
 
     goal = g.goal_status(path=goals_path, thread_id=thread_id)
     label = g.GOAL_STATUS_CN.get(goal.status, goal.status) if goal else "终态"
-    verb = {"pause": "暂停", "resume": "恢复", "create": "新建目标"}.get(action, "操作")
+    verb = {"pause": "暂停", "resume": "恢复", "create": "新建目标", "edit": "变更"}.get(action, "操作")
     return f"目标已终态（{label}），不可{verb}；/goal clear 清除后可新建"
 
 
+def _goal_edit_objective(raw_command: str) -> str:
+    """#29: /goal edit <objective> 的 objective 解析（goal_command_text 与 goal_kick_prompt 共用，防两处漂移）。
+
+    裸 "/goal edit"（rest 恰为 edit）→ ""（调用方回用法提示 / 不 kick）；
+    否则取 edit 之后的剩余（rest[4:]）：双空格 "/goal  edit x" 亦不炸；
+    objective 首词恰为 edit（"/goal edit edit the docs"）时整体即新 objective。
+    """
+    rest = raw_command[len("/goal"):].strip()
+    return "" if rest.lower() == "edit" else rest[4:].strip()
+
 def goal_command_text(thread_id: str, raw_command: str, goals_path: Path | None = None) -> str:  # noqa: C901
-    """#goal 03: /goal <objective>|status|pause|resume|clear——线程级持久目标（goals.json 跨重启持久）。
+    """#goal 03: /goal <objective>|status|pause|resume|clear|edit <objective>——线程级持久目标（goals.json 跨重启持久）。
 
     四态幂等文案（yolo 先例）：子命令按状态回短文案；pause/resume 在终态显式报错指路 clear；
     goal_id 墓碑序列由存储层透明维护（命令层不传 expected_goal_id）。
-    裸 /goal = status 查询；第二 token 恰为 status/pause/resume/clear 才视作子命令，
+    裸 /goal = status 查询；第二 token 恰为 status/pause/resume/clear/edit 才视作子命令，
     其余一律视作 objective（可多词句）。set 的 max_turns 取 jarvis.json goals.max_turns。
+    #29: /goal edit <objective> = 在途目标 objective 原地变更（版本+1、状态保留）；
+    终态拒绝指路 clear 重建，无目标/裸 edit 不写盘。
     """
     from src import goals as g
 
@@ -1572,6 +1584,26 @@ def goal_command_text(thread_id: str, raw_command: str, goals_path: Path | None 
         sub = parts[1].lower()
     if sub == "status" or len(parts) < 2:
         return goal_text(thread_id, goals_path)
+    second = parts[1].lower() if len(parts) >= 2 else ""
+    if second == "edit":
+        # #29: /goal edit <新 objective>——在途目标原地变更。second = 裸第二 token
+        # （区别于 sub：sub 限 len==2 且命中子命令表，edit 不在其中故须裸取第二 token）。
+        new_objective = _goal_edit_objective(raw_command)
+        if not new_objective:
+            return "用法: /goal <objective> | status | pause | resume | clear | edit <objective>"
+        try:
+            edited = g.goal_edit(path=goals_path, thread_id=thread_id, objective=new_objective)
+        except g.NoGoalError:
+            return "本会话无目标，无需变更；新建 /goal <objective>"
+        except g.TerminalGoalError:
+            return _goal_terminal_hint(thread_id, goals_path, "edit")
+        except g.GoalError as exc:
+            return str(exc)
+        label = g.GOAL_STATUS_CN.get(edited.status, edited.status)
+        return (
+            f"目标已变更：'{edited.objective}'（版本 {edited.goal_id}，状态'{label}'、"
+            f"{edited.turns_used}/{edited.max_turns} 回合保留；/goal status 查看）"
+        )
     if sub == "pause":
         try:
             paused = g.goal_pause(path=goals_path, thread_id=thread_id)
@@ -1610,7 +1642,7 @@ def goal_command_text(thread_id: str, raw_command: str, goals_path: Path | None 
         return f"目标已清除（{g.GOAL_STATUS_CN.get(cleared.status, cleared.status)}）：'{cleared.objective}'——/goal 可新建"
     objective = raw_command[len("/goal"):].strip()
     if not objective:
-        return "用法: /goal <objective> | status | pause | resume | clear"
+        return "用法: /goal <objective> | status | pause | resume | clear | edit <objective>"
     from src.config import load_config
 
     try:
@@ -1634,7 +1666,9 @@ def goal_command_text(thread_id: str, raw_command: str, goals_path: Path | None 
 def goal_kick_prompt(thread_id: str, raw_command: str, goals_path: Path | None = None) -> str | None:
     """#goal diagnosing-bugs 修复：/goal create & resume 的链重启手柄（纯只读，调用方在
     dispatch 已写盘后调用——paused→active 已生效可读；create 失败仍 kick 旧 active 目标
-    为已知边界，见 ADR）。status/pause/clear/裸 /goal/无目标/非 active/预算耗尽 → None。"""
+    为已知边界，见 ADR）。status/pause/clear/裸 /goal/无目标/非 active/预算耗尽 → None。
+    #29: /goal edit <objective> 亦产 [目标变更] 注入行（读盘时 objective 已是新值；
+    终态/预算耗尽/无目标/裸 edit → None）。"""
     from src import goals as g
 
     parts = raw_command.split()
@@ -1643,6 +1677,19 @@ def goal_kick_prompt(thread_id: str, raw_command: str, goals_path: Path | None =
         sub = parts[1].lower()
     if sub in ("status", "pause", "clear") or len(parts) < 2:
         return None
+    second = parts[1].lower() if len(parts) >= 2 else ""
+    if second == "edit":
+        new_objective = _goal_edit_objective(raw_command)
+        if not new_objective:
+            return None
+        goal = g.goal_status(path=goals_path, thread_id=thread_id)
+        # #29 语义（test_goal_kick_prompt_edit_paused 定案）：变更即续跑，门槛 = 非终态
+        # （goal.status in TERMINAL_STATUSES）——active/paused 均放行；状态本身不动
+        # （paused 仍 paused，自动续跑链休眠），仅注入一轮 [目标变更]。
+        if goal is None or goal.status in g.TERMINAL_STATUSES or goal.turns_used >= goal.max_turns:
+            return None
+        return g.goal_change_prompt(goal)
+    # create / resume 门槛（严格 GOAL_ACTIVE）：paused 需先 /goal resume；终态 / 预算耗尽 / 无目标不 kick。
     goal = g.goal_status(path=goals_path, thread_id=thread_id)
     if goal is None or goal.status != g.GOAL_ACTIVE or goal.turns_used >= goal.max_turns:
         return None

@@ -53,15 +53,23 @@ DEFAULT_GOAL_MAX_TURNS = 5
 _GOAL_INPUT_RE = re.compile(r"^\[目标(续跑|预算耗尽) (\d+)/(\d+)\]")
 
 
+# #29: /goal edit 变更轮输入前缀（与 goal_change_prompt 字面量对应），
+# 前端展示层据此把目标变更输入渲染成 dim 系统行并带「目标变更」短标签。
+_GOAL_CHANGE_PREFIX = "[目标变更] "
+
+
 def goal_input_label(text: str | None) -> str | None:
-    """text 以 [目标续跑 n/m] / [目标预算耗尽 n/m] 开头 → 短标签，否则 None。
+    """text 以 [目标变更] / [目标续跑 n/m] / [目标预算耗尽 n/m] 开头 → 短标签，否则 None。
 
     纯函数（前端展示层共用，CLI/TUI/GUI 不重复实现）：
+    - [目标变更] → "目标变更"（#29 /goal edit 注入行）
     - [目标续跑 n/m] → "目标续跑 n/m"
     - [目标预算耗尽 n/m] → "目标收尾 n/m"
     """
     if not isinstance(text, str):
         return None
+    if text.startswith(_GOAL_CHANGE_PREFIX):
+        return "目标变更"
     m = _GOAL_INPUT_RE.match(text)
     if m is None:
         return None
@@ -289,6 +297,35 @@ def goal_pause(path: Path | None = None, thread_id: str = "", expected_goal_id: 
     return Goal.from_dict(rec, thread_id)
 
 
+def goal_edit(
+    path: Path | None = None,
+    thread_id: str = "",
+    objective: str = "",
+    expected_goal_id: int | None = None,
+) -> Goal:
+    """#29: 在途目标 objective 原地变更（active/paused 均可）。
+
+    - objective 替换 + goal_id+1（版本递增，乐观锁语义同 pause/resume）；
+      status/turns_used/max_turns/completed_at/audit_evidence/last_stop_reason 全保留
+      （paused 目标编辑后仍 paused，续跑链按新 objective 走）。
+    - objective 空白 → GoalError（裸 GoalError，非子类）；无记录 → NoGoalError；
+      终态 → TerminalGoalError（指路 clear 重建）；版本不符 → StaleGoalVersion。
+    """
+    obj = (objective or "").strip()
+    if not obj:
+        raise GoalError("goal 目标文本不能为空")
+    goals, rec, target = _require_record(path, thread_id)
+    status = str(rec.get("status", GOAL_ACTIVE))
+    _check_version(rec, expected_goal_id)
+    if status in TERMINAL_STATUSES:
+        raise TerminalGoalError("goal 已终态（" + status + "），不可变更；/goal clear 后重建")
+    rec["objective"] = obj
+    rec["goal_id"] = _as_int(rec.get("goal_id", 0), 0) + 1
+    goals[thread_id] = rec
+    _atomic_write(target, goals)
+    return Goal.from_dict(rec, thread_id)
+
+
 def goal_resume(path: Path | None = None, thread_id: str = "", expected_goal_id: int | None = None) -> Goal:
     """paused → active；已 active 显式报错；终态 → TerminalGoalError；无记录 → NoGoalError。"""
     goals, rec, target = _require_record(path, thread_id)
@@ -494,6 +531,24 @@ def budget_prompt(goal: Goal, next_turns_used: int | None = None) -> str:
         "## 下一步\n（具体命令/文件清单，人可直接执行）\n"
         "3) 若目标实际已全部达成，仍可调用 complete_goal 并附审计证据。".format(
             n, goal.max_turns
+        )
+    )
+
+
+def goal_change_prompt(goal: Goal) -> str:
+    """#29: /goal edit 链重启输入（[目标变更] 行，用户指令注入标记）。
+
+    模型把该行当作用户指令而非自身状态读：以新目标为准，旧目标残局作废。
+    objective 走位置参数 .format（objective 含字面花括号不炸）。
+    """
+    return (
+        _GOAL_CHANGE_PREFIX + "新目标：{0}\n"
+        "本行经 /goal edit 命令注入，是用户指令而非模型自身状态；请照此执行。\n"
+        "纪律：\n"
+        "1) 以新目标为准执行，旧目标残局与已排定的待办作废；\n"
+        "2) 逐条审计已完成条目并附证据；可复用的成果不重做；\n"
+        "3) 新目标全部达成后必须调用 complete_goal 并附审计证据，无证据不得标记完成。".format(
+            goal.objective
         )
     )
 
