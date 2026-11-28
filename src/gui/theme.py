@@ -279,6 +279,11 @@ QPushButton#back-pill {
     color: $ground; background-color: $accent; border: none; border-radius: 17px;
     font-size: 16px; font-weight: bold;
 }
+QPushButton#up-pill {
+    color: $ground; background-color: $accent; border: none; border-radius: 17px;
+    font-size: 16px; font-weight: bold;
+}
+
 QPushButton#side-pill {
     color: $warning; background-color: transparent; border: 1px solid $warning;
     border-radius: 11px; font-size: 11px; font-weight: bold; padding: 1px 10px;
