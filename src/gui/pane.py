@@ -231,6 +231,7 @@ class ChatPane(QScrollArea):
         self._dirty = False
         self._thinking_box: ThinkingBox | None = None
         self._back_btn: QPushButton | None = None
+        self._up_btn: QPushButton | None = None
         self._snap_timer: QTimer | None = None
 
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)  # 点击聚焦（四键前提）
@@ -255,6 +256,15 @@ class ChatPane(QScrollArea):
         self._back_btn.clicked.connect(self.snap_to_bottom)
         self._back_btn.setParent(self.viewport())
         self._back_btn.setVisible(False)
+        # #36 悬浮「↑」pill：兄弟于 ↓，贴其正上方，常驻显示（不跟下箭头两态显隐）
+        self._up_btn = QPushButton("↑")
+        self._up_btn.setObjectName("up-pill")
+        self._up_btn.setFixedSize(34, 34)
+        self._up_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._up_btn.setToolTip("回到上方用户消息")
+        self._up_btn.clicked.connect(self.jump_up)
+        self._up_btn.setParent(self.viewport())
+        self._up_btn.setVisible(True)
         self._reposition_pill()
 
         self.verticalScrollBar().valueChanged.connect(self._on_scroll)
@@ -490,6 +500,23 @@ class ChatPane(QScrollArea):
         # 50ms 后再吸附一次；若仍在增长则续 arm；用户上翻（stick=False）立即终止。
         self._resnap_soon()
 
+    def jump_up(self) -> bool:
+        """#36：跳到视口顶线严格上方（y()+h <= value）最近一条用户气泡，顶线对齐视口顶线。
+        点击时遍历当前布局部件求值（不缓存）→ 重建/重折无旧引用；无目标 no-op 返回 False。
+        落点后走 repo 模式 _on_scroll（stick=False → ↓ 出现），与四键滚动一致。"""
+        sb = self.verticalScrollBar()
+        top = sb.value()
+        target: QWidget | None = None
+        for i in range(self._vbox.count() - 1):  # 末位 spacer 恒排除
+            w = self._vbox.itemAt(i).widget()
+            if w is not None and w.objectName() == "bub-user" and w.y() + w.height() <= top:
+                target = w  # 布局自上而下：越靠后越接近视口顶
+        if target is None:
+            return False
+        sb.setValue(target.y())
+        self._on_scroll(sb.value())
+        return True
+
     def _resnap_soon(self) -> None:
         if self._snap_timer is None:
             self._snap_timer = QTimer(self)
@@ -521,6 +548,8 @@ class ChatPane(QScrollArea):
             return
         vp = self.viewport()
         self._back_btn.move(vp.width() - 44, vp.height() - 44)
+        if self._up_btn is not None:
+            self._up_btn.move(vp.width() - 44, vp.height() - 44 - 34)  # #36 贴 ↓ 正上方
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)

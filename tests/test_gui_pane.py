@@ -390,3 +390,72 @@ def test_rebuild_cards_gc_safe(qtbot, qapp):
     # 重建后面板仍可用
     p.append_user("after crash window")
     p.append_fallback("ok")
+
+
+# ------------------------------------------------------------------
+# #36 常驻上箭头（GUI）：↑ pill 贴 ↓ 正上方，常驻显示，一键回视口严格上方最近用户消息
+# ------------------------------------------------------------------
+
+def _user_tops(p):
+    return [
+        w.y()
+        for i in range(p._vbox.count() - 1)  # noqa: SLF001 末位 spacer 恒排除
+        if (w := p._vbox.itemAt(i).widget()) is not None  # noqa: SLF001
+        and w.objectName() == "bub-user"
+    ]
+
+
+def test_up_pill_visible_in_both_scroll_states(qtbot, qapp):
+    """#36: ↑ pill 常驻（异于 ↓ 两态）——贴底与上翻两态均可见。"""
+    p = _pane_with_overflow(qtbot, qapp)
+    p.snap_to_bottom()
+    assert p._back_btn is not None  # noqa: SLF001
+    assert not p._back_btn.isVisible()
+    assert p._up_btn.isVisible()  # noqa: SLF001
+    sb = p.verticalScrollBar()
+    sb.setValue(0)
+    p._on_scroll(0)  # noqa: SLF001
+    assert p._up_btn.isVisible()  # noqa: SLF001
+    assert p._back_btn.isVisible()
+
+
+def test_jump_up_lands_on_nearest_user_message_strictly_above(qtbot, qapp):
+    """#36: 点 ↑ → 顶线严格在视口上方（y()+h <= value）最近一条用户气泡顶线对齐视口顶线；
+    顶线 == 视口顶（部分可见）的气泡跳过；落点后 ↓ 出现。"""
+    p = _pane_real_overflow(qtbot, qapp, lines=40)
+    sb = p.verticalScrollBar()
+    tops = _user_tops(p)
+    assert len(tops) > 6
+    sb.setValue(tops[5])
+    p._on_scroll(tops[5])  # noqa: SLF001
+    assert p.jump_up() is True
+    assert sb.value() == tops[4]  # 气泡 0..4 完全在上方；气泡 5 顶线==视口顶 → 跳过
+    assert p._back_btn.isVisible()  # sticky 状态机自动显 ↓
+
+
+def test_jump_up_no_target_is_noop(qtbot, qapp):
+    """#36: 视口严格上方无用户消息 → jump_up 返回 False 且滚动位置不变。"""
+    p = _pane_real_overflow(qtbot, qapp, lines=40)
+    sb = p.verticalScrollBar()
+    sb.setValue(0)
+    p._on_scroll(0)  # noqa: SLF001
+    assert p.jump_up() is False
+    assert sb.value() == 0
+
+
+def test_jump_up_landing_survives_rebuild(qtbot, qapp):
+    """#36: 目标点击时求值（不缓存）——rebuild 换新部件后无旧坐标残留。"""
+    from src.gui.replay import Record
+
+    p = _pane_real_overflow(qtbot, qapp, lines=40)
+    recs = [Record(kind="user", text=f"问{i} " + "x" * 60) for i in range(40)]
+    p.rebuild_from_records(recs)
+    qtbot.wait(150)
+    assert p.verticalScrollBar().maximum() > 0
+    sb = p.verticalScrollBar()
+    tops = _user_tops(p)  # 新部件，y 重新求值
+    assert len(tops) == 40
+    sb.setValue(tops[5])
+    p._on_scroll(tops[5])  # noqa: SLF001
+    assert p.jump_up() is True
+    assert sb.value() == tops[4]

@@ -1131,6 +1131,14 @@ class JarvisApp(App):
         display: block;
     }
 
+    #jump_up {
+        position: absolute;
+        dock: bottom;
+        width: auto;
+        margin: 0;
+        margin-bottom: 3;
+    }
+
     #editor_frame {
         height: auto;
         margin: 1 1 1 0;
@@ -1543,6 +1551,7 @@ class JarvisApp(App):
                                 copy_on_select=self._copy_on_select(),
                             )
                             yield Button("Back to bottom", id="jump_hint")  # tui-ux16r2: docked bottom overlay
+                            yield Button("↑", id="jump_up")  # #36 常驻上箭头
                         yield Static("", id="ai_stream")
                 yield Static("", id="todo_panel")
                 yield VerticalScroll(id="message_queue", can_focus=False)  # tui-ux14 #04: 插队缓存区（can_focus 走构造参数；CSS 写 can-focus: no 炸样式表）
@@ -1598,7 +1607,7 @@ class JarvisApp(App):
         for e in entries:
             kind = e[0]
             if kind == "user":
-                log.write(user_message_markup(e[1]))
+                log.write(user_message_markup(e[1]), user_anchor=True)
             elif kind == "reasoning":
                 log.write(reasoning_block_markup(e[1]))
             elif kind == "ai":
@@ -1851,6 +1860,13 @@ class JarvisApp(App):
             except NoMatches:
                 return
 
+        # #36 常驻上箭头：跳到视口上方最近一条用户消息
+        if event.button.id == "jump_up":
+            try:
+                self.query_one("#messages", RichLog).jump_up()
+            except NoMatches:
+                return
+
     def _submit_startup_prompt(self) -> None:
         prompt = (self._startup_prompt or "").strip()
         self._startup_prompt = None
@@ -1888,7 +1904,7 @@ class JarvisApp(App):
         if label is not None:
             log.write(system_message_markup(f"[dim]{label}…[/dim]"))
         else:
-            log.write(user_message_markup(text))
+            log.write(user_message_markup(text), user_anchor=True)
         # #04: 消息含虚拟前缀（/workspace/ 等）时追加 dim 锚点行，指出真实目录。
         for line in commands.path_anchor_lines(text, vpmapping):
             log.write(line)

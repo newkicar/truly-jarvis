@@ -485,3 +485,128 @@ async def test_max_lines_log_keeps_plain_fallback():
         await pilot.pause()
         assert log._tool_entries == []  # noqa: SLF001
         assert "plain c" in log.plain_text()
+
+
+# ------------------------------------------------------------------
+# #36 常驻上箭头：jump_up 落到视口严格上方最近一条用户消息
+# ------------------------------------------------------------------
+
+def _up(pilot) -> Button:
+    return pilot.app.query_one("#jump_up", Button)
+
+
+@pytest.mark.asyncio
+async def test_jump_up_button_always_visible_in_both_states():
+    """#36: ↑ 常驻（无 display 门控）——贴底与上翻两态均可见。
+    贴 ↓ 提示条正上方，不压日志内容区。"""
+    app = _new_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        log = pilot.app.query_one("#messages", CopyableRichLog)
+        up = _up(pilot)
+        hint = _hint(pilot)
+        # 贴底态：hint 隐藏、↑ 显示
+        assert up.display
+        assert not hint.has_class("-visible")
+        up_region = up.region
+        log_region = log.region
+        assert up_region.y + up_region.height > 0
+        assert log_region.y + log_region.height <= up_region.y
+        # 上翻态：hint 显示，↑ 仍显示
+        await _fill(pilot, log)
+        log.scroll_y = 0
+        await pilot.pause()
+        log.write("m")
+        await pilot.pause()
+        assert hint.has_class("-visible")
+        assert up.display
+        up_region = up.region
+        hint_region = hint.region
+        log_region = log.region
+        assert up_region.y + up_region.height <= hint_region.y
+        assert log_region.y + log_region.height <= up_region.y
+
+
+@pytest.mark.asyncio
+async def test_jump_up_lands_on_nearest_user_message_strictly_above():
+    """#36: 点 ↑ → 顶线严格在视口上方（完全在上方）最近一条用户消息顶线对齐视口顶线；
+    部分可见跳过；落点后 sticky 状态机自动显 ↓ 提示。"""
+    app = _new_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        log = pilot.app.query_one("#messages", CopyableRichLog)
+        log.write("user-A", user_anchor=True)
+        await _fill(pilot, log, 40)
+        log.write("user-B", user_anchor=True)
+        await pilot.pause()
+        a = next(it for it in log._items if it.get("user_anchor") and it["source"] == "user-A")
+        b = next(it for it in log._items if it.get("user_anchor") and it["source"] == "user-B")
+        assert b["start"] > a["end"]
+        log.scroll_y = a["end"]  # A 完全在视口顶上方，B 远在下方
+        await pilot.pause()
+        ok = await pilot.click(_up(pilot))
+        assert ok
+        assert int(log.scroll_offset.y) == a["start"]
+        assert _hint(pilot).has_class("-visible")  # sticky 状态机自动显 ↓
+
+
+@pytest.mark.asyncio
+async def test_jump_up_no_target_is_noop():
+    """#36: 视口严格上方无用户消息 → jump_up 返回 False 且滚动位置不变。"""
+    app = _new_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        log = pilot.app.query_one("#messages", CopyableRichLog)
+        log.write("user-only", user_anchor=True)
+        await _fill(pilot, log, 40)
+        await pilot.pause()
+        log.scroll_y = 0
+        await pilot.pause()
+        assert log.jump_up() is False
+        assert int(log.scroll_offset.y) == 0
+
+
+@pytest.mark.asyncio
+async def test_jump_up_landing_survives_reflow():
+    """#36: 目标点击时求值（不缓存）——reflow 重算 start/end 后 ↑ 仍落到新坐标。"""
+    app = _new_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        log = pilot.app.query_one("#messages", CopyableRichLog)
+        log.write("X" * 200)  # 宽 80 时 3 行
+        log.write("user-A", user_anchor=True)
+        await _fill(pilot, log, 30)
+        log.write("user-B", user_anchor=True)
+        await pilot.pause()
+        a_old = next(it for it in log._items if it.get("user_anchor") and it["source"] == "user-A")
+        start_old, end_old = a_old["start"], a_old["end"]
+        await pilot.resize_terminal(40, 24)  # 收窄 → X*200 重折为更多行
+        await pilot.pause()
+        a_new = next(it for it in log._items if it.get("user_anchor") and it["source"] == "user-A")
+        assert a_new["start"] != start_old  # 证明 reflow 确实挪动了坐标（非空洞断言）
+        assert a_new["end"] != end_old
+        log.scroll_y = a_new["end"]
+        await pilot.pause()
+        assert log.jump_up() is True
+        assert int(log.scroll_offset.y) == a_new["start"]
+
+
+@pytest.mark.asyncio
+async def test_pre_layout_writes_preserve_user_anchor_through_drain():
+    """#36: 预布局 write(user_anchor=True) 3 元组入队；on_show drain 还原标记；
+    旧 2 元组形态兼容（user_anchor=False）；工具条目不受影响。"""
+    app = _new_app()
+    async with app.run_test(size=(80, 24)) as pilot:
+        log = pilot.app.query_one("#messages", CopyableRichLog)
+        log._size_known = False  # noqa: SLF001
+        log.write("u-anchor", user_anchor=True)
+        log.write("plain-line")
+        log._pending_writes.append(("native", "legacy-native"))  # noqa: SLF001 旧 2 元组兼容
+        log.write_tool_entry("tool-c", "tool-e")
+        before = len(log._items)  # noqa: SLF001
+        log._size_known = True  # noqa: SLF001
+        log.on_show(None)  # noqa: SLF001 drain + materialize
+        await pilot.pause()
+        new_items = log._items[before:]  # noqa: SLF001
+        assert new_items[0]["source"] == "u-anchor"
+        assert new_items[0]["user_anchor"] is True
+        assert new_items[1]["user_anchor"] is False
+        assert new_items[2]["source"] == "legacy-native"
+        assert new_items[2]["user_anchor"] is False
+        assert new_items[3]["kind"] == "tool"

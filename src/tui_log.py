@@ -226,11 +226,11 @@ class CopyableRichLog(RichLog):
                 new_segments.extend(part)
         return Strip(Segment.simplify(new_segments), total_cells)
 
-    def write(self, content, *args, **kwargs):
+    def write(self, content, *args, user_anchor: bool = False, **kwargs):
         # tui-ux20: 预布局（size 未定）入 FIFO，首次上屏统一 drain；
         # 其余走原生 write + 块注册（native 块）
         if not self._size_known:
-            self._pending_writes.append(("native", content))
+            self._pending_writes.append(("native", content, user_anchor))  # #36: 3 元组（user_anchor 落点）
             return self
         # tui-ux16 sticky scroll（codex 交互模型）：贴底自动跟随；
         # 上翻后停跳，累计未确认新消息。显式 scroll_end（kwarg，或
@@ -253,7 +253,8 @@ class CopyableRichLog(RichLog):
             self._plain_lines.append("")
         if getattr(self, "max_lines", None) is None and len(self.lines) > start:
             # tui-ux20: 注册 native 块（max_lines 时 native 重绑 lines，旧 start/end 失效）
-            self._items.append({"kind": "native", "source": content, "start": start, "end": len(self.lines)})
+            self._items.append({"kind": "native", "source": content, "start": start, "end": len(self.lines),
+                                 "user_anchor": user_anchor})  # #36 常驻上箭头落点
         self._sync_plain_lines_from_strips()
         return result
 
@@ -319,6 +320,20 @@ class CopyableRichLog(RichLog):
         self._pending_msgs = 0
         self._hide_hint()
         self.scroll_end(animate=False, immediate=True, x_axis=False)
+
+    def jump_up(self) -> bool:
+        """#36 常驻上箭头落点：视口顶线严格上方（end <= top，完全在上方；部分可见不算）
+        最近一条用户输入消息，其顶线对齐视口顶线。点击时求值，不缓存，reflow 安全。
+        无目标 → no-op 返回 False。"""
+        top = int(self.scroll_offset.y)
+        target: dict | None = None
+        for item in self._items:
+            if item.get("user_anchor") and item["end"] <= top:
+                target = item  # _items 按行序，越靠后越接近视口顶
+        if target is None:
+            return False
+        self.scroll_to(0, int(target["start"]), animate=False, immediate=True)
+        return True
 
 
     def on_resize(self, event: events.Resize) -> None:
@@ -420,13 +435,14 @@ class CopyableRichLog(RichLog):
         return self._render_strips(text, width), width
 
     def _drain_pending_writes(self) -> None:
-        """tui-ux20: drain 预布局 FIFO（入队顺序：native write / 工具条目 materialize）。"""
+        """tui-ux20: drain 预布局 FIFO（入队顺序：native write / 工具条目 materialize）。
+        #36: native 3 元组 ("native", content, user_anchor)；2 元组旧形态兼容（user_anchor=False）。"""
         while self._pending_writes:
-            kind, payload = self._pending_writes.pop(0)
-            if kind == "native":
-                self.write(payload)
+            entry = self._pending_writes.pop(0)
+            if entry[0] == "native":
+                self.write(entry[1], user_anchor=entry[2] if len(entry) > 2 else False)
             else:
-                self.write_tool_entry(payload["source"][0], payload["source"][1], pre_layout_pending=payload)
+                self.write_tool_entry(entry[1]["source"][0], entry[1]["source"][1], pre_layout_pending=entry[1])
         self._deferred_renders.clear()
 
     def _reflow_all(self) -> None:
