@@ -552,6 +552,8 @@ class GuiPresenter:
                     max_steps=rt.config.execution_max_steps,
                     model_image_input=rt.config.model_image_input,
                     user_input_fallback=user_input_fallback,
+                    auto_compact_on_overflow=bool(getattr(rt.config, "execution_auto_compact_on_overflow", True)),
+                    auto_compact_max_attempts=int(getattr(rt.config, "execution_auto_compact_max_attempts", 1)),
                 )
                 ok = turn.ok
                 # #7 验收 b：成功路径先 notify（一次性层顶出）后 turn_done（回落常驻层）

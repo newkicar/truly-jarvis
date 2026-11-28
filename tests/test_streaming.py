@@ -829,3 +829,108 @@ def test_run_agent_turn_when_predicate_sees_thread_local_tid():
     assert seen["danger"] is True
     assert get_current_thread_id() is None  # finally 成对清理
 
+# ---- #32: 上下文超限自动 /compact 反应层（run_agent_turn 公共接缝）----
+
+
+class _OverflowAgent:
+    """前 fail_times 次 stream 尝试抛 overflow 异常，之后返回空流。"""
+
+    checkpointer = None
+
+    def __init__(self, fail_times: int = 1):
+        self.fail_times = fail_times
+        self.stream_calls: list = []
+        self.compact_calls: list = []
+        self.compact_result = "已压缩上下文：原 4 条消息 → 摘要 10 字，旧历史已覆盖（仅消息层）"
+
+    def stream_events(self, payload, *, version, config, control=None):
+        self.stream_calls.append(payload)
+        if self.fail_times > 0:
+            self.fail_times -= 1
+            raise ValueError(
+                "Error code: 400 - This model maximum context length is 131072 tokens. "
+                "However, your prompt contains at least 131073 input tokens."
+            )
+        return _Stream([])
+
+
+def _run_with_auto_compact(agent, user_input, statuses, **kwargs):
+    """run_agent_turn + monkeypatch compact（仅记录，不触真模型）。"""
+    import src.commands as cmd
+
+    orig_compact = cmd.compact
+
+    def fake_compact(a, t, guide=None):
+        agent.compact_calls.append(t)
+        return agent.compact_result
+
+    cmd.compact = fake_compact
+    try:
+        return streaming.run_agent_turn(
+            agent,
+            "t32",
+            user_input,
+            handle_interrupts=lambda _: None,
+            callbacks={
+                "on_subagent": lambda *a: None,
+                "on_tool_call": lambda *a: None,
+                "on_message_delta": lambda d: None,
+                "on_status": statuses.append,
+            },
+            **kwargs,
+        )
+    finally:
+        cmd.compact = orig_compact
+
+
+def test_run_agent_turn_auto_compact_recovers_overflow():
+    """#32: 超限 → 自动 /compact 成功 → 重放用户输入、任务继续 + UI 提示。"""
+    agent = _OverflowAgent(fail_times=1)
+    statuses: list = []
+    ok = _run_with_auto_compact(agent, "请继续任务", statuses)
+    assert ok.ok is True
+    assert agent.compact_calls == ["t32"]
+    assert any("已自动压缩" in s for s in statuses)
+    assert len(agent.stream_calls) == 2
+    assert agent.stream_calls[1] == {"messages": [{"role": "user", "content": "请继续任务"}]}
+
+
+def test_run_agent_turn_auto_compact_second_overflow_falls_back():
+    """#32: 压缩后仍超限（预算 1 次）→ 提示 + 上抛原异常（不死循环）。"""
+    agent = _OverflowAgent(fail_times=99)
+    statuses: list = []
+    with pytest.raises(ValueError, match="maximum context length"):
+        _run_with_auto_compact(agent, "hi", statuses, auto_compact_max_attempts=1)
+    assert len(agent.compact_calls) == 1
+    assert any("自动压缩后仍超限" in s for s in statuses)
+
+
+def test_run_agent_turn_auto_compact_failure_falls_back():
+    """#32: compact 返回失败文案 → 提示失败文本、不再重试 stream、异常上抛。"""
+    agent = _OverflowAgent(fail_times=99)
+    agent.compact_result = "消息太少（2 条；至少 4 条），无需压缩"
+    statuses: list = []
+    with pytest.raises(ValueError, match="maximum context length"):
+        _run_with_auto_compact(agent, "hi", statuses)
+    assert len(agent.compact_calls) == 1
+    assert len(agent.stream_calls) == 1
+    assert any("消息太少" in s for s in statuses)
+
+
+def test_run_agent_turn_auto_compact_disabled_no_compact():
+    """#32: 开关关 → compact 零调用，overflow 直接上抛。"""
+    agent = _OverflowAgent(fail_times=99)
+    statuses: list = []
+    with pytest.raises(ValueError, match="maximum context length"):
+        _run_with_auto_compact(agent, "hi", statuses, auto_compact_on_overflow=False)
+    assert not agent.compact_calls
+    assert len(agent.stream_calls) == 1
+
+
+def test_run_agent_turn_overflow_without_user_input_no_compact():
+    """#32: replay 路径（user_input=None）超限 → 不自动 compact，直接上抛。"""
+    agent = _OverflowAgent(fail_times=99)
+    statuses: list = []
+    with pytest.raises(ValueError, match="maximum context length"):
+        _run_with_auto_compact(agent, None, statuses)
+    assert not agent.compact_calls

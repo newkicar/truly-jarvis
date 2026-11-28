@@ -259,6 +259,8 @@ class TurnPresenter:
                 max_steps=int(getattr(self.app.config, "execution_max_steps", 200)),
                 model_image_input=self._image_input_mode(),
                 user_input_fallback=self.image_fallback,
+                auto_compact_on_overflow=bool(getattr(self.app.config, "execution_auto_compact_on_overflow", True)),
+                auto_compact_max_attempts=int(getattr(self.app.config, "execution_auto_compact_max_attempts", 1)),
             )
             ok = turn.ok
         except Exception as exc:  # noqa: BLE001
