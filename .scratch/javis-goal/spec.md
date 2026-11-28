@@ -1,7 +1,7 @@
 # JARVIS goal：/goal 持久目标 + 自动续跑（对标 codex /goal）
 
 **日期：** 2026-11-24  
-**状态：** done（2026-11-24，工单 01–07 全部关闭；ADR-0013 + AGENTS.md goal 决策一笔 + 全量回归零新增失败）  
+**状态：** done（2026-11-24，工单 01–07 全部关闭；ADR-0013 + AGENTS.md goal 决策一笔 + 全量回归零新增失败；2026-11-28 增量关票 #29 + #33（#29 /goal edit 在途目标 objective 原地变更，经 PR #38 合入 main；#33 终态 /goal <new> 自动关旧建新，在途拒绝指路 /goal edit，变更确认弹窗属 #34））  
 **动机：** 跨回合长任务（"重构到全绿"、"一次实现 N 个功能"）现无目标追踪、无自动续跑、无预算；用户每轮手动"继续"，中断即丢进度，模型没有"还差多少"的概念。对标 codex /goal（持久目标 + 自动续跑回合 + 续跑预算 + 四态状态机 + 完成审计 + 零工具调用防转圈）。jarvis 当前零 `goal` 相关代码（src/、docs/ 全量 grep 零命中）。
 
 ---
@@ -31,10 +31,10 @@
 4. 审批中或 Plan 模式时不续跑；回到 Act 恢复。
 5. Esc 取消当前回合 → 该回合不续跑，goal 保持 active。
 6. 模型完成判断后调 `complete_goal` 附审计证据 → 终态 `complete`，续跑链断开。
-7. 已有未完成 goal 时再 `/goal <new>` → 提示失败（一会话一目标）。
+7. 已有未完成 goal 时再 `/goal <new>` → 拒绝并指路 /goal edit（一会话一目标，#33 基线；#34 起非终态提供变更确认弹窗）。
 8. `/goal pause` / `/goal resume` 暂停/恢复，objective 不变。
 9. `/goal clear` 删目标，回到一次性对话。
-10. 续跑预算耗尽：自动触发预算收尾轮（「已完成/未完成/下一步」结构化交接）→ 终态 `budget_limited`，需 clear 后重设。
+10. 续跑预算耗尽：自动触发预算收尾轮（「已完成/未完成/下一步」结构化交接）→ 终态 `budget_limited`；#33 起 /goal <new> 自动关旧建新（int 墓碑保留 + 新 goal_id +1，无需手动 clear；complete 终态同理）。
 11. 模型某回合零工具调用 → 不触发下一次续跑（防转圈）。
 12. 重启 app 后 goals.json 状态仍在，active goal 可继续续跑。
 13. sched-* 定时任务线程不参与 goal 续跑。
@@ -59,7 +59,7 @@
 
 ### 状态机
 
-- 四态 active / paused / budget_limited / complete；complete 与 budget_limited 为终态，重设须 clear。
+- 四态 active / paused / budget_limited / complete；complete 与 budget_limited 为终态，重设须 clear（#33 起 /goal <new> 自动关旧建新，无需手动 clear）。
 - goal_id 每次 goal_set +1；同线程并发写乐观版本检查，stale 写显式失败。
 
 ### 模型工具（仅主代理，启动时一次性注入，MCP 同款注入位；子代理不含）
@@ -71,7 +71,7 @@
 
 ### 命令（三前端共享 dispatch）
 
-- `/goal <objective>|status|pause|resume|clear|edit`；单 dispatch 函数，yolo_command_text 写法四态幂等文案；`slash_completion.py` 条目。#29 `edit` = 在途目标 objective 原地变更（版本+1、状态与剩余回合保留、终态拒绝指路 clear 重建），变更轮注入 `[目标变更]` 前缀用户指令行（前端 dim 系统行 + 短标签「目标变更」）。
+- `/goal <objective>|status|pause|resume|clear|edit`；单 dispatch 函数，yolo_command_text 写法四态幂等文案；`slash_completion.py` 条目。#29 `edit` = 在途目标 objective 原地变更（版本+1、状态与剩余回合保留、终态拒绝指路 clear 重建），变更轮注入 `[目标变更]` 前缀用户指令行（前端 dim 系统行 + 短标签「目标变更」）。#33 终态（complete/budget_limited）/goal <objective> 自动关旧建新：读旧 → clear（留 int 墓碑）→ set（goal_id +1，max_turns 取 goals.max_turns），成功文案附旧版本与新目标信息；非终态在途 create 被拒（指路 /goal edit），确认面属 #34。
 
 ### 续跑触发（回合收尾钩子，三前端共用）
 
